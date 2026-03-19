@@ -53,7 +53,7 @@ Backend (FastAPI + SQLAlchemy async + SQLite)
   └── app/tests/                      → pytest-asyncio tests with in-memory SQLite
 
 MCP Server (stdio, same DB)
-  Tools: list_projects, list_sprints, get_board, get_my_tasks, update_task_status, add_task_note
+  Tools: list_backlog, list_sprints, get_board, get_my_tasks, update_task_status, add_task_note, create_backlog_item, add_item_to_sprint
 ```
 
 ## Key Design Decisions

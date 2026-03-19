@@ -6,6 +6,9 @@ Agents connect via MCP and use tools like:
 - update_task_status: Move a task between columns
 - add_task_note: Add a note to a task
 - list_sprints: See project sprints
+- create_backlog_item: Create a new backlog item
+- add_item_to_sprint: Add a backlog item to a sprint
+- list_backlog: List backlog items for a project
 """
 
 import asyncio
@@ -15,7 +18,6 @@ from mcp.types import Tool, TextContent
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 
-from app.models.project import Project
 from app.models.sprint import Sprint
 from app.models.sprint_item import SprintItem
 from app.models.backlog_item import BacklogItem
@@ -90,11 +92,43 @@ async def list_tools() -> list[Tool]:
             },
         ),
         Tool(
-            name="list_projects",
-            description="List all projects.",
+            name="create_backlog_item",
+            description="Create a new backlog item for a project.",
             inputSchema={
                 "type": "object",
-                "properties": {},
+                "properties": {
+                    "project_id": {"type": "integer", "description": "Project ID"},
+                    "title": {"type": "string", "description": "Title of the backlog item"},
+                    "description": {"type": "string", "description": "Detailed description"},
+                    "priority": {"type": "string", "enum": ["P0", "P1", "P2", "P3"], "description": "Priority (default P2)"},
+                    "story_points": {"type": "integer", "description": "Story points estimate"},
+                },
+                "required": ["project_id", "title"],
+            },
+        ),
+        Tool(
+            name="add_item_to_sprint",
+            description="Add a backlog item to the active sprint (or a specific sprint).",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "project_id": {"type": "integer", "description": "Project ID (used to find active sprint if sprint_id not given)"},
+                    "backlog_item_id": {"type": "integer", "description": "Backlog item ID to add"},
+                    "assignee_role": {"type": "string", "description": "Role to assign (BE, FE, QA, TL, PO, etc.)"},
+                    "sprint_id": {"type": "integer", "description": "Sprint ID (optional, defaults to active sprint)"},
+                },
+                "required": ["project_id", "backlog_item_id"],
+            },
+        ),
+        Tool(
+            name="list_backlog",
+            description="List all backlog items for a project. Shows title, priority, story points, and status.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "project_id": {"type": "integer", "description": "Project ID"},
+                },
+                "required": ["project_id"],
             },
         ),
         Tool(
@@ -114,8 +148,8 @@ async def list_tools() -> list[Tool]:
 @server.call_tool()
 async def call_tool(name: str, arguments: dict) -> list[TextContent]:
     async with async_session_maker() as db:
-        if name == "list_projects":
-            return await _list_projects(db)
+        if name == "list_backlog":
+            return await _list_backlog(db, arguments["project_id"])
         elif name == "list_sprints":
             return await _list_sprints(db, arguments["project_id"])
         elif name == "get_board":
@@ -126,18 +160,91 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             return await _update_task_status(db, arguments["task_id"], arguments["new_status"])
         elif name == "add_task_note":
             return await _add_task_note(db, arguments["task_id"], arguments["note"])
+        elif name == "create_backlog_item":
+            return await _create_backlog_item(
+                db, arguments["project_id"], arguments["title"],
+                arguments.get("description"), arguments.get("priority", "P2"),
+                arguments.get("story_points"),
+            )
+        elif name == "add_item_to_sprint":
+            return await _add_item_to_sprint(
+                db, arguments["project_id"], arguments["backlog_item_id"],
+                arguments.get("assignee_role"), arguments.get("sprint_id"),
+            )
         else:
             return [TextContent(type="text", text=f"Unknown tool: {name}")]
 
 
-async def _list_projects(db: AsyncSession) -> list[TextContent]:
-    result = await db.execute(select(Project).order_by(Project.id))
-    projects = result.scalars().all()
-    if not projects:
-        return [TextContent(type="text", text="No projects found.")]
-    lines = ["# Projects", ""]
-    for p in projects:
-        lines.append(f"- **[{p.id}] {p.name}** (tmux: {p.tmux_session_name or 'N/A'})")
+async def _create_backlog_item(
+    db: AsyncSession, project_id: int, title: str,
+    description: str | None, priority: str, story_points: int | None,
+) -> list[TextContent]:
+    result = await db.execute(
+        select(BacklogItem.order)
+        .where(BacklogItem.project_id == project_id)
+        .order_by(BacklogItem.order.desc())
+    )
+    max_order = result.scalar() or 0
+    item = BacklogItem(
+        project_id=project_id, title=title, description=description,
+        priority=priority, story_points=story_points, order=max_order + 1,
+    )
+    db.add(item)
+    await db.commit()
+    await db.refresh(item)
+    return [TextContent(type="text", text=f"Created backlog item [{item.id}] '{title}' ({priority})")]
+
+
+async def _add_item_to_sprint(
+    db: AsyncSession, project_id: int, backlog_item_id: int,
+    assignee_role: str | None, sprint_id: int | None,
+) -> list[TextContent]:
+    if sprint_id:
+        result = await db.execute(select(Sprint).where(Sprint.id == sprint_id))
+    else:
+        result = await db.execute(
+            select(Sprint).where(Sprint.project_id == project_id, Sprint.status.in_(["active", "planning"]))
+            .order_by(Sprint.status.desc())  # active first
+        )
+    sprint = result.scalar_one_or_none()
+    if not sprint:
+        return [TextContent(type="text", text="No active or planning sprint found.")]
+
+    bi_result = await db.execute(select(BacklogItem).where(BacklogItem.id == backlog_item_id))
+    bi = bi_result.scalar_one_or_none()
+    if not bi:
+        return [TextContent(type="text", text=f"Backlog item {backlog_item_id} not found.")]
+
+    from sqlalchemy import func as sa_func
+    order_result = await db.execute(
+        select(sa_func.max(SprintItem.order)).where(SprintItem.sprint_id == sprint.id)
+    )
+    max_order = order_result.scalar() or 0
+
+    si = SprintItem(
+        sprint_id=sprint.id, backlog_item_id=backlog_item_id,
+        assignee_role=assignee_role, order=max_order + 1,
+    )
+    db.add(si)
+    bi.status = "in_sprint"
+    await db.commit()
+    await db.refresh(si)
+    return [TextContent(type="text", text=f"Added '{bi.title}' to Sprint {sprint.number} as [{si.id}] → {assignee_role or 'Unassigned'}")]
+
+
+async def _list_backlog(db: AsyncSession, project_id: int) -> list[TextContent]:
+    result = await db.execute(
+        select(BacklogItem).where(BacklogItem.project_id == project_id).order_by(BacklogItem.order)
+    )
+    items = result.scalars().all()
+    if not items:
+        return [TextContent(type="text", text="Backlog is empty.")]
+    lines = ["# Backlog", ""]
+    for i in items:
+        pts = f" ({i.story_points}pts)" if i.story_points else ""
+        lines.append(f"- **[{i.id}]** {i.title} [{i.priority}]{pts} - {i.status}")
+        if i.description:
+            lines.append(f"  {i.description}")
     return [TextContent(type="text", text="\n".join(lines))]
 
 
