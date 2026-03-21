@@ -27,6 +27,7 @@ function ProjectPageContent() {
   const [agentPanelOpen, setAgentPanelOpen] = useState(true);
   const [agentPanelWidth, setAgentPanelWidth] = useState(380);
   const [teamFocusMode, setTeamFocusMode] = useState(false);
+  const [mobileTeamOpen, setMobileTeamOpen] = useState(false);
   const [terminalOpen, setTerminalOpen] = useState(true);
   const [activeAgentTab, setActiveAgentTab] = useState<string>(ROLES[0]);
   const [pendingTerminalCommand, setPendingTerminalCommand] = useState<string | undefined>();
@@ -467,6 +468,65 @@ function ProjectPageContent() {
           )}
         </div>
       </div>
+
+      {/* Mobile: floating Team button */}
+      {selectedProjectId && tmuxSessionActive && (
+        <button
+          onClick={() => setMobileTeamOpen(true)}
+          className="fixed bottom-4 right-4 z-50 lg:hidden w-12 h-12 rounded-full bg-primary text-primary-foreground shadow-lg flex items-center justify-center text-lg"
+        >
+          👥
+        </button>
+      )}
+
+      {/* Mobile: Team overlay */}
+      {mobileTeamOpen && (
+        <div className="fixed inset-0 z-50 lg:hidden bg-background flex flex-col">
+          <div className="px-3 py-2 border-b border-border/40 flex items-center justify-between shrink-0">
+            <span className="text-xs font-semibold text-muted-foreground/50">Team</span>
+            <button
+              onClick={() => setMobileTeamOpen(false)}
+              className="text-xs px-3 py-1.5 rounded-md border border-border/50 text-foreground/70 hover:bg-muted/30"
+            >
+              ← Close
+            </button>
+          </div>
+          {sessionName && (
+            <>
+              <div className="border-b border-border/40 bg-muted/20 overflow-x-auto shrink-0">
+                <div className="flex gap-0.5 px-1 h-10 items-center w-max">
+                  {(tmuxRoles.length > 0 ? tmuxRoles : ROLES).map((role) => (
+                    <button
+                      key={role}
+                      onClick={() => setActiveAgentTab(role)}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[11px] font-mono transition-all whitespace-nowrap ${
+                        activeAgentTab === role
+                          ? "bg-background text-foreground shadow-sm font-semibold"
+                          : "text-muted-foreground/50 hover:text-foreground/70 hover:bg-muted/30"
+                      }`}
+                    >
+                      <span className={`h-1.5 w-1.5 rounded-full shrink-0 transition-all duration-300 ${
+                        roleActivity[role]
+                          ? "bg-green-500 shadow-[0_0_6px_rgba(34,197,94,0.6)] animate-pulse"
+                          : "bg-gray-500"
+                      }`} />
+                      {role}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="flex-1 min-h-0 relative">
+                <AgentPaneView
+                  key={`mobile-agent-${selectedProjectId}-${activeAgentTab}`}
+                  sessionName={sessionName}
+                  role={activeAgentTab}
+                  isVisible={mobileTeamOpen}
+                />
+              </div>
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 }

@@ -48,6 +48,29 @@ function formatSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)}M`;
 }
 
+function getFileIcon(name: string): string {
+  const ext = name.split(".").pop()?.toLowerCase() || "";
+  const icons: Record<string, string> = {
+    ts: "🟦", tsx: "⚛️", js: "🟨", jsx: "⚛️",
+    py: "🐍", rb: "💎", go: "🔷", rs: "🦀",
+    html: "🌐", css: "🎨", scss: "🎨", less: "🎨",
+    json: "📋", yaml: "📋", yml: "📋", toml: "📋",
+    md: "📝", txt: "📄", csv: "📊",
+    sh: "⚙️", bash: "⚙️", zsh: "⚙️",
+    sql: "🗃️", prisma: "🗃️",
+    png: "🖼️", jpg: "🖼️", jpeg: "🖼️", gif: "🖼️", svg: "🖼️", webp: "🖼️",
+    pdf: "📕", doc: "📘", docx: "📘",
+    zip: "📦", tar: "📦", gz: "📦",
+    env: "🔒", lock: "🔒",
+    git: "📌", gitignore: "📌",
+  };
+  if (name === "Dockerfile") return "🐳";
+  if (name === "Makefile") return "⚙️";
+  if (name === "package.json") return "📦";
+  if (name === "tsconfig.json") return "🟦";
+  return icons[ext] || "📄";
+}
+
 function TreeItem({
   node,
   depth,
@@ -73,8 +96,9 @@ function TreeItem({
           style={{ paddingLeft }}
         >
           <span className="text-[10px] text-[#565f89] w-3 text-center shrink-0">
-            {node.expanded ? "\u25BE" : "\u25B8"}
+            {node.expanded ? "▾" : "▸"}
           </span>
+          <span className="shrink-0">{node.expanded ? "📂" : "📁"}</span>
           <span className="text-[11px] text-[#7aa2f7] truncate">{node.name}</span>
         </button>
         {node.expanded && node.children && (
@@ -103,6 +127,7 @@ function TreeItem({
       }`}
       style={{ paddingLeft: paddingLeft + 14 }}
     >
+      <span className="shrink-0">{getFileIcon(node.name)}</span>
       <span className="text-[11px] truncate">{node.name}</span>
       {node.size !== undefined && (
         <span className="text-[9px] text-[#565f89] ml-auto shrink-0">
@@ -120,6 +145,7 @@ export function FileViewer({ rootPath }: FileViewerProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [treeLoading, setTreeLoading] = useState(true);
+  const [treeVisible, setTreeVisible] = useState(true);
 
   // Load root tree on mount
   useEffect(() => {
@@ -210,11 +236,17 @@ export function FileViewer({ rootPath }: FileViewerProps) {
   return (
     <div className="flex h-full bg-[#1a1b26] text-[#c0caf5]">
       {/* File tree - left panel */}
-      <div className="w-60 shrink-0 border-r border-[#292e42] flex flex-col overflow-hidden">
-        <div className="px-3 py-2 border-b border-[#292e42] shrink-0">
+      <div className={`shrink-0 border-r border-[#292e42] flex flex-col overflow-hidden transition-all ${treeVisible ? "w-60" : "w-0 border-r-0"}`}>
+        <div className="px-3 py-2 border-b border-[#292e42] shrink-0 flex items-center justify-between">
           <span className="text-[10px] font-semibold text-[#565f89] uppercase tracking-wider">
             Explorer
           </span>
+          <button
+            onClick={() => setTreeVisible(false)}
+            className="text-[10px] text-[#565f89] hover:text-[#a9b1d6] transition-colors"
+          >
+            ✕
+          </button>
         </div>
         <div className="flex-1 overflow-y-auto overflow-x-hidden py-1">
           {treeLoading ? (
@@ -246,9 +278,20 @@ export function FileViewer({ rootPath }: FileViewerProps) {
           <>
             {/* File header */}
             <div className="px-3 py-1.5 border-b border-[#292e42] flex items-center justify-between shrink-0">
-              <span className="text-[11px] text-[#7aa2f7] font-mono truncate">
-                {selectedFile.path}
-              </span>
+              <div className="flex items-center gap-2 min-w-0">
+                {!treeVisible && (
+                  <button
+                    onClick={() => setTreeVisible(true)}
+                    className="text-[11px] text-[#565f89] hover:text-[#a9b1d6] transition-colors shrink-0"
+                    title="Show file tree"
+                  >
+                    📁
+                  </button>
+                )}
+                <span className="text-[11px] text-[#7aa2f7] font-mono truncate">
+                  {selectedFile.path}
+                </span>
+              </div>
               <div className="flex items-center gap-3 shrink-0 ml-2">
                 <span className="text-[10px] text-[#565f89]">{selectedFile.language}</span>
                 <span className="text-[10px] text-[#565f89]">{formatSize(selectedFile.size)}</span>
@@ -284,7 +327,10 @@ export function FileViewer({ rootPath }: FileViewerProps) {
             <span className="text-[12px] text-red-400">{error}</span>
           </div>
         ) : (
-          <div className="flex-1 flex items-center justify-center">
+          <div className="flex-1 flex flex-col items-center justify-center gap-2">
+            {!treeVisible && (
+              <button onClick={() => setTreeVisible(true)} className="text-2xl">📁</button>
+            )}
             <span className="text-[12px] text-[#3b4261]">Select a file to view</span>
           </div>
         )}
