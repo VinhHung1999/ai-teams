@@ -23,15 +23,26 @@ function getOrCreateSession(
   name: string,
   cwd: string,
   cols: number,
-  rows: number
+  rows: number,
+  cmd?: string,
 ): TerminalSession {
   const existing = sessions.get(name);
   if (existing) return existing;
 
   const pty = require('@homebridge/node-pty-prebuilt-multiarch');
-  const shell = process.env.SHELL || '/bin/bash';
 
-  const ptyProcess = pty.spawn(shell, [], {
+  // If cmd provided, run it directly instead of interactive shell
+  let spawnCmd: string;
+  let spawnArgs: string[];
+  if (cmd) {
+    spawnCmd = '/bin/bash';
+    spawnArgs = ['-c', cmd];
+  } else {
+    spawnCmd = process.env.SHELL || '/bin/bash';
+    spawnArgs = [];
+  }
+
+  const ptyProcess = pty.spawn(spawnCmd, spawnArgs, {
     name: 'xterm-256color',
     cols,
     rows,
@@ -125,9 +136,10 @@ export function registerTerminalWs(server: http.Server) {
     const cols = parseInt(url.searchParams.get('cols') || '80');
     const rows = parseInt(url.searchParams.get('rows') || '24');
     const name = url.searchParams.get('name') || `term-${Date.now()}`;
+    const cmd = url.searchParams.get('cmd') || undefined;
 
     try {
-      const session = getOrCreateSession(name, cwd, cols, rows);
+      const session = getOrCreateSession(name, cwd, cols, rows, cmd);
       session.clients.add(ws);
 
       // Send scrollback buffer immediately

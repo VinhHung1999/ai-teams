@@ -9,7 +9,10 @@ import "@xterm/xterm/css/xterm.css";
 interface WebTerminalProps {
   wsUrl: string;
   sessionName?: string;
+  /** Command sent to terminal input after connection (client-side) */
   initialCommand?: string;
+  /** Command spawned directly by the server as PTY process (no shell init) */
+  serverCommand?: string;
   className?: string;
   onConnected?: () => void;
   onDisconnected?: () => void;
@@ -22,6 +25,7 @@ export function WebTerminal({
   wsUrl,
   sessionName,
   initialCommand,
+  serverCommand,
   className = "",
   onConnected,
   onDisconnected,
@@ -41,10 +45,13 @@ export function WebTerminal({
   onConnectedRef.current = onConnected;
   onDisconnectedRef.current = onDisconnected;
 
-  // Stable wsUrl with session name
-  const fullWsUrl = sessionName
-    ? `${wsUrl}${wsUrl.includes("?") ? "&" : "?"}name=${encodeURIComponent(sessionName)}`
-    : wsUrl;
+  // Stable wsUrl with session name + optional server command
+  let fullWsUrl = wsUrl;
+  const addParam = (key: string, val: string) => {
+    fullWsUrl += (fullWsUrl.includes("?") ? "&" : "?") + `${key}=${encodeURIComponent(val)}`;
+  };
+  if (sessionName) addParam("name", sessionName);
+  if (serverCommand) addParam("cmd", serverCommand);
 
   useEffect(() => {
     if (!containerRef.current) return;

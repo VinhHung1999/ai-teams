@@ -5,6 +5,7 @@ import { useSearchParams, useRouter } from "next/navigation";
 import { AppSidebar } from "@/components/AppSidebar";
 import { ProjectDashboard } from "@/components/ProjectDashboard";
 import { WebTerminal } from "@/components/WebTerminal";
+import { AgentPaneView } from "@/components/AgentPaneView";
 import { Button } from "@/components/ui/button";
 import type { Project } from "@/lib/types";
 import { api } from "@/lib/api";
@@ -23,6 +24,7 @@ function ProjectPageContent() {
 
   // Panels collapse state
   const [agentPanelOpen, setAgentPanelOpen] = useState(true);
+  const [agentPanelWidth, setAgentPanelWidth] = useState(380);
   const [terminalOpen, setTerminalOpen] = useState(true);
   const [activeAgentTab, setActiveAgentTab] = useState<string>(ROLES[0]);
   const [pendingTerminalCommand, setPendingTerminalCommand] = useState<string | undefined>();
@@ -30,6 +32,7 @@ function ProjectPageContent() {
   const [setupFilePath, setSetupFilePath] = useState("");
   const [tmuxSessionActive, setTmuxSessionActive] = useState(false);
   const [tmuxRoles, setTmuxRoles] = useState<string[]>([]);
+  const [teamStarting, setTeamStarting] = useState(false);
   const sessionName = project?.tmux_session_name || undefined;
   const projectCwd = project?.working_directory || undefined;
 
@@ -197,10 +200,30 @@ function ProjectPageContent() {
           </div>
         </div>
 
-        {/* Agent Panel (right) */}
+        {/* Agent Panel (right) - resizable */}
         <div className="hidden lg:flex flex-col">
           {agentPanelOpen ? (
-            <div className="w-[320px] border-l border-border/40 bg-background flex flex-col h-full">
+            <div className="border-l border-border/40 bg-background flex flex-col h-full relative" style={{ width: `${agentPanelWidth}px` }}>
+              {/* Resize handle */}
+              <div
+                className="absolute left-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-primary/30 active:bg-primary/50 z-10"
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  const startX = e.clientX;
+                  const startWidth = agentPanelWidth;
+                  const onMove = (ev: MouseEvent) => {
+                    const delta = startX - ev.clientX;
+                    setAgentPanelWidth(Math.max(250, Math.min(600, startWidth + delta)));
+                  };
+                  const onUp = () => {
+                    document.removeEventListener("mousemove", onMove);
+                    document.removeEventListener("mouseup", onUp);
+                  };
+                  document.addEventListener("mousemove", onMove);
+                  document.addEventListener("mouseup", onUp);
+                }}
+              />
+
               {/* Header */}
               <div className="px-3 py-1.5 border-b border-border/40 flex items-center justify-between shrink-0">
                 <span className="text-[11px] font-semibold text-muted-foreground/50">
@@ -215,56 +238,85 @@ function ProjectPageContent() {
               </div>
 
               {selectedProjectId && sessionName && tmuxSessionActive ? (
-                /* ── Team running: show tabs + terminals ── */
+                /* ── Team running: show tabs + pane view ── */
                 <>
-                  <div className="flex flex-wrap gap-0 border-b border-border/40 shrink-0">
-                    {(tmuxRoles.length > 0 ? tmuxRoles : ROLES).map((role) => (
-                      <button
-                        key={role}
-                        onClick={() => setActiveAgentTab(role)}
-                        className={`px-3 py-1.5 text-[11px] font-mono transition-colors ${
-                          activeAgentTab === role
-                            ? "text-foreground/90 bg-[#1a1b26] border-b-2 border-primary"
-                            : "text-muted-foreground/40 hover:text-muted-foreground/70 hover:bg-muted/10"
-                        }`}
-                      >
-                        {role}
-                      </button>
-                    ))}
+                  {/* Horizontal scrollable tabs */}
+                  <div className="border-b border-border/40 bg-muted/20 overflow-x-auto shrink-0">
+                    <div className="flex gap-0.5 px-1 h-10 items-center w-max">
+                      {(tmuxRoles.length > 0 ? tmuxRoles : ROLES).map((role) => (
+                        <button
+                          key={role}
+                          onClick={() => setActiveAgentTab(role)}
+                          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[11px] font-mono transition-all whitespace-nowrap ${
+                            activeAgentTab === role
+                              ? "bg-background text-foreground shadow-sm font-semibold"
+                              : "text-muted-foreground/50 hover:text-foreground/70 hover:bg-muted/30"
+                          }`}
+                        >
+                          <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${
+                            activeAgentTab === role ? "bg-green-500 shadow-[0_0_6px_rgba(34,197,94,0.6)]" : "bg-gray-500"
+                          }`} />
+                          {role}
+                        </button>
+                      ))}
+                    </div>
                   </div>
 
-                  <div className="flex-1 min-h-0 bg-[#1a1b26]">
-                    <WebTerminal
+                  {/* Pane view */}
+                  <div className="flex-1 min-h-0 relative">
+                    <AgentPaneView
                       key={`agent-${selectedProjectId}-${activeAgentTab}`}
-                      wsUrl={getAgentWsUrl(projectCwd)}
-                      sessionName={`agent-${selectedProjectId}-${activeAgentTab}`}
-                      initialCommand={`tmux select-pane -t ${sessionName}:0.$(tmux list-panes -t ${sessionName} -F '#{pane_index} #{@role_name}' | grep ' ${activeAgentTab}$' | cut -d' ' -f1) 2>/dev/null && tmux attach-session -t ${sessionName} 2>/dev/null || echo "Session '${sessionName}' not running"`}
+                      sessionName={sessionName!}
+                      role={activeAgentTab}
+                      isVisible={true}
                     />
-                  </div>
-
-                  <div className="px-2 py-1.5 border-t border-border/40 bg-background shrink-0">
-                    <AgentInput sessionName={sessionName} role={activeAgentTab} />
                   </div>
                 </>
               ) : selectedProjectId && hasSetupFile && !tmuxSessionActive ? (
                 /* ── Setup file exists but tmux not running: Start Team ── */
                 <div className="flex-1 flex items-center justify-center">
                   <div className="text-center">
-                    <p className="text-xs text-muted-foreground/40">Team ready to start</p>
-                    <p className="text-[10px] text-muted-foreground/25 mt-1 mb-3">
-                      {setupFilePath.split("/").pop()}
-                    </p>
-                    <Button
-                      size="sm"
-                      onClick={() => {
-                        setTerminalOpen(true);
-                        setPendingTerminalCommand(`bash "${setupFilePath}"`);
-                        setTimeout(checkTeamStatus, 20000);
-                      }}
-                      className="text-xs font-mono"
-                    >
-                      Start Team
-                    </Button>
+                    {teamStarting ? (
+                      <>
+                        <div className="w-6 h-6 border-2 border-primary/30 border-t-primary rounded-full animate-spin mx-auto mb-3" />
+                        <p className="text-xs text-muted-foreground/50">Starting team...</p>
+                        <p className="text-[10px] text-muted-foreground/25 mt-1">Check terminal for progress</p>
+                      </>
+                    ) : (
+                      <>
+                        <p className="text-xs text-muted-foreground/40">Team ready to start</p>
+                        <p className="text-[10px] text-muted-foreground/25 mt-1 mb-3">
+                          {setupFilePath.split("/").pop()}
+                        </p>
+                        <Button
+                          size="sm"
+                          onClick={() => {
+                            setTeamStarting(true);
+                            setTerminalOpen(true);
+                            setPendingTerminalCommand(`bash "${setupFilePath}"`);
+                            // Poll until team is up
+                            const cwdParam = projectCwd ? `&working_dir=${encodeURIComponent(projectCwd)}` : "";
+                            const poll = setInterval(async () => {
+                              try {
+                                const res = await fetch(`/api/tmux/session/${encodeURIComponent(sessionName!)}?${cwdParam}`);
+                                if (res.ok) {
+                                  const data = await res.json();
+                                  if (data.tmux_active) {
+                                    clearInterval(poll);
+                                    setTeamStarting(false);
+                                    checkTeamStatus();
+                                  }
+                                }
+                              } catch {}
+                            }, 5000);
+                            setTimeout(() => { clearInterval(poll); setTeamStarting(false); }, 120000);
+                          }}
+                          className="text-xs font-mono"
+                        >
+                          Start Team
+                        </Button>
+                      </>
+                    )}
                   </div>
                 </div>
               ) : selectedProjectId ? (
