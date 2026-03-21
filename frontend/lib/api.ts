@@ -47,6 +47,8 @@ export const api = {
     fetchAPI<import("./types").Sprint>(`/api/sprints/${sprintId}/start`, { method: "PUT" }),
   completeSprint: (sprintId: number) =>
     fetchAPI<import("./types").Sprint>(`/api/sprints/${sprintId}/complete`, { method: "PUT" }),
+  deleteSprint: (sprintId: number) =>
+    fetchAPI<{ ok: boolean }>(`/api/sprints/${sprintId}`, { method: "DELETE" }),
   addItemToSprint: (sprintId: number, data: { backlog_item_id: number; assignee_role?: string }) =>
     fetchAPI<import("./types").SprintItem>(`/api/sprints/${sprintId}/items`, { method: "POST", body: JSON.stringify(data) }),
   removeItemFromSprint: (sprintId: number, itemId: number) =>

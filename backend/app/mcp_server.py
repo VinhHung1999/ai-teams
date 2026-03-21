@@ -9,6 +9,10 @@ Agents connect via MCP and use tools like:
 - create_backlog_item: Create a new backlog item
 - add_item_to_sprint: Add a backlog item to a sprint
 - list_backlog: List backlog items for a project
+- create_sprint: Create a new sprint
+- start_sprint: Start a sprint (planning → active)
+- complete_sprint: Complete a sprint (active → completed)
+- update_backlog_item: Update a backlog item's fields
 """
 
 import asyncio
@@ -18,6 +22,7 @@ from mcp.types import Tool, TextContent
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 
+from app.models.project import Project
 from app.models.sprint import Sprint
 from app.models.sprint_item import SprintItem
 from app.models.backlog_item import BacklogItem
@@ -37,18 +42,29 @@ async def get_session() -> AsyncSession:
         return session
 
 
+SESSION_NAME_PROP = {"type": "string", "description": "Tmux session name (= project identifier)"}
+
+
+async def _resolve_project_id(db: AsyncSession, session_name: str) -> int | None:
+    """Resolve tmux session name to project ID."""
+    result = await db.execute(
+        select(Project.id).where(Project.tmux_session_name == session_name)
+    )
+    return result.scalar_one_or_none()
+
+
 @server.list_tools()
 async def list_tools() -> list[Tool]:
     return [
         Tool(
             name="get_board",
-            description="Get the kanban board for the active sprint of a project. Shows all columns (todo, in_progress, in_review, testing, done) with their tasks.",
+            description="Get the kanban board for the active sprint. Shows all columns (todo, in_progress, in_review, testing, done) with their tasks.",
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "project_id": {"type": "integer", "description": "Project ID"},
+                    "session_name": SESSION_NAME_PROP,
                 },
-                "required": ["project_id"],
+                "required": ["session_name"],
             },
         ),
         Tool(
@@ -57,10 +73,10 @@ async def list_tools() -> list[Tool]:
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "project_id": {"type": "integer", "description": "Project ID"},
+                    "session_name": SESSION_NAME_PROP,
                     "role": {"type": "string", "description": "Role name (BE, FE, QA, TL, PO, etc.)"},
                 },
-                "required": ["project_id", "role"],
+                "required": ["session_name", "role"],
             },
         ),
         Tool(
@@ -93,17 +109,17 @@ async def list_tools() -> list[Tool]:
         ),
         Tool(
             name="create_backlog_item",
-            description="Create a new backlog item for a project.",
+            description="Create a new backlog item.",
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "project_id": {"type": "integer", "description": "Project ID"},
+                    "session_name": SESSION_NAME_PROP,
                     "title": {"type": "string", "description": "Title of the backlog item"},
                     "description": {"type": "string", "description": "Detailed description"},
                     "priority": {"type": "string", "enum": ["P0", "P1", "P2", "P3"], "description": "Priority (default P2)"},
                     "story_points": {"type": "integer", "description": "Story points estimate"},
                 },
-                "required": ["project_id", "title"],
+                "required": ["session_name", "title"],
             },
         ),
         Tool(
@@ -112,34 +128,117 @@ async def list_tools() -> list[Tool]:
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "project_id": {"type": "integer", "description": "Project ID (used to find active sprint if sprint_id not given)"},
+                    "session_name": SESSION_NAME_PROP,
                     "backlog_item_id": {"type": "integer", "description": "Backlog item ID to add"},
                     "assignee_role": {"type": "string", "description": "Role to assign (BE, FE, QA, TL, PO, etc.)"},
                     "sprint_id": {"type": "integer", "description": "Sprint ID (optional, defaults to active sprint)"},
                 },
-                "required": ["project_id", "backlog_item_id"],
+                "required": ["session_name", "backlog_item_id"],
             },
         ),
         Tool(
             name="list_backlog",
-            description="List all backlog items for a project. Shows title, priority, story points, and status.",
+            description="List all backlog items. Shows title, priority, story points, and status.",
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "project_id": {"type": "integer", "description": "Project ID"},
+                    "session_name": SESSION_NAME_PROP,
                 },
-                "required": ["project_id"],
+                "required": ["session_name"],
             },
         ),
         Tool(
             name="list_sprints",
-            description="List sprints for a project.",
+            description="List sprints for the project.",
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "project_id": {"type": "integer", "description": "Project ID"},
+                    "session_name": SESSION_NAME_PROP,
                 },
-                "required": ["project_id"],
+                "required": ["session_name"],
+            },
+        ),
+        Tool(
+            name="create_sprint",
+            description="Create a new sprint (starts in 'planning' status).",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "session_name": SESSION_NAME_PROP,
+                    "goal": {"type": "string", "description": "Sprint goal"},
+                },
+                "required": ["session_name"],
+            },
+        ),
+        Tool(
+            name="start_sprint",
+            description="Start a sprint (planning → active). Only one active sprint per project.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "sprint_id": {"type": "integer", "description": "Sprint ID to start"},
+                },
+                "required": ["sprint_id"],
+            },
+        ),
+        Tool(
+            name="complete_sprint",
+            description="Complete a sprint (active → completed). Incomplete items return to backlog.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "sprint_id": {"type": "integer", "description": "Sprint ID to complete"},
+                },
+                "required": ["sprint_id"],
+            },
+        ),
+        Tool(
+            name="update_backlog_item",
+            description="Update a backlog item's fields (title, description, priority, story_points).",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "item_id": {"type": "integer", "description": "Backlog item ID"},
+                    "title": {"type": "string", "description": "New title"},
+                    "description": {"type": "string", "description": "New description"},
+                    "priority": {"type": "string", "enum": ["P0", "P1", "P2", "P3"], "description": "New priority"},
+                    "story_points": {"type": "integer", "description": "New story points"},
+                },
+                "required": ["item_id"],
+            },
+        ),
+        Tool(
+            name="delete_backlog_item",
+            description="Delete a backlog item.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "item_id": {"type": "integer", "description": "Backlog item ID"},
+                },
+                "required": ["item_id"],
+            },
+        ),
+        Tool(
+            name="delete_sprint",
+            description="Delete a sprint (cannot delete active sprints). Items return to backlog.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "sprint_id": {"type": "integer", "description": "Sprint ID to delete"},
+                },
+                "required": ["sprint_id"],
+            },
+        ),
+        Tool(
+            name="remove_item_from_sprint",
+            description="Remove an item from a sprint, returning it to backlog.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "sprint_id": {"type": "integer", "description": "Sprint ID"},
+                    "item_id": {"type": "integer", "description": "Sprint item ID"},
+                },
+                "required": ["sprint_id", "item_id"],
             },
         ),
     ]
@@ -148,29 +247,54 @@ async def list_tools() -> list[Tool]:
 @server.call_tool()
 async def call_tool(name: str, arguments: dict) -> list[TextContent]:
     async with async_session_maker() as db:
+        # Resolve session_name → project_id for tools that need it
+        project_id = None
+        if "session_name" in arguments:
+            project_id = await _resolve_project_id(db, arguments["session_name"])
+            if project_id is None:
+                return [TextContent(type="text", text=f"Project not found for session '{arguments['session_name']}'. Create it first via the web UI.")]
+
         if name == "list_backlog":
-            return await _list_backlog(db, arguments["project_id"])
+            return await _list_backlog(db, project_id)
         elif name == "list_sprints":
-            return await _list_sprints(db, arguments["project_id"])
+            return await _list_sprints(db, project_id)
         elif name == "get_board":
-            return await _get_board(db, arguments["project_id"])
+            return await _get_board(db, project_id)
         elif name == "get_my_tasks":
-            return await _get_my_tasks(db, arguments["project_id"], arguments["role"])
+            return await _get_my_tasks(db, project_id, arguments["role"])
         elif name == "update_task_status":
             return await _update_task_status(db, arguments["task_id"], arguments["new_status"])
         elif name == "add_task_note":
             return await _add_task_note(db, arguments["task_id"], arguments["note"])
         elif name == "create_backlog_item":
             return await _create_backlog_item(
-                db, arguments["project_id"], arguments["title"],
+                db, project_id, arguments["title"],
                 arguments.get("description"), arguments.get("priority", "P2"),
                 arguments.get("story_points"),
             )
         elif name == "add_item_to_sprint":
             return await _add_item_to_sprint(
-                db, arguments["project_id"], arguments["backlog_item_id"],
+                db, project_id, arguments["backlog_item_id"],
                 arguments.get("assignee_role"), arguments.get("sprint_id"),
             )
+        elif name == "create_sprint":
+            return await _create_sprint(db, project_id, arguments.get("goal"))
+        elif name == "start_sprint":
+            return await _start_sprint(db, arguments["sprint_id"])
+        elif name == "complete_sprint":
+            return await _complete_sprint(db, arguments["sprint_id"])
+        elif name == "update_backlog_item":
+            return await _update_backlog_item(
+                db, arguments["item_id"], arguments.get("title"),
+                arguments.get("description"), arguments.get("priority"),
+                arguments.get("story_points"),
+            )
+        elif name == "delete_backlog_item":
+            return await _delete_backlog_item(db, arguments["item_id"])
+        elif name == "delete_sprint":
+            return await _delete_sprint(db, arguments["sprint_id"])
+        elif name == "remove_item_from_sprint":
+            return await _remove_item_from_sprint(db, arguments["sprint_id"], arguments["item_id"])
         else:
             return [TextContent(type="text", text=f"Unknown tool: {name}")]
 
@@ -246,6 +370,153 @@ async def _list_backlog(db: AsyncSession, project_id: int) -> list[TextContent]:
         if i.description:
             lines.append(f"  {i.description}")
     return [TextContent(type="text", text="\n".join(lines))]
+
+
+async def _create_sprint(db: AsyncSession, project_id: int, goal: str | None) -> list[TextContent]:
+    from sqlalchemy import func as sa_func
+    result = await db.execute(
+        select(sa_func.max(Sprint.number)).where(Sprint.project_id == project_id)
+    )
+    max_num = result.scalar() or 0
+    sprint = Sprint(project_id=project_id, number=max_num + 1, goal=goal)
+    db.add(sprint)
+    await db.commit()
+    await db.refresh(sprint)
+    return [TextContent(type="text", text=f"Created Sprint {sprint.number} [{sprint.id}] (planning) - Goal: {goal or 'No goal'}")]
+
+
+async def _start_sprint(db: AsyncSession, sprint_id: int) -> list[TextContent]:
+    from datetime import datetime, UTC
+    result = await db.execute(select(Sprint).where(Sprint.id == sprint_id))
+    sprint = result.scalar_one_or_none()
+    if not sprint:
+        return [TextContent(type="text", text=f"Sprint {sprint_id} not found.")]
+    if sprint.status != "planning":
+        return [TextContent(type="text", text=f"Sprint must be in 'planning' status (currently: {sprint.status}).")]
+    # Check no other active sprint in same project
+    active_result = await db.execute(
+        select(Sprint).where(Sprint.project_id == sprint.project_id, Sprint.status == "active")
+    )
+    active = active_result.scalar_one_or_none()
+    if active:
+        return [TextContent(type="text", text=f"Sprint {active.number} is already active. Complete it first.")]
+    sprint.status = "active"
+    sprint.started_at = datetime.now(UTC)
+    await db.commit()
+    return [TextContent(type="text", text=f"Sprint {sprint.number} is now active!")]
+
+
+async def _complete_sprint(db: AsyncSession, sprint_id: int) -> list[TextContent]:
+    from datetime import datetime, UTC
+    result = await db.execute(select(Sprint).where(Sprint.id == sprint_id))
+    sprint = result.scalar_one_or_none()
+    if not sprint:
+        return [TextContent(type="text", text=f"Sprint {sprint_id} not found.")]
+    if sprint.status != "active":
+        return [TextContent(type="text", text=f"Sprint must be 'active' (currently: {sprint.status}).")]
+    sprint.status = "completed"
+    sprint.completed_at = datetime.now(UTC)
+    # Move incomplete items back to backlog
+    items_result = await db.execute(
+        select(SprintItem).where(SprintItem.sprint_id == sprint_id, SprintItem.board_status != "done")
+    )
+    incomplete = 0
+    for si in items_result.scalars().all():
+        bi_result = await db.execute(select(BacklogItem).where(BacklogItem.id == si.backlog_item_id))
+        bi = bi_result.scalar_one_or_none()
+        if bi:
+            bi.status = "ready"
+            incomplete += 1
+    # Mark done items
+    done_result = await db.execute(
+        select(SprintItem).where(SprintItem.sprint_id == sprint_id, SprintItem.board_status == "done")
+    )
+    done_count = 0
+    for si in done_result.scalars().all():
+        bi_result = await db.execute(select(BacklogItem).where(BacklogItem.id == si.backlog_item_id))
+        bi = bi_result.scalar_one_or_none()
+        if bi:
+            bi.status = "done"
+            done_count += 1
+    await db.commit()
+    return [TextContent(type="text", text=f"Sprint {sprint.number} completed! Done: {done_count}, Returned to backlog: {incomplete}")]
+
+
+async def _update_backlog_item(
+    db: AsyncSession, item_id: int, title: str | None,
+    description: str | None, priority: str | None, story_points: int | None,
+) -> list[TextContent]:
+    result = await db.execute(select(BacklogItem).where(BacklogItem.id == item_id))
+    item = result.scalar_one_or_none()
+    if not item:
+        return [TextContent(type="text", text=f"Backlog item {item_id} not found.")]
+    updates = []
+    if title is not None:
+        item.title = title
+        updates.append(f"title='{title}'")
+    if description is not None:
+        item.description = description
+        updates.append("description updated")
+    if priority is not None:
+        item.priority = priority
+        updates.append(f"priority={priority}")
+    if story_points is not None:
+        item.story_points = story_points
+        updates.append(f"points={story_points}")
+    if not updates:
+        return [TextContent(type="text", text="No fields to update.")]
+    await db.commit()
+    return [TextContent(type="text", text=f"Updated backlog item [{item_id}]: {', '.join(updates)}")]
+
+
+async def _delete_backlog_item(db: AsyncSession, item_id: int) -> list[TextContent]:
+    result = await db.execute(select(BacklogItem).where(BacklogItem.id == item_id))
+    item = result.scalar_one_or_none()
+    if not item:
+        return [TextContent(type="text", text=f"Backlog item {item_id} not found.")]
+    title = item.title
+    await db.delete(item)
+    await db.commit()
+    return [TextContent(type="text", text=f"Deleted backlog item [{item_id}] '{title}'")]
+
+
+async def _delete_sprint(db: AsyncSession, sprint_id: int) -> list[TextContent]:
+    result = await db.execute(select(Sprint).where(Sprint.id == sprint_id))
+    sprint = result.scalar_one_or_none()
+    if not sprint:
+        return [TextContent(type="text", text=f"Sprint {sprint_id} not found.")]
+    if sprint.status == "active":
+        return [TextContent(type="text", text="Cannot delete an active sprint. Complete it first.")]
+    # Return items to backlog
+    items_result = await db.execute(select(SprintItem).where(SprintItem.sprint_id == sprint_id))
+    count = 0
+    for si in items_result.scalars().all():
+        bi_result = await db.execute(select(BacklogItem).where(BacklogItem.id == si.backlog_item_id))
+        bi = bi_result.scalar_one_or_none()
+        if bi:
+            bi.status = "ready"
+        await db.delete(si)
+        count += 1
+    await db.delete(sprint)
+    await db.commit()
+    return [TextContent(type="text", text=f"Deleted Sprint {sprint.number}. {count} item(s) returned to backlog.")]
+
+
+async def _remove_item_from_sprint(db: AsyncSession, sprint_id: int, item_id: int) -> list[TextContent]:
+    result = await db.execute(
+        select(SprintItem).where(SprintItem.id == item_id, SprintItem.sprint_id == sprint_id)
+    )
+    si = result.scalar_one_or_none()
+    if not si:
+        return [TextContent(type="text", text=f"Sprint item {item_id} not found in sprint {sprint_id}.")]
+    bi_result = await db.execute(select(BacklogItem).where(BacklogItem.id == si.backlog_item_id))
+    bi = bi_result.scalar_one_or_none()
+    title = bi.title if bi else "Unknown"
+    if bi:
+        bi.status = "ready"
+    await db.delete(si)
+    await db.commit()
+    return [TextContent(type="text", text=f"Removed '{title}' from sprint. Returned to backlog.")]
 
 
 async def _list_sprints(db: AsyncSession, project_id: int) -> list[TextContent]:

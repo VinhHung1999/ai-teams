@@ -30,9 +30,10 @@ export function KanbanBoard({ board, sprintId, onRefresh }: KanbanBoardProps) {
   const [columns, setColumns] = useState<Board>(board);
   const [activeItem, setActiveItem] = useState<BoardItem | null>(null);
   const [detailItem, setDetailItem] = useState<BoardItem | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
 
-  // Sync board prop changes
-  if (board !== columns && !activeItem) {
+  // Sync board prop changes — but not while dragging
+  if (board !== columns && !activeItem && !isDragging) {
     setColumns(board);
   }
 
@@ -55,6 +56,7 @@ export function KanbanBoard({ board, sprintId, onRefresh }: KanbanBoardProps) {
 
   const handleDragStart = (event: DragStartEvent) => {
     const { active } = event;
+    setIsDragging(true);
     const col = findColumn(active.id);
     if (!col) return;
     const item = columns[col].find((i) => i.id === active.id);
@@ -94,12 +96,12 @@ export function KanbanBoard({ board, sprintId, onRefresh }: KanbanBoardProps) {
     const { active, over } = event;
     setActiveItem(null);
 
-    if (!over) return;
+    if (!over) { setIsDragging(false); return; }
 
     const activeCol = findColumn(active.id);
     const overCol = findColumn(over.id);
 
-    if (!activeCol || !overCol) return;
+    if (!activeCol || !overCol) { setIsDragging(false); return; }
 
     if (activeCol === overCol) {
       const items = columns[activeCol];
@@ -113,7 +115,7 @@ export function KanbanBoard({ board, sprintId, onRefresh }: KanbanBoardProps) {
       }
     }
 
-    // Persist to API
+    // Persist to API then refresh
     try {
       const col = findColumn(active.id);
       if (col) {
@@ -123,9 +125,12 @@ export function KanbanBoard({ board, sprintId, onRefresh }: KanbanBoardProps) {
           order: itemIndex >= 0 ? itemIndex : 0,
         });
       }
+      onRefresh();
     } catch (e) {
       console.error("Failed to move item:", e);
       onRefresh();
+    } finally {
+      setIsDragging(false);
     }
   };
 
@@ -138,7 +143,7 @@ export function KanbanBoard({ board, sprintId, onRefresh }: KanbanBoardProps) {
         onDragOver={handleDragOver}
         onDragEnd={handleDragEnd}
       >
-        <div className="flex gap-3 overflow-x-auto pb-4 px-1">
+        <div className="flex flex-col lg:flex-row gap-3 overflow-x-auto pb-4 px-1">
           {BOARD_COLUMNS.map((col) => (
             <BoardColumn
               key={col.key}

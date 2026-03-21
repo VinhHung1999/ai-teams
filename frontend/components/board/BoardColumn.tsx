@@ -6,12 +6,12 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { TaskCard } from "./TaskCard";
 import type { BoardItem, BoardColumn as BoardColumnType } from "@/lib/types";
 
-const columnStyle: Record<BoardColumnType, { accent: string; glow: string; icon: string }> = {
-  todo: { accent: "text-slate-400", glow: "shadow-slate-500/10", icon: "///" },
-  in_progress: { accent: "text-blue-400", glow: "shadow-blue-500/10", icon: ">>>" },
-  in_review: { accent: "text-purple-400", glow: "shadow-purple-500/10", icon: "***" },
-  testing: { accent: "text-yellow-400", glow: "shadow-yellow-500/10", icon: "~~~" },
-  done: { accent: "text-emerald-400", glow: "shadow-emerald-500/10", icon: "+++" },
+const columnStyle: Record<BoardColumnType, { color: string; dotColor: string }> = {
+  todo: { color: "text-slate-400", dotColor: "bg-slate-400" },
+  in_progress: { color: "text-blue-400", dotColor: "bg-blue-400" },
+  in_review: { color: "text-violet-400", dotColor: "bg-violet-400" },
+  testing: { color: "text-amber-400", dotColor: "bg-amber-400" },
+  done: { color: "text-emerald-400", dotColor: "bg-emerald-400" },
 };
 
 interface BoardColumnProps {
@@ -30,30 +30,28 @@ export function BoardColumn({ id, label, items, onTaskClick }: BoardColumnProps)
     <div
       ref={setNodeRef}
       className={`
-        flex flex-col min-w-[280px] w-[280px] rounded-xl
-        bg-muted/30 border border-border/40
+        flex flex-col w-full lg:min-w-[272px] lg:w-[272px] rounded-xl
+        bg-muted/25 border border-border/40
         transition-all duration-200
-        ${isOver ? "column-drag-over border-primary/30" : ""}
+        ${isOver ? "column-drag-over border-primary/40" : ""}
       `}
     >
       {/* Column header */}
-      <div className="px-4 py-3 border-b border-border/30">
+      <div className="px-3.5 py-3 border-b border-border/30">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <span className={`font-mono text-[10px] ${style.accent} opacity-60`}>
-              {style.icon}
-            </span>
-            <h3 className={`text-xs font-semibold uppercase tracking-wider ${style.accent}`}>
+            <span className={`w-2 h-2 rounded-full ${style.dotColor}`} />
+            <h3 className={`text-[11px] font-semibold uppercase tracking-wider ${style.color}`}>
               {label}
             </h3>
           </div>
           <div className="flex items-center gap-2">
             {totalPoints > 0 && (
-              <span className="text-[10px] font-mono text-muted-foreground/50">
+              <span className="text-[10px] font-mono text-muted-foreground/40">
                 {totalPoints}sp
               </span>
             )}
-            <span className="text-[10px] font-mono text-muted-foreground/60 bg-muted/50 rounded-full px-2 py-0.5">
+            <span className="text-[10px] font-mono text-muted-foreground/50 bg-muted/60 rounded-full w-5 h-5 flex items-center justify-center">
               {items.length}
             </span>
           </div>
@@ -61,16 +59,16 @@ export function BoardColumn({ id, label, items, onTaskClick }: BoardColumnProps)
       </div>
 
       {/* Cards */}
-      <ScrollArea className="flex-1 max-h-[calc(100vh-220px)]">
+      <ScrollArea className="flex-1 max-h-[calc(100vh-240px)]">
         <SortableContext
           items={items.map((i) => i.id)}
           strategy={verticalListSortingStrategy}
         >
-          <div className="p-2 space-y-2 min-h-[60px]">
+          <div className="p-2 space-y-1.5 min-h-[60px]">
             {items.length === 0 && (
               <div className="flex items-center justify-center h-[60px] rounded-lg border border-dashed border-border/30">
-                <span className="text-[11px] text-muted-foreground/40 font-mono">
-                  drop here
+                <span className="text-[11px] text-muted-foreground/30">
+                  Drop here
                 </span>
               </div>
             )}

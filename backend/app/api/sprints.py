@@ -84,6 +84,11 @@ async def start_sprint(sprint_id: int, db: AsyncSession = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Sprint not found")
     if sprint.status != "planning":
         raise HTTPException(status_code=400, detail="Sprint must be in planning status")
+    active_result = await db.execute(
+        select(Sprint).where(Sprint.project_id == sprint.project_id, Sprint.status == "active")
+    )
+    if active_result.scalar_one_or_none():
+        raise HTTPException(status_code=400, detail="Another sprint is already active. Complete it first.")
     sprint.status = "active"
     sprint.started_at = datetime.now(UTC)
     await db.commit()
@@ -162,6 +167,27 @@ async def add_item_to_sprint(sprint_id: int, data: AddItemRequest, db: AsyncSess
         id=si.id, sprint_id=si.sprint_id, backlog_item_id=si.backlog_item_id,
         assignee_role=si.assignee_role, board_status=si.board_status, order=si.order,
     )
+
+
+@router.delete("/api/sprints/{sprint_id}")
+async def delete_sprint(sprint_id: int, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(Sprint).where(Sprint.id == sprint_id))
+    sprint = result.scalar_one_or_none()
+    if not sprint:
+        raise HTTPException(status_code=404, detail="Sprint not found")
+    if sprint.status == "active":
+        raise HTTPException(status_code=400, detail="Cannot delete an active sprint. Complete it first.")
+    # Return sprint items to backlog
+    items_result = await db.execute(select(SprintItem).where(SprintItem.sprint_id == sprint_id))
+    for si in items_result.scalars().all():
+        bi_result = await db.execute(select(BacklogItem).where(BacklogItem.id == si.backlog_item_id))
+        bi = bi_result.scalar_one_or_none()
+        if bi:
+            bi.status = "ready"
+        await db.delete(si)
+    await db.delete(sprint)
+    await db.commit()
+    return {"ok": True}
 
 
 @router.delete("/api/sprints/{sprint_id}/items/{item_id}")

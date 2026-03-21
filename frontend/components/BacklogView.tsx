@@ -46,7 +46,7 @@ export function BacklogView({ projectId, items, sprints, onRefresh }: BacklogVie
   const [addingItem, setAddingItem] = useState<BacklogItem | null>(null);
   const [assignRole, setAssignRole] = useState("");
 
-  const targetSprint = sprints.find((s) => s.status === "planning" || s.status === "active");
+  const targetSprint = sprints.find((s) => s.status === "active") || sprints.find((s) => s.status === "planning");
 
   const handleCreate = async () => {
     if (!title.trim()) return;
@@ -69,6 +69,7 @@ export function BacklogView({ projectId, items, sprints, onRefresh }: BacklogVie
   };
 
   const handleDelete = async (itemId: number) => {
+    if (!confirm("Delete this backlog item?")) return;
     try {
       await api.deleteBacklogItem(itemId);
       onRefresh();
