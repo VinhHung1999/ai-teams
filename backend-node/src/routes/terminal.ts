@@ -1,29 +1,22 @@
 import os from 'os';
+import http from 'http';
+import { WebSocketServer, WebSocket } from 'ws';
+import { URL } from 'url';
 
-/**
- * Terminal session manager with persistent named sessions.
- *
- * Key concepts:
- * - Sessions persist even when all clients disconnect
- * - Reconnecting clients get the scrollback buffer instantly
- * - Multiple clients can view the same session
- * - Sessions are identified by name (e.g. "boss-42", "agent-PO")
- */
-
-const MAX_SCROLLBACK = 50_000; // chars to keep in buffer
+const MAX_SCROLLBACK = 50_000;
 
 interface TerminalSession {
   pty: any;
   name: string;
   cwd: string;
   outputBuffer: string;
-  clients: Set<any>; // WebSocket clients viewing this session
+  clients: Set<WebSocket>;
   cols: number;
   rows: number;
   createdAt: number;
+  watermark: number;
 }
 
-// Global map of all terminal sessions
 const sessions = new Map<string, TerminalSession>();
 
 function getOrCreateSession(
@@ -32,14 +25,10 @@ function getOrCreateSession(
   cols: number,
   rows: number
 ): TerminalSession {
-  // Return existing session if it exists and PTY is alive
   const existing = sessions.get(name);
-  if (existing) {
-    return existing;
-  }
+  if (existing) return existing;
 
-  // Create new PTY
-  const pty = require('node-pty');
+  const pty = require('@homebridge/node-pty-prebuilt-multiarch');
   const shell = process.env.SHELL || '/bin/bash';
 
   const ptyProcess = pty.spawn(shell, [], {
@@ -59,31 +48,29 @@ function getOrCreateSession(
     cols,
     rows,
     createdAt: Date.now(),
+    watermark: 0,
   };
 
-  // Collect output into buffer + broadcast to all connected clients
   ptyProcess.onData((data: string) => {
-    // Append to scrollback buffer
     session.outputBuffer += data;
     if (session.outputBuffer.length > MAX_SCROLLBACK) {
       session.outputBuffer = session.outputBuffer.slice(-MAX_SCROLLBACK);
     }
-
-    // Broadcast to all connected clients
+    session.watermark += data.length;
     for (const client of session.clients) {
       try {
-        if (client.readyState === 1) {
+        if (client.readyState === WebSocket.OPEN) {
           client.send(data);
         }
-      } catch {
-        // Client gone, will be cleaned up on close
-      }
+      } catch {}
+    }
+    // Flow control: pause PTY if too much unacknowledged data
+    if (session.watermark > 100000) {
+      ptyProcess.pause();
     }
   });
 
-  // When PTY exits, clean up session
   ptyProcess.onExit(() => {
-    // Notify all clients
     for (const client of session.clients) {
       try {
         client.send('\r\n\x1b[90m[session ended]\x1b[0m\r\n');
@@ -96,22 +83,14 @@ function getOrCreateSession(
   return session;
 }
 
-/**
- * Kill a named session explicitly.
- */
 export function killSession(name: string): boolean {
   const session = sessions.get(name);
   if (!session) return false;
-  try {
-    session.pty.kill();
-  } catch {}
+  try { session.pty.kill(); } catch {}
   sessions.delete(name);
   return true;
 }
 
-/**
- * List all active sessions.
- */
 export function listSessions(): { name: string; clients: number; uptime: number }[] {
   return Array.from(sessions.entries()).map(([name, s]) => ({
     name,
@@ -121,35 +100,43 @@ export function listSessions(): { name: string; clients: number; uptime: number 
 }
 
 /**
- * Register WebSocket terminal endpoint.
- *
- * Query params:
- *   - name: session name (default: auto-generated)
- *   - cwd: working directory
- *   - cols: terminal columns (default: 80)
- *   - rows: terminal rows (default: 24)
+ * Register WebSocket terminal on HTTP server upgrade event.
+ * This is more reliable than express-ws for WebSocket connections through proxies/tunnels.
  */
-export function registerTerminalWs(app: any) {
-  app.ws('/ws/terminal', (ws: any, req: any) => {
-    const cwd = (req.query.cwd as string) || os.homedir();
-    const cols = parseInt(req.query.cols as string) || 80;
-    const rows = parseInt(req.query.rows as string) || 24;
-    // Session name: use query param or generate from cwd
-    const name = (req.query.name as string) || `term-${Date.now()}`;
+export function registerTerminalWs(server: http.Server) {
+  const wss = new WebSocketServer({ noServer: true });
+
+  // Handle upgrade manually
+  server.on('upgrade', (req, socket, head) => {
+    const url = new URL(req.url || '/', `http://${req.headers.host}`);
+
+    if (url.pathname === '/ws/terminal') {
+      wss.handleUpgrade(req, socket, head, (ws) => {
+        wss.emit('connection', ws, req);
+      });
+    } else {
+      socket.destroy();
+    }
+  });
+
+  wss.on('connection', (ws: WebSocket, req: http.IncomingMessage) => {
+    const url = new URL(req.url || '/', `http://${req.headers.host}`);
+    const cwd = url.searchParams.get('cwd') || os.homedir();
+    const cols = parseInt(url.searchParams.get('cols') || '80');
+    const rows = parseInt(url.searchParams.get('rows') || '24');
+    const name = url.searchParams.get('name') || `term-${Date.now()}`;
 
     try {
       const session = getOrCreateSession(name, cwd, cols, rows);
-
-      // Add this client to the session
       session.clients.add(ws);
 
-      // Send scrollback buffer immediately (instant render!)
+      // Send scrollback buffer immediately
       if (session.outputBuffer.length > 0) {
         ws.send(session.outputBuffer);
       }
 
       // Forward client input to PTY
-      ws.on('message', (message: string) => {
+      ws.on('message', (message: Buffer | string) => {
         const msg = message.toString();
         if (msg.startsWith('{"type"')) {
           try {
@@ -160,54 +147,24 @@ export function registerTerminalWs(app: any) {
               session.rows = parsed.rows || rows;
               return;
             }
-          } catch {
-            // Not JSON, forward as input
-          }
+          } catch {}
         }
         session.pty.write(msg);
       });
 
-      // Heartbeat every 25s to keep alive through proxies
-      const heartbeatInterval = setInterval(() => {
-        try {
-          if (ws.readyState === 1) {
-            ws.ping();
-          }
-        } catch {
-          clearInterval(heartbeatInterval);
-        }
-      }, 25000);
-
-      // On disconnect: remove client but DON'T kill PTY
       ws.on('close', () => {
-        clearInterval(heartbeatInterval);
         session.clients.delete(ws);
-        // Session persists even with 0 clients!
       });
 
       ws.on('error', () => {
-        clearInterval(heartbeatInterval);
         session.clients.delete(ws);
       });
 
     } catch (err: any) {
-      console.error('Failed to create terminal session:', err.message);
+      console.error('Terminal session error:', err.message);
       ws.close();
     }
   });
 
-  // REST endpoint to list/kill sessions
-  const express = require('express');
-  const router = express.Router();
-
-  router.get('/api/terminal/sessions', (_req: any, res: any) => {
-    res.json(listSessions());
-  });
-
-  router.delete('/api/terminal/sessions/:name', (req: any, res: any) => {
-    const killed = killSession(req.params.name);
-    res.json({ ok: killed });
-  });
-
-  app.use(router);
+  return wss;
 }

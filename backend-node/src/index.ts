@@ -1,8 +1,11 @@
 import express from 'express';
 import cors from 'cors';
-import expressWs from 'express-ws';
+import http from 'http';
+import { URL } from 'url';
+import { registerTerminalWs, listSessions, killSession } from './routes/terminal';
 
-const { app } = expressWs(express());
+const app = express();
+const server = http.createServer(app);
 
 // CORS configuration
 const allowedOrigins = [
@@ -37,17 +40,26 @@ import projectsRouter from './routes/projects';
 import backlogRouter from './routes/backlog';
 import sprintsRouter from './routes/sprints';
 import boardRouter from './routes/board';
-import { registerTerminalWs } from './routes/terminal';
 import tmuxRouter from './routes/tmux';
 
 app.use(projectsRouter);
 app.use(backlogRouter);
 app.use(sprintsRouter);
 app.use(boardRouter);
-registerTerminalWs(app);
 app.use(tmuxRouter);
 
+// Terminal REST endpoints
+app.get('/api/terminal/sessions', (_req, res) => {
+  res.json(listSessions());
+});
+app.delete('/api/terminal/sessions/:name', (req, res) => {
+  res.json({ ok: killSession(req.params.name) });
+});
+
+// WebSocket terminal - use raw ws on HTTP server upgrade
+registerTerminalWs(server);
+
 const PORT = 17070;
-app.listen(PORT, '0.0.0.0', () => {
+server.listen(PORT, '0.0.0.0', () => {
   console.log(`AI Teams backend running on http://0.0.0.0:${PORT}`);
 });

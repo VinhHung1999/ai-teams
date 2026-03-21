@@ -1,23 +1,17 @@
 "use client";
 
-import { useEffect, useRef, useCallback } from "react";
+import { useEffect, useRef } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import "@xterm/xterm/css/xterm.css";
 
 interface WebTerminalProps {
-  /** WebSocket URL to connect to PTY backend */
   wsUrl: string;
-  /** Session name for persistent sessions (e.g. "boss-42", "agent-PO") */
   sessionName?: string;
-  /** Auto-run this command when terminal connects (only on first connect) */
   initialCommand?: string;
-  /** Additional CSS class */
   className?: string;
-  /** Callback when terminal connects */
   onConnected?: () => void;
-  /** Callback when terminal disconnects */
   onDisconnected?: () => void;
 }
 
@@ -39,92 +33,26 @@ export function WebTerminal({
   const reconnectAttempts = useRef(0);
   const initialCommandSent = useRef(false);
   const mountedRef = useRef(true);
+  const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Build full WebSocket URL with session name
-  const getWsUrl = useCallback(() => {
-    const separator = wsUrl.includes("?") ? "&" : "?";
-    return sessionName
-      ? `${wsUrl}${separator}name=${encodeURIComponent(sessionName)}`
-      : wsUrl;
-  }, [wsUrl, sessionName]);
+  // Use refs for callbacks to avoid useEffect re-triggering
+  const onConnectedRef = useRef(onConnected);
+  const onDisconnectedRef = useRef(onDisconnected);
+  onConnectedRef.current = onConnected;
+  onDisconnectedRef.current = onDisconnected;
 
-  // Connect/reconnect WebSocket (without recreating xterm)
-  const connectSocket = useCallback(() => {
-    const term = termRef.current;
-    const fitAddon = fitRef.current;
-    if (!term || !fitAddon || !mountedRef.current) return;
+  // Stable wsUrl with session name
+  const fullWsUrl = sessionName
+    ? `${wsUrl}${wsUrl.includes("?") ? "&" : "?"}name=${encodeURIComponent(sessionName)}`
+    : wsUrl;
 
-    // Close existing connection
-    if (wsRef.current) {
-      try { wsRef.current.close(); } catch {}
-      wsRef.current = null;
-    }
-
-    const fullUrl = getWsUrl();
-    const ws = new WebSocket(fullUrl);
-    wsRef.current = ws;
-
-    ws.onopen = () => {
-      reconnectAttempts.current = 0;
-
-      // Send terminal size
-      const dims = fitAddon.proposeDimensions();
-      if (dims) {
-        ws.send(JSON.stringify({
-          type: "resize",
-          cols: dims.cols,
-          rows: dims.rows,
-        }));
-      }
-
-      onConnected?.();
-
-      // Auto-run initial command only on first connect
-      if (initialCommand && !initialCommandSent.current) {
-        initialCommandSent.current = true;
-        setTimeout(() => {
-          if (ws.readyState === WebSocket.OPEN) {
-            ws.send(initialCommand + "\n");
-          }
-        }, 300);
-      }
-    };
-
-    ws.onmessage = (event) => {
-      // Server sends scrollback buffer on connect (instant render)
-      // Then ongoing output — xterm handles both the same way
-      term.write(event.data);
-    };
-
-    ws.onclose = () => {
-      onDisconnected?.();
-      if (!mountedRef.current) return;
-
-      // Auto-reconnect with backoff
-      if (reconnectAttempts.current < MAX_RECONNECT_ATTEMPTS) {
-        reconnectAttempts.current++;
-        const delay = RECONNECT_DELAY * reconnectAttempts.current;
-        term.write(`\r\n\x1b[90m[reconnecting in ${delay / 1000}s...]\x1b[0m`);
-        setTimeout(() => {
-          if (mountedRef.current) connectSocket();
-        }, delay);
-      } else {
-        term.write("\r\n\x1b[90m[disconnected]\x1b[0m\r\n");
-      }
-    };
-
-    ws.onerror = () => {
-      // onclose will fire after this
-    };
-  }, [getWsUrl, initialCommand, onConnected, onDisconnected]);
-
-  // Create xterm ONCE, connect socket separately
   useEffect(() => {
     if (!containerRef.current) return;
     mountedRef.current = true;
     initialCommandSent.current = false;
+    reconnectAttempts.current = 0;
 
-    // Create terminal instance (only once per mount)
+    // Create xterm ONCE
     const term = new Terminal({
       cursorBlink: true,
       fontSize: 13,
@@ -156,45 +84,88 @@ export function WebTerminal({
     });
 
     const fitAddon = new FitAddon();
-    const webLinksAddon = new WebLinksAddon();
     term.loadAddon(fitAddon);
-    term.loadAddon(webLinksAddon);
-
+    term.loadAddon(new WebLinksAddon());
     term.open(containerRef.current);
     fitAddon.fit();
 
     termRef.current = term;
     fitRef.current = fitAddon;
 
-    // Forward terminal input to WebSocket
-    term.onData((data) => {
+    // Connect WebSocket (can be called multiple times for reconnect)
+    function connectWs() {
+      if (!mountedRef.current) return;
+
+      const ws = new WebSocket(fullWsUrl);
+      wsRef.current = ws;
+
+      ws.onopen = () => {
+        reconnectAttempts.current = 0;
+        const dims = fitAddon.proposeDimensions();
+        if (dims) {
+          ws.send(JSON.stringify({ type: "resize", cols: dims.cols, rows: dims.rows }));
+        }
+        onConnectedRef.current?.();
+
+        if (initialCommand && !initialCommandSent.current) {
+          initialCommandSent.current = true;
+          setTimeout(() => {
+            if (ws.readyState === WebSocket.OPEN) {
+              ws.send(initialCommand + "\n");
+            }
+          }, 300);
+        }
+      };
+
+      ws.onmessage = (event) => {
+        term.write(event.data);
+      };
+
+      ws.onclose = () => {
+        onDisconnectedRef.current?.();
+        if (!mountedRef.current) return;
+
+        if (reconnectAttempts.current < MAX_RECONNECT_ATTEMPTS) {
+          reconnectAttempts.current++;
+          const delay = RECONNECT_DELAY * reconnectAttempts.current;
+          term.write(`\r\n\x1b[90m[reconnecting in ${delay / 1000}s...]\x1b[0m`);
+          reconnectTimer.current = setTimeout(connectWs, delay);
+        } else {
+          term.write("\r\n\x1b[90m[disconnected]\x1b[0m\r\n");
+        }
+      };
+
+      ws.onerror = () => {};
+    }
+
+    // Forward terminal input
+    const inputDisposable = term.onData((data) => {
       const ws = wsRef.current;
       if (ws && ws.readyState === WebSocket.OPEN) {
         ws.send(data);
       }
     });
 
-    // Handle container resize
+    // Handle resize
     const resizeObserver = new ResizeObserver(() => {
       fitAddon.fit();
       const ws = wsRef.current;
       const dims = fitAddon.proposeDimensions();
       if (dims && ws && ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({
-          type: "resize",
-          cols: dims.cols,
-          rows: dims.rows,
-        }));
+        ws.send(JSON.stringify({ type: "resize", cols: dims.cols, rows: dims.rows }));
       }
     });
     resizeObserver.observe(containerRef.current);
 
-    // Connect WebSocket
-    connectSocket();
+    // Start connection
+    connectWs();
 
+    // Cleanup
     return () => {
       mountedRef.current = false;
+      if (reconnectTimer.current) clearTimeout(reconnectTimer.current);
       resizeObserver.disconnect();
+      inputDisposable.dispose();
       if (wsRef.current) {
         try { wsRef.current.close(); } catch {}
         wsRef.current = null;
@@ -203,7 +174,7 @@ export function WebTerminal({
       termRef.current = null;
       fitRef.current = null;
     };
-  }, [connectSocket]);
+  }, [fullWsUrl, initialCommand]); // Only re-run if URL or command changes
 
   return (
     <div
