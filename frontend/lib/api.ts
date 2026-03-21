@@ -25,6 +25,8 @@ export const api = {
     fetchAPI<{ current: string; parent: string; dirs: { name: string; path: string }[] }>(
       `/api/projects/browse-dirs${path ? `?path=${encodeURIComponent(path)}` : ""}`
     ),
+  createDir: (parent: string, name: string) =>
+    fetchAPI<{ path: string }>("/api/projects/mkdir", { method: "POST", body: JSON.stringify({ parent, name }) }),
 
   // Backlog
   listBacklog: (projectId: number) =>
@@ -59,4 +61,13 @@ export const api = {
     fetchAPI<import("./types").Board>(`/api/sprints/${sprintId}/board`),
   moveItem: (itemId: number, data: { board_status: string; order?: number }) =>
     fetchAPI<{ ok: boolean }>(`/api/board/items/${itemId}/move`, { method: "PUT", body: JSON.stringify(data) }),
+
+  // Dashboard (single call for all data)
+  getDashboard: (projectId: number) =>
+    fetchAPI<{
+      project: import("./types").Project;
+      sprints: import("./types").Sprint[];
+      backlog: import("./types").BacklogItem[];
+      boards: Record<string, import("./types").Board>;
+    }>(`/api/projects/${projectId}/dashboard`),
 };

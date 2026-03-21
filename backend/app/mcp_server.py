@@ -32,8 +32,8 @@ BOARD_COLUMNS = ["todo", "in_progress", "in_review", "testing", "done"]
 
 server = Server("ai-teams-board")
 
-# DB setup - reuse same SQLite
-engine = create_async_engine("sqlite+aiosqlite:///./ai_teams.db", echo=False)
+# DB setup - PostgreSQL
+engine = create_async_engine("postgresql+asyncpg://hungphu@localhost:5432/ai_teams", echo=False)
 async_session_maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 

@@ -8,6 +8,8 @@ from app.database import get_db
 from app.models.sprint_item import SprintItem
 from app.models.backlog_item import BacklogItem
 
+from app.models.sprint import Sprint
+
 router = APIRouter(tags=["board"])
 
 BOARD_COLUMNS = ["todo", "in_progress", "in_review", "testing", "done"]
@@ -96,6 +98,83 @@ async def move_item(item_id: int, data: MoveItemRequest, db: AsyncSession = Depe
         "board_status": data.board_status, "order": data.order,
     })
     return {"ok": True}
+
+
+@router.get("/api/projects/{project_id}/dashboard")
+async def get_dashboard(project_id: int, db: AsyncSession = Depends(get_db)):
+    """Single endpoint that returns all dashboard data: project, sprints, backlog, and all boards."""
+    from app.models.project import Project as ProjectModel
+    from app.models.backlog_item import BacklogItem as BacklogItemModel
+
+    # Fetch project
+    proj_result = await db.execute(select(ProjectModel).where(ProjectModel.id == project_id))
+    project = proj_result.scalar_one_or_none()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    # Fetch sprints
+    sprint_result = await db.execute(
+        select(Sprint).where(Sprint.project_id == project_id).order_by(Sprint.number.desc())
+    )
+    sprints = sprint_result.scalars().all()
+
+    # Fetch backlog
+    backlog_result = await db.execute(
+        select(BacklogItemModel).where(BacklogItemModel.project_id == project_id).order_by(BacklogItemModel.order)
+    )
+    backlog_items = backlog_result.scalars().all()
+
+    # Fetch boards for all sprints in one query
+    sprint_ids = [s.id for s in sprints]
+    boards: dict = {}
+    if sprint_ids:
+        items_result = await db.execute(
+            select(SprintItem, BacklogItem)
+            .join(BacklogItem, SprintItem.backlog_item_id == BacklogItem.id)
+            .where(SprintItem.sprint_id.in_(sprint_ids))
+            .order_by(SprintItem.order)
+        )
+        for si, bi in items_result.all():
+            sid = si.sprint_id
+            if sid not in boards:
+                boards[sid] = {col: [] for col in BOARD_COLUMNS}
+            boards[sid][si.board_status].append(BoardItemResponse(
+                id=si.id, sprint_id=si.sprint_id, backlog_item_id=si.backlog_item_id,
+                title=bi.title, description=bi.description, priority=bi.priority,
+                story_points=bi.story_points, assignee_role=si.assignee_role,
+                board_status=si.board_status, order=si.order,
+            ).model_dump())
+
+    return {
+        "project": {
+            "id": project.id, "name": project.name,
+            "tmux_session_name": project.tmux_session_name,
+            "working_directory": project.working_directory,
+            "created_at": project.created_at.isoformat() if project.created_at else None,
+        },
+        "sprints": [
+            {
+                "id": s.id, "project_id": s.project_id, "number": s.number,
+                "goal": s.goal, "status": s.status,
+                "started_at": s.started_at.isoformat() if s.started_at else None,
+                "completed_at": s.completed_at.isoformat() if s.completed_at else None,
+                "created_at": s.created_at.isoformat() if s.created_at else None,
+            }
+            for s in sprints
+        ],
+        "backlog": [
+            {
+                "id": i.id, "project_id": i.project_id, "title": i.title,
+                "description": i.description, "priority": i.priority,
+                "story_points": i.story_points, "acceptance_criteria": i.acceptance_criteria,
+                "status": i.status, "order": i.order,
+                "created_at": i.created_at.isoformat() if i.created_at else None,
+                "updated_at": i.updated_at.isoformat() if i.updated_at else None,
+            }
+            for i in backlog_items
+        ],
+        "boards": {str(k): v for k, v in boards.items()},
+    }
 
 
 @router.websocket("/ws/board/{sprint_id}")

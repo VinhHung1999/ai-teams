@@ -514,49 +514,27 @@ export function ProjectDashboard({ projectId }: { projectId: number }) {
   /* ─── Data fetching ─── */
   const fetchData = useCallback(async () => {
     try {
-      const [proj, sprintList, backlog] = await Promise.all([
-        api.getProject(projectId),
-        api.listSprints(projectId),
-        api.listBacklog(projectId),
-      ]);
-      setProject(proj);
-      setSprints(sprintList);
-      setBacklogItems(backlog);
+      const data = await api.getDashboard(projectId);
+      setProject(data.project);
+      setSprints(data.sprints);
+      setBacklogItems(data.backlog);
 
-      const active = sprintList.find((s) => s.status === "active");
-      if (active) {
-        const boardData = await api.getBoard(active.id);
-        setActiveBoard(boardData);
+      const active = data.sprints.find((s) => s.status === "active");
+      if (active && data.boards[String(active.id)]) {
+        setActiveBoard(data.boards[String(active.id)]);
       } else {
         setActiveBoard(null);
       }
 
-      // Fetch boards for planning sprints
-      const planning = sprintList.filter((s) => s.status === "planning");
       const planBoards: Record<number, Board> = {};
-      await Promise.all(
-        planning.map(async (s) => {
-          try {
-            planBoards[s.id] = await api.getBoard(s.id);
-          } catch {
-            // ignore
-          }
-        })
-      );
-      setPlanningBoards(planBoards);
-
-      // Fetch boards for completed sprints
-      const completed = sprintList.filter((s) => s.status === "completed");
       const compBoards: Record<number, Board> = {};
-      await Promise.all(
-        completed.map(async (s) => {
-          try {
-            compBoards[s.id] = await api.getBoard(s.id);
-          } catch {
-            // ignore
-          }
-        })
-      );
+      for (const s of data.sprints) {
+        const board = data.boards[String(s.id)];
+        if (!board) continue;
+        if (s.status === "planning") planBoards[s.id] = board;
+        if (s.status === "completed") compBoards[s.id] = board;
+      }
+      setPlanningBoards(planBoards);
       setCompletedBoards(compBoards);
     } catch (e) {
       console.error(e);

@@ -30,6 +30,23 @@ async def browse_directories(path: str = Query(default="")):
     return {"current": str(target), "parent": str(target.parent), "dirs": dirs}
 
 
+@router.post("/mkdir")
+async def create_directory(data: dict):
+    """Create a new directory."""
+    parent = data.get("parent", "")
+    name = data.get("name", "")
+    if not parent or not name:
+        raise HTTPException(status_code=400, detail="parent and name required")
+    target = Path(parent) / name
+    if target.exists():
+        raise HTTPException(status_code=400, detail="Directory already exists")
+    try:
+        target.mkdir(parents=True)
+        return {"path": str(target)}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
 class ProjectCreate(BaseModel):
     name: str
     tmux_session_name: str | None = None

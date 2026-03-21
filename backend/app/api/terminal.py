@@ -29,7 +29,7 @@ async def terminal_ws(
     winsize = struct.pack("HHHH", rows, cols, 0, 0)
     fcntl.ioctl(slave_fd, termios.TIOCSWINSZ, winsize)
 
-    # Spawn shell process
+    # Spawn shell process - skip heavy profile loading
     shell = os.environ.get("SHELL", "/bin/bash")
     proc = subprocess.Popen(
         [shell],
@@ -42,49 +42,52 @@ async def terminal_ws(
     )
     os.close(slave_fd)
 
-    # Make master_fd non-blocking for async reads
+    # Make master_fd non-blocking
     flags = fcntl.fcntl(master_fd, fcntl.F_GETFL)
     fcntl.fcntl(master_fd, fcntl.F_SETFL, flags | os.O_NONBLOCK)
 
+    loop = asyncio.get_event_loop()
+
     async def read_pty():
-        """Read PTY output and forward to WebSocket."""
-        while True:
+        """Read PTY output using event loop reader (no polling)."""
+        queue: asyncio.Queue[bytes | None] = asyncio.Queue()
+
+        def on_read_ready():
             try:
-                await asyncio.sleep(0.01)
-                try:
-                    data = os.read(master_fd, 4096)
-                    if data:
-                        await websocket.send_text(
-                            data.decode("utf-8", errors="replace")
-                        )
-                except BlockingIOError:
-                    continue
-                except OSError:
+                data = os.read(master_fd, 16384)
+                if data:
+                    queue.put_nowait(data)
+                else:
+                    queue.put_nowait(None)
+            except OSError:
+                queue.put_nowait(None)
+
+        loop.add_reader(master_fd, on_read_ready)
+        try:
+            while True:
+                data = await queue.get()
+                if data is None:
                     break
-            except asyncio.CancelledError:
-                break
+                await websocket.send_text(data.decode("utf-8", errors="replace"))
+        except asyncio.CancelledError:
+            pass
+        finally:
+            try:
+                loop.remove_reader(master_fd)
             except Exception:
-                break
+                pass
 
     async def write_pty():
         """Read WebSocket messages and forward to PTY."""
         try:
             while True:
                 message = await websocket.receive_text()
-                # Check for resize control message
                 if message.startswith('{"type"'):
                     try:
                         msg = json.loads(message)
                         if msg.get("type") == "resize":
-                            new_cols = msg.get("cols", cols)
-                            new_rows = msg.get("rows", rows)
-                            winsize = struct.pack(
-                                "HHHH", new_rows, new_cols, 0, 0
-                            )
-                            fcntl.ioctl(
-                                master_fd, termios.TIOCSWINSZ, winsize
-                            )
-                            # Send SIGWINCH to the shell process group
+                            ws = struct.pack("HHHH", msg.get("rows", rows), msg.get("cols", cols), 0, 0)
+                            fcntl.ioctl(master_fd, termios.TIOCSWINSZ, ws)
                             os.kill(proc.pid, signal.SIGWINCH)
                             continue
                     except (json.JSONDecodeError, KeyError):
@@ -95,18 +98,27 @@ async def terminal_ws(
         except asyncio.CancelledError:
             pass
 
+    async def heartbeat():
+        """Send periodic ping to keep WebSocket alive through proxies/tunnels."""
+        try:
+            while True:
+                await asyncio.sleep(25)
+                await websocket.send_text("")
+        except (asyncio.CancelledError, Exception):
+            pass
+
     read_task = asyncio.create_task(read_pty())
     write_task = asyncio.create_task(write_pty())
+    heartbeat_task = asyncio.create_task(heartbeat())
 
     try:
         done, pending = await asyncio.wait(
-            [read_task, write_task],
+            [read_task, write_task, heartbeat_task],
             return_when=asyncio.FIRST_COMPLETED,
         )
         for task in pending:
             task.cancel()
     finally:
-        # Kill the shell process
         try:
             os.kill(proc.pid, signal.SIGTERM)
             proc.wait(timeout=3)
@@ -116,7 +128,6 @@ async def terminal_ws(
                 proc.wait(timeout=1)
             except Exception:
                 pass
-        # Close the master PTY fd
         try:
             os.close(master_fd)
         except OSError:

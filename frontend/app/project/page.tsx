@@ -5,6 +5,7 @@ import { useSearchParams, useRouter } from "next/navigation";
 import { AppSidebar } from "@/components/AppSidebar";
 import { ProjectDashboard } from "@/components/ProjectDashboard";
 import { WebTerminal } from "@/components/WebTerminal";
+import { Button } from "@/components/ui/button";
 import type { Project } from "@/lib/types";
 import { api } from "@/lib/api";
 
@@ -25,14 +26,53 @@ function ProjectPageContent() {
   const [terminalOpen, setTerminalOpen] = useState(true);
   const [activeAgentTab, setActiveAgentTab] = useState<string>(ROLES[0]);
   const [pendingTerminalCommand, setPendingTerminalCommand] = useState<string | undefined>();
+  const [hasSetupFile, setHasSetupFile] = useState(false);
+  const [setupFilePath, setSetupFilePath] = useState("");
+  const [tmuxSessionActive, setTmuxSessionActive] = useState(false);
+  const [tmuxRoles, setTmuxRoles] = useState<string[]>([]);
+  const sessionName = project?.tmux_session_name || undefined;
+  const projectCwd = project?.working_directory || undefined;
 
   // Fetch project details when selection changes
   useEffect(() => {
-    if (!selectedProjectId) { setProject(null); return; }
+    if (!selectedProjectId) {
+      setProject(null);
+      setHasSetupFile(false);
+      setTmuxSessionActive(false);
+      setTmuxRoles([]);
+      return;
+    }
     api.getProject(selectedProjectId)
       .then(setProject)
       .catch(() => setProject(null));
   }, [selectedProjectId]);
+
+  // Check team status: files exist? tmux running?
+  const checkTeamStatus = useCallback(async () => {
+    if (!sessionName) {
+      setHasSetupFile(false);
+      setTmuxSessionActive(false);
+      setTmuxRoles([]);
+      return;
+    }
+    try {
+      const cwdParam = projectCwd ? `&working_dir=${encodeURIComponent(projectCwd)}` : "";
+      const res = await fetch(`/api/tmux/session/${encodeURIComponent(sessionName)}?${cwdParam}`);
+      if (res.ok) {
+        const data = await res.json();
+        setHasSetupFile(data.has_setup_file);
+        setSetupFilePath(data.setup_file_path || "");
+        setTmuxSessionActive(data.tmux_active);
+        setTmuxRoles(data.roles || []);
+      }
+    } catch {
+      setHasSetupFile(false);
+      setTmuxSessionActive(false);
+      setTmuxRoles([]);
+    }
+  }, [sessionName, projectCwd]);
+
+  useEffect(() => { checkTeamStatus(); }, [checkTeamStatus]);
 
   // Sync URL when project changes
   useEffect(() => {
@@ -49,24 +89,26 @@ function ProjectPageContent() {
   };
 
   // Build WebSocket URL for terminal
+  // Next.js rewrites don't proxy WebSocket, so connect directly to backend
   const getTerminalWsUrl = useCallback((cwd?: string) => {
-    const host = typeof window !== "undefined" ? window.location.host : "localhost:3340";
-    const protocol = typeof window !== "undefined" && window.location.protocol === "https:" ? "wss" : "ws";
     const cwdParam = cwd ? `?cwd=${encodeURIComponent(cwd)}` : "";
-    return `${protocol}://${host}/ws/terminal${cwdParam}`;
+    if (typeof window !== "undefined") {
+      const { hostname, protocol } = window.location;
+      const wsProtocol = protocol === "https:" ? "wss" : "ws";
+
+      // Via tunnel: scrum-team.hungphu.work → scrum-api.hungphu.work
+      if (hostname.includes("hungphu.work")) {
+        const apiHost = hostname.replace("scrum-team", "scrum-api");
+        return `${wsProtocol}://${apiHost}/ws/terminal${cwdParam}`;
+      }
+
+      // Local: connect directly to backend port
+      return `${wsProtocol}://${hostname}:17070/ws/terminal${cwdParam}`;
+    }
+    return `ws://localhost:17070/ws/terminal${cwdParam}`;
   }, []);
 
-  // Build WebSocket URL for agent (tmux attach)
-  const getAgentWsUrl = useCallback((cwd?: string) => {
-    // Agent terminals also connect to PTY but with tmux attach command
-    const host = typeof window !== "undefined" ? window.location.host : "localhost:3340";
-    const protocol = typeof window !== "undefined" && window.location.protocol === "https:" ? "wss" : "ws";
-    const cwdParam = cwd ? `?cwd=${encodeURIComponent(cwd)}` : "";
-    return `${protocol}://${host}/ws/terminal${cwdParam}`;
-  }, []);
-
-  const projectCwd = project?.working_directory || undefined;
-  const sessionName = project?.tmux_session_name || undefined;
+  const getAgentWsUrl = getTerminalWsUrl;
 
   return (
     <div className="h-screen flex flex-col lg:flex-row overflow-hidden">
@@ -124,8 +166,9 @@ function ProjectPageContent() {
                 <div className="flex-1 min-h-0">
                   {selectedProjectId ? (
                     <WebTerminal
-                      key={`boss-${selectedProjectId}-${pendingTerminalCommand ? 'cmd' : 'idle'}`}
+                      key={`boss-${selectedProjectId}`}
                       wsUrl={getTerminalWsUrl(projectCwd)}
+                      sessionName={`boss-${selectedProjectId}`}
                       initialCommand={pendingTerminalCommand}
                       onConnected={() => {
                         if (pendingTerminalCommand) {
@@ -171,11 +214,11 @@ function ProjectPageContent() {
                 </button>
               </div>
 
-              {selectedProjectId && sessionName ? (
+              {selectedProjectId && sessionName && tmuxSessionActive ? (
+                /* ── Team running: show tabs + terminals ── */
                 <>
-                  {/* Agent tabs */}
                   <div className="flex flex-wrap gap-0 border-b border-border/40 shrink-0">
-                    {ROLES.map((role) => (
+                    {(tmuxRoles.length > 0 ? tmuxRoles : ROLES).map((role) => (
                       <button
                         key={role}
                         onClick={() => setActiveAgentTab(role)}
@@ -190,35 +233,66 @@ function ProjectPageContent() {
                     ))}
                   </div>
 
-                  {/* Agent terminal */}
                   <div className="flex-1 min-h-0 bg-[#1a1b26]">
                     <WebTerminal
                       key={`agent-${selectedProjectId}-${activeAgentTab}`}
                       wsUrl={getAgentWsUrl(projectCwd)}
-                      initialCommand={`tmux attach-session -t ${sessionName} 2>/dev/null || echo "Session '${sessionName}' not running"`}
+                      sessionName={`agent-${selectedProjectId}-${activeAgentTab}`}
+                      initialCommand={`tmux select-pane -t ${sessionName}:0.$(tmux list-panes -t ${sessionName} -F '#{pane_index} #{@role_name}' | grep ' ${activeAgentTab}$' | cut -d' ' -f1) 2>/dev/null && tmux attach-session -t ${sessionName} 2>/dev/null || echo "Session '${sessionName}' not running"`}
                     />
                   </div>
 
-                  {/* Agent input */}
                   <div className="px-2 py-1.5 border-t border-border/40 bg-background shrink-0">
-                    <AgentInput
-                      sessionName={sessionName}
-                      role={activeAgentTab}
-                    />
+                    <AgentInput sessionName={sessionName} role={activeAgentTab} />
                   </div>
                 </>
-              ) : (
+              ) : selectedProjectId && hasSetupFile && !tmuxSessionActive ? (
+                /* ── Setup file exists but tmux not running: Start Team ── */
                 <div className="flex-1 flex items-center justify-center">
                   <div className="text-center">
-                    <p className="text-xs text-muted-foreground/30">
-                      {selectedProjectId ? "No team configured" : "Select a project"}
+                    <p className="text-xs text-muted-foreground/40">Team ready to start</p>
+                    <p className="text-[10px] text-muted-foreground/25 mt-1 mb-3">
+                      {setupFilePath.split("/").pop()}
                     </p>
-                    {selectedProjectId && (
-                      <p className="text-[10px] text-muted-foreground/20 mt-1">
-                        Set tmux_session_name in project settings
-                      </p>
-                    )}
+                    <Button
+                      size="sm"
+                      onClick={() => {
+                        setTerminalOpen(true);
+                        setPendingTerminalCommand(`bash "${setupFilePath}"`);
+                        setTimeout(checkTeamStatus, 20000);
+                      }}
+                      className="text-xs font-mono"
+                    >
+                      Start Team
+                    </Button>
                   </div>
+                </div>
+              ) : selectedProjectId ? (
+                /* ── No setup file: Create Team ── */
+                <div className="flex-1 flex items-center justify-center">
+                  <div className="text-center">
+                    <p className="text-xs text-muted-foreground/40">No team yet</p>
+                    <p className="text-[10px] text-muted-foreground/25 mt-1 mb-3">
+                      Generate team files first
+                    </p>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        setTerminalOpen(true);
+                        const dir = projectCwd || "~";
+                        setPendingTerminalCommand(`cd "${dir}" && claude -p "/tmux-team-creator-mcp scrum-team for project ${project?.name}, session: ${sessionName || project?.name?.toLowerCase().replace(/\\s+/g, '-')}"`);
+                      }}
+                      className="text-xs font-mono"
+                    >
+                      Create Team
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                /* ── No project selected ── */
+                <div className="flex-1 flex items-center justify-center">
+                  <p className="text-xs text-muted-foreground/30">Select a project</p>
                 </div>
               )}
             </div>

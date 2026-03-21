@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { api } from "@/lib/api";
 
 interface DirEntry {
@@ -20,6 +21,8 @@ export function FolderBrowser({ value, onSelect }: FolderBrowserProps) {
   const [dirs, setDirs] = useState<DirEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [open, setOpen] = useState(false);
+  const [creatingFolder, setCreatingFolder] = useState(false);
+  const [newFolderName, setNewFolderName] = useState("");
 
   const browse = async (path?: string) => {
     setLoading(true);
@@ -32,6 +35,19 @@ export function FolderBrowser({ value, onSelect }: FolderBrowserProps) {
       console.error(e);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleCreateFolder = async () => {
+    if (!newFolderName.trim()) return;
+    try {
+      const result = await api.createDir(current, newFolderName.trim());
+      setNewFolderName("");
+      setCreatingFolder(false);
+      // Navigate into the new folder
+      await browse(result.path);
+    } catch (e) {
+      console.error(e);
     }
   };
 
@@ -64,6 +80,16 @@ export function FolderBrowser({ value, onSelect }: FolderBrowserProps) {
         <div className="flex items-center gap-1 shrink-0">
           <Button
             type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => setCreatingFolder(!creatingFolder)}
+            className="text-[10px] h-6 px-1.5 font-mono text-muted-foreground/50"
+            title="New folder"
+          >
+            +
+          </Button>
+          <Button
+            type="button"
             variant="default"
             size="sm"
             onClick={() => { onSelect(current); setOpen(false); }}
@@ -83,7 +109,30 @@ export function FolderBrowser({ value, onSelect }: FolderBrowserProps) {
         </div>
       </div>
 
-      {/* Folder list - native scroll for mobile */}
+      {/* New folder input */}
+      {creatingFolder && (
+        <div className="flex items-center gap-1.5 px-2 py-1.5 border-b border-border/30 bg-muted/10">
+          <Input
+            value={newFolderName}
+            onChange={(e) => setNewFolderName(e.target.value)}
+            placeholder="Folder name"
+            className="h-7 text-[11px] font-mono bg-muted/30 flex-1"
+            onKeyDown={(e) => e.key === "Enter" && handleCreateFolder()}
+            autoFocus
+          />
+          <Button
+            type="button"
+            size="sm"
+            onClick={handleCreateFolder}
+            disabled={!newFolderName.trim()}
+            className="text-[10px] h-7 px-2 font-mono"
+          >
+            Create
+          </Button>
+        </div>
+      )}
+
+      {/* Folder list */}
       <div
         className="overflow-y-auto overscroll-contain"
         style={{ maxHeight: "150px", WebkitOverflowScrolling: "touch" }}
