@@ -31,7 +31,7 @@ model BacklogItem {
   status              String       @default("new")
   order               Int          @default(0)
   created_at          DateTime     @default(now())
-  updated_at          DateTime     @updatedAt
+  updated_at          DateTime     @default(now()) @updatedAt
   sprint_items        SprintItem[]
 
   @@map("backlog_items")

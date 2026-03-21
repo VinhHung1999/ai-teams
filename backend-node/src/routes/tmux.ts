@@ -98,6 +98,69 @@ router.post('/api/tmux/session/:sessionName/send', async (req: Request, res: Res
   }
 });
 
+// Check activity for all panes (compare output hash to detect changes)
+const paneHashes = new Map<string, string>(); // "session:pane" -> last output hash
+
+router.get('/api/tmux/session/:sessionName/activity', async (req: Request, res: Response) => {
+  const { sessionName } = req.params;
+  try {
+    const listResult = execSync(
+      `tmux list-panes -t ${sessionName} -F "#{pane_index} #{@role_name}"`,
+      { timeout: 5000, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }
+    );
+
+    const activity: Record<string, boolean> = {};
+    for (const line of listResult.trim().split('\n')) {
+      const parts = line.trim().split(' ', 2);
+      if (parts.length !== 2 || !parts[1]) continue;
+      const [paneIdx, roleName] = parts;
+
+      try {
+        // Capture last 5 lines to check for changes
+        const output = execSync(
+          `tmux capture-pane -p -t ${sessionName}:0.${paneIdx} -S -5`,
+          { timeout: 3000, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }
+        );
+
+        const key = `${sessionName}:${paneIdx}`;
+        const prevHash = paneHashes.get(key);
+        const currentHash = simpleHash(output);
+
+        activity[roleName] = prevHash !== undefined && prevHash !== currentHash;
+        paneHashes.set(key, currentHash);
+      } catch {
+        activity[roleName] = false;
+      }
+    }
+
+    res.json(activity);
+  } catch {
+    res.json({});
+  }
+});
+
+function simpleHash(str: string): string {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    hash = ((hash << 5) - hash) + str.charCodeAt(i);
+    hash |= 0;
+  }
+  return hash.toString(36);
+}
+
+// Kill tmux session
+router.post('/api/tmux/session/:sessionName/kill', async (req: Request, res: Response) => {
+  const { sessionName } = req.params;
+  try {
+    execSync(`tmux kill-session -t ${sessionName} 2>/dev/null`, {
+      timeout: 5000, stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    res.json({ ok: true });
+  } catch {
+    res.json({ ok: true }); // already dead is fine
+  }
+});
+
 // Capture pane output
 router.get('/api/tmux/session/:sessionName/pane/:role', async (req: Request, res: Response) => {
   const { sessionName, role } = req.params;

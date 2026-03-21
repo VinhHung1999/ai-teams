@@ -386,7 +386,7 @@ async def _create_sprint(db: AsyncSession, project_id: int, goal: str | None) ->
 
 
 async def _start_sprint(db: AsyncSession, sprint_id: int) -> list[TextContent]:
-    from datetime import datetime, UTC
+    from datetime import datetime
     result = await db.execute(select(Sprint).where(Sprint.id == sprint_id))
     sprint = result.scalar_one_or_none()
     if not sprint:
@@ -401,13 +401,13 @@ async def _start_sprint(db: AsyncSession, sprint_id: int) -> list[TextContent]:
     if active:
         return [TextContent(type="text", text=f"Sprint {active.number} is already active. Complete it first.")]
     sprint.status = "active"
-    sprint.started_at = datetime.now(UTC)
+    sprint.started_at = datetime.utcnow()
     await db.commit()
     return [TextContent(type="text", text=f"Sprint {sprint.number} is now active!")]
 
 
 async def _complete_sprint(db: AsyncSession, sprint_id: int) -> list[TextContent]:
-    from datetime import datetime, UTC
+    from datetime import datetime
     result = await db.execute(select(Sprint).where(Sprint.id == sprint_id))
     sprint = result.scalar_one_or_none()
     if not sprint:
@@ -415,7 +415,7 @@ async def _complete_sprint(db: AsyncSession, sprint_id: int) -> list[TextContent
     if sprint.status != "active":
         return [TextContent(type="text", text=f"Sprint must be 'active' (currently: {sprint.status}).")]
     sprint.status = "completed"
-    sprint.completed_at = datetime.now(UTC)
+    sprint.completed_at = datetime.utcnow()
     # Move incomplete items back to backlog
     items_result = await db.execute(
         select(SprintItem).where(SprintItem.sprint_id == sprint_id, SprintItem.board_status != "done")
@@ -529,7 +529,7 @@ async def _list_sprints(db: AsyncSession, project_id: int) -> list[TextContent]:
     lines = ["# Sprints", ""]
     for s in sprints:
         status_icon = {"planning": "📋", "active": "🚀", "completed": "✅"}.get(s.status, "❓")
-        lines.append(f"- {status_icon} **Sprint {s.number}** [{s.status}] - {s.goal or 'No goal'}")
+        lines.append(f"- {status_icon} **Sprint {s.number}** (ID: {s.id}) [{s.status}] - {s.goal or 'No goal'}")
     return [TextContent(type="text", text="\n".join(lines))]
 
 
@@ -554,7 +554,7 @@ async def _get_board(db: AsyncSession, project_id: int) -> list[TextContent]:
     for si, bi in rows:
         board[si.board_status].append((si, bi))
 
-    lines = [f"# Sprint {sprint.number} Board: {sprint.goal or 'No goal'}", ""]
+    lines = [f"# Sprint {sprint.number} (ID: {sprint.id}) Board: {sprint.goal or 'No goal'}", ""]
     col_labels = {
         "todo": "📋 To Do", "in_progress": "🔨 In Progress",
         "in_review": "👀 In Review", "testing": "🧪 Testing", "done": "✅ Done",
@@ -592,7 +592,7 @@ async def _get_my_tasks(db: AsyncSession, project_id: int, role: str) -> list[Te
     if not rows:
         return [TextContent(type="text", text=f"No tasks assigned to {role}.")]
 
-    lines = [f"# Tasks for {role} (Sprint {sprint.number})", ""]
+    lines = [f"# Tasks for {role} (Sprint {sprint.number}, ID: {sprint.id})", ""]
     for si, bi in rows:
         status_icon = {"todo": "📋", "in_progress": "🔨", "in_review": "👀", "testing": "🧪", "done": "✅"}.get(si.board_status, "❓")
         pts = f" ({bi.story_points}pts)" if bi.story_points else ""

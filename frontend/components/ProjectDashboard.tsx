@@ -548,21 +548,39 @@ export function ProjectDashboard({ projectId }: { projectId: number }) {
     fetchData();
   }, [fetchData]);
 
-  // Auto-refresh active sprint board every 5 seconds
+  // Auto-refresh all dashboard data every 5 seconds
   useEffect(() => {
-    if (!activeSprint) return;
     const interval = setInterval(async () => {
+      if (isDragging) return;
       try {
-        const boardData = await api.getBoard(activeSprint.id);
-        if (!isDragging) {
-          setActiveBoard(boardData);
+        const data = await api.getDashboard(projectId);
+        setProject(data.project);
+        setSprints(data.sprints);
+        setBacklogItems(data.backlog);
+
+        const active = data.sprints.find((s) => s.status === "active");
+        if (active && data.boards[String(active.id)]) {
+          setActiveBoard(data.boards[String(active.id)]);
+        } else {
+          setActiveBoard(null);
         }
+
+        const planBoards: Record<number, Board> = {};
+        const compBoards: Record<number, Board> = {};
+        for (const s of data.sprints) {
+          const board = data.boards[String(s.id)];
+          if (!board) continue;
+          if (s.status === "planning") planBoards[s.id] = board;
+          if (s.status === "completed") compBoards[s.id] = board;
+        }
+        setPlanningBoards(planBoards);
+        setCompletedBoards(compBoards);
       } catch {
         // ignore
       }
-    }, 5000);
+    }, 3000);
     return () => clearInterval(interval);
-  }, [activeSprint, isDragging]);
+  }, [projectId, isDragging]);
 
   /* ─── Sprint actions ─── */
   const handleStartSprint = async (sprintId: number) => {
@@ -898,6 +916,19 @@ export function ProjectDashboard({ projectId }: { projectId: number }) {
         onDragEnd={handleDragEnd}
       >
         <main className="flex-1 overflow-y-auto px-4 sm:px-6 py-5 space-y-8">
+          {/* Page header */}
+          <div className="flex items-center justify-between">
+            <h1 className="text-sm font-semibold text-foreground/70">{project?.name}</h1>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowCreateSprint(true)}
+              className="text-[11px] h-7 px-3 font-mono"
+            >
+              + New Sprint
+            </Button>
+          </div>
+
           {/* ════════════════════════════════════════════
               Section 1: Active Sprint
               ════════════════════════════════════════════ */}
@@ -1119,17 +1150,6 @@ export function ProjectDashboard({ projectId }: { projectId: number }) {
           ) : null}
         </DragOverlay>
       </DndContext>
-
-      {/* Floating New Sprint button */}
-      <div className="fixed bottom-6 right-6 z-40">
-        <Button
-          onClick={() => setShowCreateSprint(true)}
-          size="sm"
-          className="h-9 px-4 rounded-full shadow-lg shadow-black/30 font-mono text-xs"
-        >
-          + New Sprint
-        </Button>
-      </div>
 
       {/* Task detail dialog */}
       <TaskDetail

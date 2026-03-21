@@ -25,14 +25,17 @@ function ProjectPageContent() {
   // Panels collapse state
   const [agentPanelOpen, setAgentPanelOpen] = useState(true);
   const [agentPanelWidth, setAgentPanelWidth] = useState(380);
+  const [teamFocusMode, setTeamFocusMode] = useState(false);
   const [terminalOpen, setTerminalOpen] = useState(true);
   const [activeAgentTab, setActiveAgentTab] = useState<string>(ROLES[0]);
   const [pendingTerminalCommand, setPendingTerminalCommand] = useState<string | undefined>();
+  const [bossTerminalKey, setBossTerminalKey] = useState(0);
   const [hasSetupFile, setHasSetupFile] = useState(false);
   const [setupFilePath, setSetupFilePath] = useState("");
   const [tmuxSessionActive, setTmuxSessionActive] = useState(false);
   const [tmuxRoles, setTmuxRoles] = useState<string[]>([]);
   const [teamStarting, setTeamStarting] = useState(false);
+  const [roleActivity, setRoleActivity] = useState<Record<string, boolean>>({});
   const sessionName = project?.tmux_session_name || undefined;
   const projectCwd = project?.working_directory || undefined;
 
@@ -76,6 +79,18 @@ function ProjectPageContent() {
   }, [sessionName, projectCwd]);
 
   useEffect(() => { checkTeamStatus(); }, [checkTeamStatus]);
+
+  // Poll role activity when team is running
+  useEffect(() => {
+    if (!tmuxSessionActive || !sessionName) { setRoleActivity({}); return; }
+    const poll = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/tmux/session/${encodeURIComponent(sessionName)}/activity`);
+        if (res.ok) setRoleActivity(await res.json());
+      } catch {}
+    }, 2000);
+    return () => clearInterval(poll);
+  }, [tmuxSessionActive, sessionName]);
 
   // Sync URL when project changes
   useEffect(() => {
@@ -128,8 +143,8 @@ function ProjectPageContent() {
 
       {/* Main area (dashboard + terminal) + Agent panel */}
       <div className="flex-1 flex flex-row min-w-0 min-h-0">
-        {/* Center: Dashboard + Terminal */}
-        <div className="flex-1 flex flex-col min-w-0 min-h-0">
+        {/* Center: Dashboard + Terminal (hidden in focus mode) */}
+        <div className={`flex-1 flex flex-col min-w-0 min-h-0 ${teamFocusMode ? "hidden" : ""}`}>
           {/* Dashboard */}
           <div className="flex-1 min-h-0 overflow-y-auto">
             {selectedProjectId ? (
@@ -169,9 +184,9 @@ function ProjectPageContent() {
                 <div className="flex-1 min-h-0">
                   {selectedProjectId ? (
                     <WebTerminal
-                      key={`boss-${selectedProjectId}`}
+                      key={`boss-${selectedProjectId}-${bossTerminalKey}`}
                       wsUrl={getTerminalWsUrl(projectCwd)}
-                      sessionName={`boss-${selectedProjectId}`}
+                      sessionName={`boss-${selectedProjectId}-${bossTerminalKey}`}
                       initialCommand={pendingTerminalCommand}
                       onConnected={() => {
                         if (pendingTerminalCommand) {
@@ -201,12 +216,12 @@ function ProjectPageContent() {
         </div>
 
         {/* Agent Panel (right) - resizable */}
-        <div className="hidden lg:flex flex-col">
+        <div className={`hidden lg:flex flex-col ${teamFocusMode ? "flex-1 min-w-0" : ""}`}>
           {agentPanelOpen ? (
-            <div className="border-l border-border/40 bg-background flex flex-col h-full relative" style={{ width: `${agentPanelWidth}px` }}>
-              {/* Resize handle */}
+            <div className={`bg-background flex flex-col h-full relative ${teamFocusMode ? "flex-1 w-full" : "border-l border-border/40"}`} style={teamFocusMode ? undefined : { width: `${agentPanelWidth}px` }}>
+              {/* Resize handle (hidden in focus mode) */}
               <div
-                className="absolute left-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-primary/30 active:bg-primary/50 z-10"
+                className={`absolute left-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-primary/30 active:bg-primary/50 z-10 ${teamFocusMode ? "hidden" : ""}`}
                 onMouseDown={(e) => {
                   e.preventDefault();
                   const startX = e.clientX;
@@ -225,16 +240,73 @@ function ProjectPageContent() {
               />
 
               {/* Header */}
-              <div className="px-3 py-1.5 border-b border-border/40 flex items-center justify-between shrink-0">
-                <span className="text-[11px] font-semibold text-muted-foreground/50">
+              <div className="px-3 py-2 border-b border-border/40 flex items-center justify-between shrink-0">
+                <span className="text-xs font-semibold text-muted-foreground/50">
                   Team
                 </span>
-                <button
-                  onClick={() => setAgentPanelOpen(false)}
-                  className="text-[10px] text-muted-foreground/30 hover:text-muted-foreground/60 transition-colors px-1.5 py-0.5 rounded hover:bg-muted/20"
-                >
-                  &#x25B6;
-                </button>
+                <div className="flex items-center gap-1">
+                  {tmuxSessionActive && sessionName && setupFilePath && (
+                    <button
+                      onClick={async () => {
+                        if (!confirm("Restart team? This will kill all agents and start fresh.")) return;
+                        setTeamStarting(true);
+                        // 1. Kill tmux session
+                        try {
+                          await fetch(`/api/tmux/session/${encodeURIComponent(sessionName)}/kill`, { method: "POST" });
+                        } catch {}
+                        // 2. Kill boss terminal session so a fresh one starts
+                        try {
+                          await fetch(`/api/terminal/sessions/boss-${selectedProjectId}`, { method: "DELETE" });
+                        } catch {}
+                        setTmuxSessionActive(false);
+                        setTmuxRoles([]);
+                        setTerminalOpen(true);
+                        // 3. Force re-mount boss terminal with new key + command
+                        setBossTerminalKey((k) => k + 1);
+                        setPendingTerminalCommand(`bash "${setupFilePath}"`);
+                        const cwdParam = projectCwd ? `&working_dir=${encodeURIComponent(projectCwd)}` : "";
+                        const poll = setInterval(async () => {
+                          try {
+                            const res = await fetch(`/api/tmux/session/${encodeURIComponent(sessionName)}?${cwdParam}`);
+                            if (res.ok) {
+                              const data = await res.json();
+                              if (data.tmux_active) {
+                                clearInterval(poll);
+                                setTeamStarting(false);
+                                checkTeamStatus();
+                              }
+                            }
+                          } catch {}
+                        }, 5000);
+                        setTimeout(() => { clearInterval(poll); setTeamStarting(false); }, 120000);
+                      }}
+                      className="w-7 h-7 rounded-md flex items-center justify-center text-amber-400/50 hover:text-amber-400 hover:bg-amber-500/10 transition-colors"
+                      title="Restart team"
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 4v6h6M23 20v-6h-6"/><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"/></svg>
+                    </button>
+                  )}
+                  <button
+                    onClick={() => setTeamFocusMode(!teamFocusMode)}
+                    className="w-7 h-7 rounded-md flex items-center justify-center text-muted-foreground/50 hover:text-foreground hover:bg-muted/30 transition-colors"
+                    title={teamFocusMode ? "Collapse" : "Expand"}
+                  >
+                    {teamFocusMode ? (
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 14h6v6M20 10h-6V4M14 10l7-7M3 21l7-7"/></svg>
+                    ) : (
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
+                    )}
+                  </button>
+                  {!teamFocusMode && (
+                    <button
+                      onClick={() => setAgentPanelOpen(false)}
+                      className="w-7 h-7 rounded-md flex items-center justify-center text-muted-foreground/40 hover:text-muted-foreground/70 hover:bg-muted/20 transition-colors"
+                      title="Hide panel"
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M13 17l5-5-5-5M6 17l5-5-5-5"/></svg>
+                    </button>
+                  )}
+                </div>
               </div>
 
               {selectedProjectId && sessionName && tmuxSessionActive ? (
@@ -253,8 +325,10 @@ function ProjectPageContent() {
                               : "text-muted-foreground/50 hover:text-foreground/70 hover:bg-muted/30"
                           }`}
                         >
-                          <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${
-                            activeAgentTab === role ? "bg-green-500 shadow-[0_0_6px_rgba(34,197,94,0.6)]" : "bg-gray-500"
+                          <span className={`h-1.5 w-1.5 rounded-full shrink-0 transition-all duration-300 ${
+                            roleActivity[role]
+                              ? "bg-green-500 shadow-[0_0_6px_rgba(34,197,94,0.6)] animate-pulse"
+                              : "bg-gray-500"
                           }`} />
                           {role}
                         </button>
