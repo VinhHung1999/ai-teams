@@ -28,6 +28,7 @@ function ProjectPageContent() {
   const [agentPanelWidth, setAgentPanelWidth] = useState(380);
   const [teamFocusMode, setTeamFocusMode] = useState(false);
   const [mobileTeamOpen, setMobileTeamOpen] = useState(false);
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [terminalOpen, setTerminalOpen] = useState(true);
   const [activeAgentTab, setActiveAgentTab] = useState<string>(ROLES[0]);
   const [pendingTerminalCommand, setPendingTerminalCommand] = useState<string | undefined>();
@@ -139,9 +140,10 @@ function ProjectPageContent() {
         onSelectProject={handleSelectProject}
         onTeamCommand={(projectId, command) => {
           setTerminalOpen(true);
-          // Small delay to let terminal connect first
           setTimeout(() => setPendingTerminalCommand(command), 1000);
         }}
+        mobileOpenExternal={mobileSidebarOpen}
+        onMobileOpenChange={setMobileSidebarOpen}
       />
 
       {/* Main area (dashboard + terminal) + Agent panel */}
@@ -370,7 +372,7 @@ function ProjectPageContent() {
                   {/* Pane view */}
                   <div className="flex-1 min-h-0 relative">
                     <AgentPaneView
-                      key={`agent-${selectedProjectId}-${activeAgentTab}`}
+                      key={`agent-${selectedProjectId}`}
                       sessionName={sessionName!}
                       role={activeAgentTab}
                       isVisible={true}
@@ -483,7 +485,18 @@ function ProjectPageContent() {
       {mobileTeamOpen && (
         <div className="fixed inset-0 z-50 lg:hidden bg-background flex flex-col">
           <div className="px-3 py-2 border-b border-border/40 flex items-center justify-between shrink-0">
-            <span className="text-xs font-semibold text-muted-foreground/50">Team</span>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => { setMobileTeamOpen(false); setMobileSidebarOpen(true); }}
+                className="flex flex-col gap-[4px] p-1.5 rounded-md hover:bg-muted/30 transition-colors"
+                title="Projects"
+              >
+                <span className="block w-[16px] h-[1.5px] bg-foreground/60 rounded-full" />
+                <span className="block w-[12px] h-[1.5px] bg-foreground/40 rounded-full" />
+                <span className="block w-[16px] h-[1.5px] bg-foreground/60 rounded-full" />
+              </button>
+              <span className="text-xs font-semibold text-muted-foreground/50">Team</span>
+            </div>
             <button
               onClick={() => setMobileTeamOpen(false)}
               className="text-xs px-3 py-1.5 rounded-md border border-border/50 text-foreground/70 hover:bg-muted/30"
@@ -517,7 +530,7 @@ function ProjectPageContent() {
               </div>
               <div className="flex-1 min-h-0 relative">
                 <AgentPaneView
-                  key={`mobile-agent-${selectedProjectId}-${activeAgentTab}`}
+                  key={`mobile-agent-${selectedProjectId}`}
                   sessionName={sessionName}
                   role={activeAgentTab}
                   isVisible={mobileTeamOpen}

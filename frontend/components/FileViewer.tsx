@@ -1,6 +1,11 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import {
+  File, FileCode, FileJson, FileText, FileType,
+  Image, Settings, Database, FileArchive, Lock,
+  Folder, FolderOpen,
+} from "lucide-react";
 
 interface FileEntry {
   name: string;
@@ -48,27 +53,34 @@ function formatSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)}M`;
 }
 
-function getFileIcon(name: string): string {
+function FileIcon({ name }: { name: string }) {
   const ext = name.split(".").pop()?.toLowerCase() || "";
-  const icons: Record<string, string> = {
-    ts: "🟦", tsx: "⚛️", js: "🟨", jsx: "⚛️",
-    py: "🐍", rb: "💎", go: "🔷", rs: "🦀",
-    html: "🌐", css: "🎨", scss: "🎨", less: "🎨",
-    json: "📋", yaml: "📋", yml: "📋", toml: "📋",
-    md: "📝", txt: "📄", csv: "📊",
-    sh: "⚙️", bash: "⚙️", zsh: "⚙️",
-    sql: "🗃️", prisma: "🗃️",
-    png: "🖼️", jpg: "🖼️", jpeg: "🖼️", gif: "🖼️", svg: "🖼️", webp: "🖼️",
-    pdf: "📕", doc: "📘", docx: "📘",
-    zip: "📦", tar: "📦", gz: "📦",
-    env: "🔒", lock: "🔒",
-    git: "📌", gitignore: "📌",
-  };
-  if (name === "Dockerfile") return "🐳";
-  if (name === "Makefile") return "⚙️";
-  if (name === "package.json") return "📦";
-  if (name === "tsconfig.json") return "🟦";
-  return icons[ext] || "📄";
+  const lowerName = name.toLowerCase();
+
+  let Icon = File;
+  let colorClass = "text-[#565f89]";
+
+  if (["ts", "tsx"].includes(ext)) { Icon = FileCode; colorClass = "text-blue-500"; }
+  else if (["js", "jsx", "mjs", "cjs"].includes(ext)) { Icon = FileCode; colorClass = "text-yellow-500"; }
+  else if (["py", "pyw"].includes(ext)) { Icon = FileCode; colorClass = "text-green-500"; }
+  else if (["md", "mdx"].includes(ext)) { Icon = FileText; colorClass = "text-purple-500"; }
+  else if (["json", "yaml", "yml", "toml"].includes(ext)) { Icon = FileJson; colorClass = "text-orange-500"; }
+  else if (["html", "htm"].includes(ext)) { Icon = FileCode; colorClass = "text-orange-600"; }
+  else if (["css", "scss", "sass", "less"].includes(ext)) { Icon = FileCode; colorClass = "text-pink-500"; }
+  else if (["sh", "bash", "zsh"].includes(ext)) { Icon = FileCode; colorClass = "text-green-600"; }
+  else if (ext === "go") { Icon = FileCode; colorClass = "text-cyan-500"; }
+  else if (ext === "rs") { Icon = FileCode; colorClass = "text-orange-700"; }
+  else if (ext === "rb") { Icon = FileCode; colorClass = "text-red-600"; }
+  else if (ext === "sql" || ext === "prisma") { Icon = Database; colorClass = "text-blue-400"; }
+  else if (["png", "jpg", "jpeg", "gif", "svg", "webp", "ico"].includes(ext)) { Icon = Image; colorClass = "text-purple-400"; }
+  else if (["zip", "tar", "gz", "rar"].includes(ext)) { Icon = FileArchive; colorClass = "text-amber-400"; }
+  else if (["exe", "dll", "so", "bin"].includes(ext)) { Icon = Lock; colorClass = "text-red-400"; }
+  else if (["woff", "woff2", "ttf", "otf"].includes(ext)) { Icon = FileType; colorClass = "text-[#565f89]"; }
+  else if (lowerName.includes("config") || lowerName.includes(".env") || ext === "lock" || lowerName.startsWith(".")) {
+    Icon = Settings; colorClass = "text-[#565f89]";
+  }
+
+  return <Icon className={`h-3.5 w-3.5 shrink-0 ${colorClass}`} />;
 }
 
 function TreeItem({
@@ -98,7 +110,10 @@ function TreeItem({
           <span className="text-[10px] text-[#565f89] w-3 text-center shrink-0">
             {node.expanded ? "▾" : "▸"}
           </span>
-          <span className="shrink-0">{node.expanded ? "📂" : "📁"}</span>
+          {node.expanded
+            ? <FolderOpen className="h-3.5 w-3.5 shrink-0 text-[#7aa2f7]" />
+            : <Folder className="h-3.5 w-3.5 shrink-0 text-[#7aa2f7]" />
+          }
           <span className="text-[11px] text-[#7aa2f7] truncate">{node.name}</span>
         </button>
         {node.expanded && node.children && (
@@ -127,7 +142,7 @@ function TreeItem({
       }`}
       style={{ paddingLeft: paddingLeft + 14 }}
     >
-      <span className="shrink-0">{getFileIcon(node.name)}</span>
+      <FileIcon name={node.name} />
       <span className="text-[11px] truncate">{node.name}</span>
       {node.size !== undefined && (
         <span className="text-[9px] text-[#565f89] ml-auto shrink-0">
@@ -285,7 +300,7 @@ export function FileViewer({ rootPath }: FileViewerProps) {
                     className="text-[11px] text-[#565f89] hover:text-[#a9b1d6] transition-colors shrink-0"
                     title="Show file tree"
                   >
-                    📁
+                    <Folder className="h-4 w-4" />
                   </button>
                 )}
                 <span className="text-[11px] text-[#7aa2f7] font-mono truncate">

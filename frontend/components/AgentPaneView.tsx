@@ -114,20 +114,20 @@ export function AgentPaneView({ sessionName, role, isVisible }: AgentPaneViewPro
     }
   };
 
-  const outputHtml = ansiToHtml(output);
+  const outputHtml = ansiToHtml(cleanOutput(output));
 
   return (
-    <div className="flex flex-col h-full overflow-hidden">
-      {/* Output area */}
+    <div className="flex flex-col h-full overflow-hidden" style={{ overscrollBehavior: "none" }}>
+      {/* Output area - vertical scroll only */}
       <div
         ref={outputRef}
         onScroll={handleScroll}
-        className="flex-1 overflow-y-auto overflow-x-auto p-3 bg-[#1a1b26] cursor-text"
+        className="flex-1 overflow-y-auto overflow-x-hidden p-3 bg-[#1a1b26] cursor-text"
+        style={{ overscrollBehavior: "contain", WebkitOverflowScrolling: "touch" }}
         onClick={() => inputRef.current?.focus()}
       >
         <pre
-          className="font-mono text-[13px] whitespace-pre text-[#c0caf5] leading-relaxed"
-          style={{ overflowWrap: "normal", wordBreak: "normal" }}
+          className="font-mono text-[13px] whitespace-pre-wrap break-words text-[#c0caf5] leading-relaxed"
           dangerouslySetInnerHTML={{ __html: outputHtml }}
         />
       </div>
@@ -147,8 +147,8 @@ export function AgentPaneView({ sessionName, role, isVisible }: AgentPaneViewPro
         </div>
       )}
 
-      {/* Input area */}
-      <div className="border-t border-border/40 bg-card px-3 py-2 shrink-0">
+      {/* Input area with safe-area padding */}
+      <div className="border-t border-border/40 bg-card px-3 py-2 shrink-0" style={{ paddingBottom: "max(0.5rem, env(safe-area-inset-bottom))" }}>
         <div className="flex gap-2 items-center">
           <input
             ref={inputRef}
@@ -157,7 +157,8 @@ export function AgentPaneView({ sessionName, role, isVisible }: AgentPaneViewPro
             onKeyDown={handleKeyDown}
             placeholder={isPending ? "Sending..." : `Message ${role}...`}
             disabled={isPending}
-            className="flex-1 font-mono text-sm h-9 px-3 rounded-md bg-muted/30 border border-border/40 text-foreground placeholder:text-muted-foreground/30 focus:outline-none focus:border-primary/40 disabled:opacity-50"
+            className="flex-1 font-mono h-9 px-3 rounded-md bg-muted/30 border border-border/40 text-foreground placeholder:text-muted-foreground/30 focus:outline-none focus:border-primary/40 disabled:opacity-50"
+            style={{ fontSize: "16px" }}
             autoComplete="off"
           />
           <button
@@ -171,6 +172,17 @@ export function AgentPaneView({ sessionName, role, isVisible }: AgentPaneViewPro
       </div>
     </div>
   );
+}
+
+/* ─── Clean output: trim long separator lines ─── */
+function cleanOutput(text: string): string {
+  // Replace long lines of ─ (box drawing) with just the arrow/symbol if present
+  // e.g. "────────── ❯ ──────────" → "❯"
+  // e.g. "──────────────────────" → "───"
+  return text.replace(/[─━─]{4,}([^─━\n]*?)[─━─]{4,}/g, (_, middle) => {
+    const trimmed = middle.trim();
+    return trimmed || "───";
+  }).replace(/[─━]{10,}/g, "───");
 }
 
 /* ─── Full ANSI to HTML (16 + 256 + RGB colors, fg/bg, bold/italic/underline/dim/strikethrough) ─── */

@@ -18,6 +18,8 @@ interface AppSidebarProps {
   selectedProjectId: number | null;
   onSelectProject: (id: number) => void;
   onTeamCommand?: (projectId: number, command: string) => void;
+  mobileOpenExternal?: boolean;
+  onMobileOpenChange?: (open: boolean) => void;
 }
 
 /** Sidebar content shared between desktop and mobile */
@@ -172,12 +174,23 @@ function SidebarContent({
   );
 }
 
-export function AppSidebar({ selectedProjectId, onSelectProject, onTeamCommand }: AppSidebarProps) {
+export function AppSidebar({ selectedProjectId, onSelectProject, onTeamCommand, mobileOpenExternal, onMobileOpenChange }: AppSidebarProps) {
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
   const [collapsed, setCollapsed] = useState(false);
-  const [mobileOpen, setMobileOpen] = useState(false);
+  const [mobileOpenInternal, setMobileOpenInternal] = useState(false);
   const [creating, setCreating] = useState(false);
+
+  const mobileOpen = mobileOpenExternal ?? mobileOpenInternal;
+  const setMobileOpen = (open: boolean) => {
+    setMobileOpenInternal(open);
+    onMobileOpenChange?.(open);
+  };
+
+  // Sync external state
+  useEffect(() => {
+    if (mobileOpenExternal !== undefined) setMobileOpenInternal(mobileOpenExternal);
+  }, [mobileOpenExternal]);
 
   const fetchProjects = useCallback(async () => {
     try {
