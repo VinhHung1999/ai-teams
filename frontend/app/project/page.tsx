@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { AppSidebar } from "@/components/AppSidebar";
 import { ProjectDashboard } from "@/components/ProjectDashboard";
+import { FileViewer } from "@/components/FileViewer";
 import { WebTerminal } from "@/components/WebTerminal";
 import { AgentPaneView } from "@/components/AgentPaneView";
 import { Button } from "@/components/ui/button";
@@ -36,6 +37,7 @@ function ProjectPageContent() {
   const [tmuxRoles, setTmuxRoles] = useState<string[]>([]);
   const [teamStarting, setTeamStarting] = useState(false);
   const [roleActivity, setRoleActivity] = useState<Record<string, boolean>>({});
+  const [centerTab, setCenterTab] = useState<"dashboard" | "files">("dashboard");
   const sessionName = project?.tmux_session_name || undefined;
   const projectCwd = project?.working_directory || undefined;
 
@@ -145,10 +147,38 @@ function ProjectPageContent() {
       <div className="flex-1 flex flex-row min-w-0 min-h-0">
         {/* Center: Dashboard + Terminal (hidden in focus mode) */}
         <div className={`flex-1 flex flex-col min-w-0 min-h-0 ${teamFocusMode ? "hidden" : ""}`}>
-          {/* Dashboard */}
+          {/* Center tabs + content */}
+          {selectedProjectId && (
+            <div className="flex gap-0.5 px-2 h-9 items-center border-b border-border/40 bg-muted/20 shrink-0">
+              <button
+                onClick={() => setCenterTab("dashboard")}
+                className={`px-3 py-1 rounded-md text-[11px] font-mono transition-colors ${
+                  centerTab === "dashboard"
+                    ? "bg-background text-foreground shadow-sm font-semibold"
+                    : "text-muted-foreground/50 hover:text-foreground/70 hover:bg-muted/30"
+                }`}
+              >
+                Dashboard
+              </button>
+              <button
+                onClick={() => setCenterTab("files")}
+                className={`px-3 py-1 rounded-md text-[11px] font-mono transition-colors ${
+                  centerTab === "files"
+                    ? "bg-background text-foreground shadow-sm font-semibold"
+                    : "text-muted-foreground/50 hover:text-foreground/70 hover:bg-muted/30"
+                }`}
+              >
+                Files
+              </button>
+            </div>
+          )}
           <div className="flex-1 min-h-0 overflow-y-auto">
             {selectedProjectId ? (
-              <ProjectDashboard projectId={selectedProjectId} />
+              centerTab === "dashboard" ? (
+                <ProjectDashboard projectId={selectedProjectId} />
+              ) : (
+                <FileViewer rootPath={projectCwd || ""} />
+              )
             ) : (
               <div className="flex-1 flex items-center justify-center h-full">
                 <div className="text-center">

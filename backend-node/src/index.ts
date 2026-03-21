@@ -41,12 +41,14 @@ import backlogRouter from './routes/backlog';
 import sprintsRouter from './routes/sprints';
 import boardRouter from './routes/board';
 import tmuxRouter from './routes/tmux';
+import filesRouter from './routes/files';
 
 app.use(projectsRouter);
 app.use(backlogRouter);
 app.use(sprintsRouter);
 app.use(boardRouter);
 app.use(tmuxRouter);
+app.use(filesRouter);
 
 // Terminal REST endpoints
 app.get('/api/terminal/sessions', (_req, res) => {
