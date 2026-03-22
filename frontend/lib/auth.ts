@@ -6,6 +6,7 @@ const allowedEmails = (process.env.ALLOWED_EMAILS || "")
   .map((e) => e.trim().toLowerCase());
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
+  trustHost: true,
   providers: [
     Google({
       clientId: process.env.GOOGLE_CLIENT_ID!,
