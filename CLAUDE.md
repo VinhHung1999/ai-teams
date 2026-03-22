@@ -71,3 +71,16 @@ MCP Server (stdio, same DB)
 ## Testing
 
 Backend tests use an in-memory SQLite database (`sqlite+aiosqlite://`) with per-test fixtures. The conftest overrides `get_db` dependency. All tests are async (`asyncio_mode = "auto"`).
+
+## Project Memory
+
+Project memories are stored in `.claude/memory/`. Use `--project-recall` before complex tasks, `--project-store` after meaningful work.
+
+| Topic | Content |
+|-------|---------|
+| [bugs-and-lessons](.claude/memory/bugs-and-lessons/README.md) | Bugs encountered and lessons learned |
+| [design-decisions](.claude/memory/design-decisions/README.md) | UI/UX decisions, color palette, layout |
+| [api-design](.claude/memory/api-design/README.md) | API endpoints, auth patterns, conventions |
+| [data-model](.claude/memory/data-model/README.md) | Database schema, ORM patterns, migrations |
+| [architecture](.claude/memory/architecture/README.md) | System structure, module boundaries |
+| [team](.claude/memory/team/README.md) | Team roles, workflow, communication |

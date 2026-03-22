@@ -215,11 +215,11 @@ function ProjectPageContent() {
                   </button>
                 </div>
                 <div className="flex-1 min-h-0">
-                  {selectedProjectId ? (
+                  {selectedProjectId && projectCwd ? (
                     <WebTerminal
-                      key={`boss-${selectedProjectId}-${bossTerminalKey}`}
+                      key={`boss-${selectedProjectId}-${bossTerminalKey}-${projectCwd}`}
                       wsUrl={getTerminalWsUrl(projectCwd)}
-                      sessionName={`boss-${selectedProjectId}-${bossTerminalKey}`}
+                      sessionName={`boss-${selectedProjectId}-${bossTerminalKey}-${btoa(projectCwd || "").slice(0, 8)}`}
                       initialCommand={pendingTerminalCommand}
                       onConnected={() => {
                         if (pendingTerminalCommand) {
