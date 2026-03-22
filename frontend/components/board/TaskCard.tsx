@@ -55,9 +55,9 @@ export function TaskCard({ item, onClick }: TaskCardProps) {
       {...listeners}
       onClick={onClick}
       className={`
-        group relative rounded-lg border border-border/50 bg-card p-3
+        group relative rounded-sm border border-[#1f1f1f] bg-[#0a0a0a] p-3
         cursor-grab active:cursor-grabbing
-        hover:border-border/80 hover:shadow-sm hover:shadow-black/10
+        hover:border-emerald-500/30 hover:shadow-sm hover:shadow-black/10
         transition-all duration-150
         ${isDragging ? "opacity-30 scale-[0.98]" : ""}
       `}
@@ -118,7 +118,7 @@ export function TaskCardOverlay({ item }: { item: BoardItem }) {
   const role = item.assignee_role ? roleConfig[item.assignee_role] || roleConfig.BE : null;
 
   return (
-    <div className="drag-overlay rounded-lg border border-primary/30 bg-card p-3 w-[256px]">
+    <div className="drag-overlay rounded-sm border border-primary/30 bg-[#0a0a0a] p-3 w-[256px]">
       <div
         className={`absolute left-0 top-3 bottom-3 w-[2.5px] rounded-full ${
           item.priority === "P0" ? "bg-red-500" :

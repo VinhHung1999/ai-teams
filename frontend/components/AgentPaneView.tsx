@@ -16,7 +16,7 @@ const SPECIAL_KEYS: Record<string, string> = {
 
 export function AgentPaneView({ sessionName, role, isVisible }: AgentPaneViewProps) {
   const outputRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
   const [output, setOutput] = useState("");
   const [autoScroll, setAutoScroll] = useState(true);
   const [inputValue, setInputValue] = useState("");
@@ -122,12 +122,12 @@ export function AgentPaneView({ sessionName, role, isVisible }: AgentPaneViewPro
       <div
         ref={outputRef}
         onScroll={handleScroll}
-        className="flex-1 overflow-y-auto overflow-x-hidden p-3 bg-[#1a1b26] cursor-text"
+        className="flex-1 overflow-y-auto overflow-x-hidden p-3 bg-[#000000] cursor-text"
         style={{ overscrollBehavior: "contain", WebkitOverflowScrolling: "touch" }}
         onClick={() => inputRef.current?.focus()}
       >
         <pre
-          className="font-mono text-[13px] whitespace-pre-wrap break-words text-[#c0caf5] leading-relaxed"
+          className="font-mono text-[13px] whitespace-pre-wrap break-words text-[#e0e0e0] leading-relaxed"
           dangerouslySetInnerHTML={{ __html: outputHtml }}
         />
       </div>
@@ -149,20 +149,41 @@ export function AgentPaneView({ sessionName, role, isVisible }: AgentPaneViewPro
 
       {/* Input area with safe-area padding */}
       <div className="border-t border-border/40 bg-card px-3 py-2 shrink-0" style={{ paddingBottom: "max(0.5rem, env(safe-area-inset-bottom))" }}>
-        <div className="flex gap-2 items-center">
-          <input
+        <div className="flex gap-2 items-end">
+          <textarea
             ref={inputRef}
             value={inputValue}
-            onChange={(e) => setInputValue(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder={isPending ? "Sending..." : `Message ${role}...`}
+            onChange={(e) => {
+              setInputValue(e.target.value);
+              // Auto-resize
+              e.target.style.height = "auto";
+              e.target.style.height = Math.min(e.target.scrollHeight, 120) + "px";
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                handleSendMessage();
+                // Reset height
+                const el = e.target as HTMLTextAreaElement;
+                el.style.height = "36px";
+                return;
+              }
+              handleKeyDown(e as unknown as React.KeyboardEvent<HTMLInputElement>);
+            }}
+            placeholder={isPending ? "Sending..." : `Message ${role}... (Shift+Enter for new line)`}
             disabled={isPending}
-            className="flex-1 font-mono h-9 px-3 rounded-md bg-muted/30 border border-border/40 text-foreground placeholder:text-muted-foreground/30 focus:outline-none focus:border-primary/40 disabled:opacity-50"
-            style={{ fontSize: "16px" }}
+            className="flex-1 font-mono px-3 py-2 rounded-md bg-muted/30 border border-border/40 text-foreground placeholder:text-muted-foreground/30 focus:outline-none focus:border-primary/40 disabled:opacity-50 resize-none overflow-hidden"
+            style={{ fontSize: "16px", height: "36px", maxHeight: "120px" }}
             autoComplete="off"
+            rows={1}
           />
           <button
-            onClick={handleSendMessage}
+            onClick={() => {
+              handleSendMessage();
+              // Reset textarea height
+              const el = inputRef.current as HTMLTextAreaElement | null;
+              if (el) el.style.height = "36px";
+            }}
             disabled={!inputValue.trim() || isPending}
             className="h-9 px-3 rounded-md bg-primary text-primary-foreground text-xs font-mono hover:bg-primary/90 disabled:opacity-30 shrink-0"
           >

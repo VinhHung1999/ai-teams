@@ -487,7 +487,7 @@ function ProjectPageContent() {
           <div className="px-3 py-2 border-b border-border/40 flex items-center justify-between shrink-0">
             <div className="flex items-center gap-2">
               <button
-                onClick={() => { setMobileTeamOpen(false); setMobileSidebarOpen(true); }}
+                onClick={() => { setMobileSidebarOpen(true); }}
                 className="flex flex-col gap-[4px] p-1.5 rounded-md hover:bg-muted/30 transition-colors"
                 title="Projects"
               >

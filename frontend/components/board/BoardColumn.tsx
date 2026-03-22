@@ -30,8 +30,8 @@ export function BoardColumn({ id, label, items, onTaskClick }: BoardColumnProps)
     <div
       ref={setNodeRef}
       className={`
-        flex flex-col w-full lg:min-w-[272px] lg:w-[272px] rounded-xl
-        bg-muted/25 border border-border/40
+        flex flex-col w-full lg:min-w-[272px] lg:w-[272px] rounded-sm
+        bg-transparent border border-[#1f1f1f]
         transition-all duration-200
         ${isOver ? "column-drag-over border-primary/40" : ""}
       `}

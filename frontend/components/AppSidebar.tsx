@@ -130,18 +130,18 @@ function SidebarContent({
             return (
               <div
                 key={project.id}
-                className={`group flex items-center gap-2.5 px-2.5 py-2 rounded-lg cursor-pointer transition-all duration-150 ${
+                className={`group flex items-center gap-2.5 px-2.5 py-2 rounded-sm cursor-pointer transition-all duration-150 ${
                   isActive
-                    ? "bg-primary/10 text-primary"
-                    : "text-foreground/70 hover:bg-muted/20 hover:text-foreground/90"
+                    ? "bg-transparent text-primary border-l-2 border-l-primary"
+                    : "text-foreground/70 hover:bg-[#161616] hover:text-foreground/90"
                 }`}
                 onClick={() => onSelectProject(project.id)}
               >
                 <div
-                  className={`w-7 h-7 rounded-md flex items-center justify-center shrink-0 text-[9px] font-mono font-semibold ${
+                  className={`w-7 h-7 rounded-sm flex items-center justify-center shrink-0 text-[9px] font-mono font-semibold ${
                     isActive
                       ? "bg-primary/15 text-primary border border-primary/25"
-                      : "bg-muted/30 text-muted-foreground/50 border border-border/30"
+                      : "bg-[#161616] text-muted-foreground/50 border border-border/30"
                   }`}
                 >
                   {project.name.slice(0, 2).toUpperCase()}
@@ -226,7 +226,7 @@ export function AppSidebar({ selectedProjectId, onSelectProject, onTeamCommand, 
     <>
       {/* Desktop sidebar */}
       <aside
-        className={`hidden lg:flex flex-col shrink-0 h-full border-r border-border/40 bg-background transition-all duration-200 ${
+        className={`hidden lg:flex flex-col shrink-0 h-full border-r border-[#1f1f1f] bg-[#000000] transition-all duration-200 ${
           collapsed ? "w-12" : "w-[220px]"
         }`}
       >
@@ -257,7 +257,7 @@ export function AppSidebar({ selectedProjectId, onSelectProject, onTeamCommand, 
             />
             <SheetContent
               side="left"
-              className="w-[280px] sm:max-w-[280px] bg-background border-border/40 p-0"
+              className="w-[280px] sm:max-w-[280px] bg-background border-border/40 p-0 z-[60]"
             >
               <SheetHeader className="sr-only">
                 <SheetTitle>Navigation</SheetTitle>

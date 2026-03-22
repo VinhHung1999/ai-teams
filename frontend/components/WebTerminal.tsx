@@ -63,14 +63,14 @@ export function WebTerminal({
     const term = new Terminal({
       cursorBlink: true,
       fontSize: 13,
-      fontFamily: "'IBM Plex Mono', 'Menlo', monospace",
+      fontFamily: "'JetBrains Mono', 'Menlo', monospace",
       scrollback: 5000,
       theme: {
-        background: "#1a1b26",
-        foreground: "#c0caf5",
-        cursor: "#c0caf5",
-        cursorAccent: "#1a1b26",
-        selectionBackground: "#33467c",
+        background: "#000000",
+        foreground: "#e0e0e0",
+        cursor: "#10b981",
+        cursorAccent: "#000000",
+        selectionBackground: "#10b981",
         black: "#15161e",
         red: "#f7768e",
         green: "#9ece6a",
@@ -86,7 +86,7 @@ export function WebTerminal({
         brightBlue: "#7aa2f7",
         brightMagenta: "#bb9af7",
         brightCyan: "#7dcfff",
-        brightWhite: "#c0caf5",
+        brightWhite: "#e0e0e0",
       },
     });
 

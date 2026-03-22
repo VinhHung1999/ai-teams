@@ -1,14 +1,14 @@
 import type { Metadata, Viewport } from "next";
-import { DM_Sans, IBM_Plex_Mono } from "next/font/google";
+import { JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 
-const dmSans = DM_Sans({
+const jetbrainsMono = JetBrains_Mono({
   variable: "--font-sans",
   subsets: ["latin", "latin-ext"],
   weight: ["400", "500", "600", "700"],
 });
 
-const ibmPlexMono = IBM_Plex_Mono({
+const jetbrainsMonoCode = JetBrains_Mono({
   variable: "--font-geist-mono",
   subsets: ["latin"],
   weight: ["400", "500"],
@@ -35,7 +35,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body
-        className={`${dmSans.variable} ${ibmPlexMono.variable} antialiased`}
+        className={`${jetbrainsMono.variable} ${jetbrainsMonoCode.variable} antialiased`}
       >
         {children}
       </body>
