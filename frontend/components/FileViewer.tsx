@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { codeToHtml } from "shiki";
 import {
   File, FileCode, FileJson, FileText, FileType,
   Image, Settings, Database, FileArchive, Lock,
@@ -246,6 +247,36 @@ export function FileViewer({ rootPath }: FileViewerProps) {
     }
   }, []);
 
+  const [highlightedHtml, setHighlightedHtml] = useState<string>("");
+  const highlightingRef = useRef(false);
+
+  // Shiki syntax highlighting
+  useEffect(() => {
+    if (!selectedFile) { setHighlightedHtml(""); return; }
+    // Map language names to shiki language IDs
+    const langMap: Record<string, string> = {
+      typescript: "typescript", javascript: "javascript", python: "python",
+      markdown: "markdown", json: "json", yaml: "yaml", html: "html",
+      css: "css", scss: "scss", shell: "bash", bash: "bash",
+      sql: "sql", go: "go", rust: "rust", ruby: "ruby", java: "java",
+      cpp: "cpp", c: "c", php: "php", swift: "swift", kotlin: "kotlin",
+      toml: "toml", xml: "xml", graphql: "graphql", dockerfile: "dockerfile",
+      prisma: "prisma", tsx: "tsx", jsx: "jsx",
+    };
+    const lang = langMap[selectedFile.language] || "text";
+    highlightingRef.current = true;
+    codeToHtml(selectedFile.content, {
+      lang,
+      theme: "vitesse-black",
+    }).then((html) => {
+      if (highlightingRef.current) setHighlightedHtml(html);
+    }).catch(() => {
+      // Fallback: no highlighting
+      setHighlightedHtml("");
+    });
+    return () => { highlightingRef.current = false; };
+  }, [selectedFile]);
+
   const lines = selectedFile?.content.split("\n") || [];
 
   return (
@@ -315,22 +346,38 @@ export function FileViewer({ rootPath }: FileViewerProps) {
             </div>
             {/* Code content */}
             <div className="flex-1 overflow-auto">
-              <pre className="text-[12px] leading-[1.6] font-mono p-0 m-0">
-                <table className="border-collapse w-full">
-                  <tbody>
-                    {lines.map((line, i) => (
-                      <tr key={i} className="hover:bg-[#0a0a0a]/40">
-                        <td className="text-right pr-4 pl-3 select-none text-[#333333] w-[1%] whitespace-nowrap align-top">
-                          {i + 1}
-                        </td>
-                        <td className="pr-4 whitespace-pre text-[#888888]">
-                          {line || " "}
-                        </td>
-                      </tr>
+              {highlightedHtml ? (
+                <div className="flex text-[12px] leading-[1.6] font-mono">
+                  {/* Line numbers */}
+                  <div className="select-none text-right pr-4 pl-3 text-[#333333] shrink-0 pt-3 pb-3">
+                    {lines.map((_, i) => (
+                      <div key={i}>{i + 1}</div>
                     ))}
-                  </tbody>
-                </table>
-              </pre>
+                  </div>
+                  {/* Highlighted code */}
+                  <div
+                    className="flex-1 min-w-0 overflow-x-auto pt-3 pb-3 pr-4 [&_pre]:!bg-transparent [&_pre]:!m-0 [&_pre]:!p-0 [&_code]:!text-[12px] [&_code]:!leading-[1.6]"
+                    dangerouslySetInnerHTML={{ __html: highlightedHtml }}
+                  />
+                </div>
+              ) : (
+                <pre className="text-[12px] leading-[1.6] font-mono p-0 m-0">
+                  <table className="border-collapse w-full">
+                    <tbody>
+                      {lines.map((line, i) => (
+                        <tr key={i} className="hover:bg-[#0a0a0a]/40">
+                          <td className="text-right pr-4 pl-3 select-none text-[#333333] w-[1%] whitespace-nowrap align-top">
+                            {i + 1}
+                          </td>
+                          <td className="pr-4 whitespace-pre text-[#888888]">
+                            {line || " "}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </pre>
+              )}
             </div>
           </>
         ) : loading ? (

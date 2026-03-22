@@ -21,6 +21,70 @@ export function AgentPaneView({ sessionName, role, isVisible }: AgentPaneViewPro
   const [autoScroll, setAutoScroll] = useState(true);
   const [inputValue, setInputValue] = useState("");
   const [isPending, setIsPending] = useState(false);
+  const [isListening, setIsListening] = useState(false);
+  const [speechTranscript, setSpeechTranscript] = useState("");
+  const [speechInterim, setSpeechInterim] = useState("");
+  const recognitionRef = useRef<any>(null);
+
+  const startSpeech = () => {
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      alert("Speech recognition not supported");
+      return;
+    }
+
+    const recognition = new SpeechRecognition();
+    recognition.lang = "vi-VN"; // Handles mixed VI/EN well on iOS/macOS
+    recognition.continuous = true;
+    recognition.interimResults = true;
+
+    let accumulated = "";
+
+    recognition.onresult = (event: any) => {
+      let interim = "";
+      let finalChunk = "";
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        if (event.results[i].isFinal) {
+          finalChunk += event.results[i][0].transcript;
+        } else {
+          interim = event.results[i][0].transcript;
+        }
+      }
+      if (finalChunk) {
+        accumulated += (accumulated ? " " : "") + finalChunk;
+        setSpeechTranscript(accumulated);
+      }
+      setSpeechInterim(interim);
+    };
+
+    recognition.onerror = () => { setIsListening(false); };
+    recognition.onend = () => { setIsListening(false); };
+
+    recognition.start();
+    recognitionRef.current = recognition;
+    setSpeechTranscript("");
+    setSpeechInterim("");
+    setIsListening(true);
+  };
+
+  const stopSpeechAndSend = () => {
+    recognitionRef.current?.stop();
+    setIsListening(false);
+    const text = speechTranscript.trim();
+    if (text) {
+      // Send directly
+      sendText(text);
+    }
+    setSpeechTranscript("");
+    setSpeechInterim("");
+  };
+
+  const cancelSpeech = () => {
+    recognitionRef.current?.stop();
+    setIsListening(false);
+    setSpeechTranscript("");
+    setSpeechInterim("");
+  };
   const prevOutputLen = useRef(0);
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -147,6 +211,29 @@ export function AgentPaneView({ sessionName, role, isVisible }: AgentPaneViewPro
         </div>
       )}
 
+      {/* Speech transcript overlay */}
+      {isListening && (
+        <div className="border-t border-red-500/30 bg-[#0a0a0a] px-3 py-2 shrink-0">
+          <div className="flex items-start gap-2">
+            <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse mt-1.5 shrink-0" />
+            <div className="flex-1 min-w-0">
+              <p className="text-xs text-foreground/80 font-mono">
+                {speechTranscript}
+                {speechInterim && <span className="text-muted-foreground/40">{speechTranscript ? " " : ""}{speechInterim}</span>}
+                {!speechTranscript && !speechInterim && <span className="text-muted-foreground/30">Listening...</span>}
+              </p>
+            </div>
+            <button
+              onClick={cancelSpeech}
+              className="text-[10px] text-muted-foreground/40 hover:text-foreground/60 shrink-0"
+              title="Cancel"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Input area with safe-area padding */}
       <div className="border-t border-border/40 bg-card px-3 py-2 shrink-0" style={{ paddingBottom: "max(0.5rem, env(safe-area-inset-bottom))" }}>
         <div className="flex gap-2 items-end">
@@ -177,10 +264,22 @@ export function AgentPaneView({ sessionName, role, isVisible }: AgentPaneViewPro
             autoComplete="off"
             rows={1}
           />
+          {/* Mic button */}
+          <button
+            onClick={isListening ? stopSpeechAndSend : startSpeech}
+            className={`h-9 w-9 rounded-sm flex items-center justify-center shrink-0 transition-all ${
+              isListening
+                ? "bg-red-500/20 text-red-400 border border-red-500/40 animate-pulse"
+                : "text-muted-foreground/50 hover:text-foreground/70 hover:bg-muted/20 border border-border/30"
+            }`}
+            title={isListening ? "Stop & fill input" : "Start speech"}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg>
+          </button>
+          {/* Send button */}
           <button
             onClick={() => {
               handleSendMessage();
-              // Reset textarea height
               const el = inputRef.current as HTMLTextAreaElement | null;
               if (el) el.style.height = "36px";
             }}

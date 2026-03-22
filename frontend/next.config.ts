@@ -2,16 +2,25 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   async rewrites() {
-    return [
-      {
-        source: "/api/:path*",
-        destination: "http://localhost:17070/api/:path*",
-      },
-      {
-        source: "/ws/:path*",
-        destination: "http://localhost:17070/ws/:path*",
-      },
-    ];
+    return {
+      beforeFiles: [],
+      afterFiles: [
+        {
+          source: "/api/auth/:path*",
+          destination: "/api/auth/:path*",
+        },
+      ],
+      fallback: [
+        {
+          source: "/api/:path*",
+          destination: "http://localhost:17070/api/:path*",
+        },
+        {
+          source: "/ws/:path*",
+          destination: "http://localhost:17070/ws/:path*",
+        },
+      ],
+    };
   },
 };
 
