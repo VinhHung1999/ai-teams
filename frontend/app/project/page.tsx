@@ -1,15 +1,18 @@
 "use client";
 
-import { useState, useEffect, useCallback, Suspense } from "react";
+import { useState, useEffect, useCallback, useRef, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { AppSidebar } from "@/components/AppSidebar";
 import { ProjectDashboard } from "@/components/ProjectDashboard";
-import { FileViewer } from "@/components/FileViewer";
+import { FileManager } from "@/components/FileManager";
+import { GitChangesView } from "@/components/GitChangesView";
 import { WebTerminal } from "@/components/WebTerminal";
 import { AgentPaneView } from "@/components/AgentPaneView";
 import { Button } from "@/components/ui/button";
 import type { Project } from "@/lib/types";
 import { api } from "@/lib/api";
+import { useBoardWs } from "@/lib/useBoardWs";
+import { useTmuxWs } from "@/lib/useTmuxWs";
 
 const ROLES = ["PO", "SM", "TL", "BE", "FE", "QA"] as const;
 
@@ -25,7 +28,7 @@ function ProjectPageContent() {
 
   // Panels collapse state
   const [agentPanelOpen, setAgentPanelOpen] = useState(true);
-  const [agentPanelWidth, setAgentPanelWidth] = useState(380);
+  const [agentPanelWidth, setAgentPanelWidth] = useState(600);
   const [teamFocusMode, setTeamFocusMode] = useState(false);
   const [mobileTeamOpen, setMobileTeamOpen] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
@@ -39,11 +42,48 @@ function ProjectPageContent() {
   const [tmuxRoles, setTmuxRoles] = useState<string[]>([]);
   const [teamStarting, setTeamStarting] = useState(false);
   const [roleActivity, setRoleActivity] = useState<Record<string, boolean>>({});
-  const [centerTab, setCenterTab] = useState<"dashboard" | "files">("dashboard");
+  const [centerTab, setCenterTab] = useState<"dashboard" | "files" | "git">("dashboard");
+  const [filesVisited, setFilesVisited] = useState(false);
+  const [gitVisited, setGitVisited] = useState(false);
+  const [dashboardData, setDashboardData] = useState<Record<number, any>>({});
   const sessionName = project?.tmux_session_name || undefined;
   const projectCwd = project?.working_directory || undefined;
+  const projectCacheRef = useRef<Map<number, Project>>(new Map());
 
-  // Fetch project details when selection changes
+  // Persistent board WebSocket — dashboard updates + notifications
+  useBoardWs(
+    selectedProjectId,
+    useCallback((data: any) => {
+      if (data.project?.id) {
+        setDashboardData(prev => ({ ...prev, [data.project.id]: data }));
+      }
+    }, []),
+  );
+
+  // REST activity poll — only for the currently focused project
+  useEffect(() => {
+    if (!tmuxSessionActive || !sessionName) return;
+    const poll = async () => {
+      try {
+        const res = await fetch(`/api/tmux/session/${encodeURIComponent(sessionName)}/activity`);
+        if (res.ok) setRoleActivity(await res.json());
+      } catch {}
+    };
+    poll();
+    const t = setInterval(poll, 5000);
+    return () => clearInterval(t);
+  }, [tmuxSessionActive, sessionName]);
+
+  // Apply project data to state + update cache
+  const applyProjectData = useCallback((data: Project) => {
+    projectCacheRef.current.set(data.id, data);
+    setProject(data);
+    setHasSetupFile(data.has_setup_file ?? false);
+    setSetupFilePath(data.setup_file_path ?? "");
+    setTmuxSessionActive(data.tmux_active ?? false);
+    setTmuxRoles(data.roles ?? []);
+  }, []);
+
   useEffect(() => {
     if (!selectedProjectId) {
       setProject(null);
@@ -52,49 +92,27 @@ function ProjectPageContent() {
       setTmuxRoles([]);
       return;
     }
-    api.getProject(selectedProjectId)
-      .then(setProject)
-      .catch(() => setProject(null));
-  }, [selectedProjectId]);
-
-  // Check team status: files exist? tmux running?
-  const checkTeamStatus = useCallback(async () => {
-    if (!sessionName) {
-      setHasSetupFile(false);
-      setTmuxSessionActive(false);
-      setTmuxRoles([]);
+    // Use cache if available — only fetch on first visit to this project
+    const cached = projectCacheRef.current.get(selectedProjectId);
+    if (cached) {
+      applyProjectData(cached);
       return;
     }
+    api.getProject(selectedProjectId)
+      .then(applyProjectData)
+      .catch(() => setProject(null));
+  }, [selectedProjectId, applyProjectData]);
+
+  // Re-fetch project (used after kill/restart to refresh tmux status)
+  const refreshTeamStatus = useCallback(async () => {
+    if (!selectedProjectId) return;
     try {
-      const cwdParam = projectCwd ? `&working_dir=${encodeURIComponent(projectCwd)}` : "";
-      const res = await fetch(`/api/tmux/session/${encodeURIComponent(sessionName)}?${cwdParam}`);
-      if (res.ok) {
-        const data = await res.json();
-        setHasSetupFile(data.has_setup_file);
-        setSetupFilePath(data.setup_file_path || "");
-        setTmuxSessionActive(data.tmux_active);
-        setTmuxRoles(data.roles || []);
-      }
-    } catch {
-      setHasSetupFile(false);
-      setTmuxSessionActive(false);
-      setTmuxRoles([]);
-    }
-  }, [sessionName, projectCwd]);
+      const data = await api.getProject(selectedProjectId);
+      applyProjectData(data);
+    } catch {}
+  }, [selectedProjectId, applyProjectData]);
 
-  useEffect(() => { checkTeamStatus(); }, [checkTeamStatus]);
-
-  // Poll role activity when team is running
-  useEffect(() => {
-    if (!tmuxSessionActive || !sessionName) { setRoleActivity({}); return; }
-    const poll = setInterval(async () => {
-      try {
-        const res = await fetch(`/api/tmux/session/${encodeURIComponent(sessionName)}/activity`);
-        if (res.ok) setRoleActivity(await res.json());
-      } catch {}
-    }, 2000);
-    return () => clearInterval(poll);
-  }, [tmuxSessionActive, sessionName]);
+  // Activity now pushed via Board WS (see useBoardWs onActivity callback below)
 
   // Sync URL when project changes
   useEffect(() => {
@@ -105,6 +123,13 @@ function ProjectPageContent() {
       }
     }
   }, [selectedProjectId, router, searchParams]);
+
+  // Reset active agent tab + lazy tab state when project changes
+  useEffect(() => {
+    setActiveAgentTab(ROLES[0]);
+    setFilesVisited(false);
+    setGitVisited(false);
+  }, [selectedProjectId]);
 
   const handleSelectProject = (id: number) => {
     setSelectedProjectId(id);
@@ -130,7 +155,11 @@ function ProjectPageContent() {
     return `ws://localhost:17070/ws/terminal${cwdParam}`;
   }, []);
 
-  const getAgentWsUrl = getTerminalWsUrl;
+  // 1 WS per pane — each role has its own persistent WS, only active role polls
+  const { outputs: paneOutputs, wsStatus: tmuxWsStatus } = useTmuxWs(
+    sessionName,
+    activeAgentTab,
+  );
 
   return (
     <div className="h-screen flex flex-col lg:flex-row overflow-hidden">
@@ -164,7 +193,7 @@ function ProjectPageContent() {
                 Dashboard
               </button>
               <button
-                onClick={() => setCenterTab("files")}
+                onClick={() => { setCenterTab("files"); setFilesVisited(true); }}
                 className={`px-3 py-1 rounded-md text-[11px] font-mono transition-colors ${
                   centerTab === "files"
                     ? "bg-background text-foreground shadow-sm font-semibold"
@@ -173,15 +202,35 @@ function ProjectPageContent() {
               >
                 Files
               </button>
+              <button
+                onClick={() => { setCenterTab("git"); setGitVisited(true); }}
+                className={`px-3 py-1 rounded-md text-[11px] font-mono transition-colors ${
+                  centerTab === "git"
+                    ? "bg-background text-foreground shadow-sm font-semibold"
+                    : "text-muted-foreground/50 hover:text-foreground/70 hover:bg-muted/30"
+                }`}
+              >
+                Git Changes
+              </button>
             </div>
           )}
-          <div className="flex-1 min-h-0 overflow-y-auto">
+          <div className="flex-1 min-h-0 overflow-y-auto relative">
             {selectedProjectId ? (
-              centerTab === "dashboard" ? (
-                <ProjectDashboard projectId={selectedProjectId} />
-              ) : (
-                <FileViewer rootPath={projectCwd || ""} />
-              )
+              <>
+                <div className={`absolute inset-0 overflow-y-auto ${centerTab === "dashboard" ? "" : "hidden"}`}>
+                  <ProjectDashboard projectId={selectedProjectId} wsData={dashboardData[selectedProjectId]} />
+                </div>
+                {filesVisited && (
+                  <div className={`absolute inset-0 overflow-y-auto ${centerTab === "files" ? "" : "hidden"}`}>
+                    <FileManager rootPath={projectCwd || ""} />
+                  </div>
+                )}
+                {gitVisited && (
+                  <div className={`absolute inset-0 flex flex-col ${centerTab === "git" ? "" : "hidden"}`}>
+                    <GitChangesView rootPath={projectCwd || ""} />
+                  </div>
+                )}
+              </>
             ) : (
               <div className="flex-1 flex items-center justify-center h-full">
                 <div className="text-center">
@@ -274,10 +323,29 @@ function ProjectPageContent() {
 
               {/* Header */}
               <div className="px-3 py-2 border-b border-border/40 flex items-center justify-between shrink-0">
-                <span className="text-xs font-semibold text-muted-foreground/50">
-                  Team
-                </span>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs font-semibold text-muted-foreground/50">
+                    {sessionName || "Team"}
+                  </span>
+                </div>
                 <div className="flex items-center gap-1">
+                  {tmuxSessionActive && sessionName && (
+                    <button
+                      onClick={async () => {
+                        if (!confirm(`Kill team "${sessionName}"? This will stop all agents.`)) return;
+                        try {
+                          await fetch(`/api/tmux/session/${encodeURIComponent(sessionName)}/kill`, { method: "POST" });
+                        } catch {}
+                        setTmuxSessionActive(false);
+                        setTmuxRoles([]);
+                        refreshTeamStatus();
+                      }}
+                      className="w-7 h-7 rounded-md flex items-center justify-center text-red-400/50 hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                      title="Kill team"
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6 6 18M6 6l12 12"/></svg>
+                    </button>
+                  )}
                   {tmuxSessionActive && sessionName && setupFilePath && (
                     <button
                       onClick={async () => {
@@ -306,7 +374,7 @@ function ProjectPageContent() {
                               if (data.tmux_active) {
                                 clearInterval(poll);
                                 setTeamStarting(false);
-                                checkTeamStatus();
+                                refreshTeamStatus();
                               }
                             }
                           } catch {}
@@ -369,14 +437,22 @@ function ProjectPageContent() {
                     </div>
                   </div>
 
-                  {/* Pane view */}
+                  {/* Pane views - all mounted, only active visible */}
                   <div className="flex-1 min-h-0 relative">
-                    <AgentPaneView
-                      key={`agent-${selectedProjectId}`}
-                      sessionName={sessionName!}
-                      role={activeAgentTab}
-                      isVisible={true}
-                    />
+                    {(tmuxRoles.length > 0 ? tmuxRoles : ROLES).map((role) => (
+                      <div
+                        key={`agent-${role}`}
+                        className={`absolute inset-0 ${activeAgentTab === role ? "" : "hidden"}`}
+                      >
+                        <AgentPaneView
+                          sessionName={sessionName!}
+                          role={role}
+                          isVisible={activeAgentTab === role}
+                          output={paneOutputs[role] ?? ""}
+                          wsStatus={activeAgentTab === role ? tmuxWsStatus : undefined}
+                        />
+                      </div>
+                    ))}
                   </div>
                 </>
               ) : selectedProjectId && hasSetupFile && !tmuxSessionActive ? (
@@ -411,7 +487,7 @@ function ProjectPageContent() {
                                   if (data.tmux_active) {
                                     clearInterval(poll);
                                     setTeamStarting(false);
-                                    checkTeamStatus();
+                                    refreshTeamStatus();
                                   }
                                 }
                               } catch {}
@@ -471,8 +547,8 @@ function ProjectPageContent() {
         </div>
       </div>
 
-      {/* Mobile: floating Team button */}
-      {selectedProjectId && tmuxSessionActive && (
+      {/* Mobile: floating Team button - always show when project selected */}
+      {selectedProjectId && (
         <button
           onClick={() => setMobileTeamOpen(true)}
           className="fixed bottom-4 right-4 z-50 lg:hidden w-12 h-12 rounded-full bg-primary text-primary-foreground shadow-lg flex items-center justify-center text-lg"
@@ -495,16 +571,77 @@ function ProjectPageContent() {
                 <span className="block w-[12px] h-[1.5px] bg-foreground/40 rounded-full" />
                 <span className="block w-[16px] h-[1.5px] bg-foreground/60 rounded-full" />
               </button>
-              <span className="text-xs font-semibold text-muted-foreground/50">Team</span>
+              <span className="text-xs font-semibold text-muted-foreground/50">{sessionName || "Team"}</span>
             </div>
-            <button
-              onClick={() => setMobileTeamOpen(false)}
-              className="text-xs px-3 py-1.5 rounded-md border border-border/50 text-foreground/70 hover:bg-muted/30"
-            >
-              ← Close
-            </button>
+            <div className="flex items-center gap-1.5">
+              {tmuxSessionActive && sessionName && (
+                <button
+                  onClick={async () => {
+                    if (!confirm(`Kill team "${sessionName}"? This will stop all agents.`)) return;
+                    try {
+                      await fetch(`/api/tmux/session/${encodeURIComponent(sessionName)}/kill`, { method: "POST" });
+                    } catch {}
+                    setTmuxSessionActive(false);
+                    setTmuxRoles([]);
+                    setMobileTeamOpen(false);
+                    refreshTeamStatus();
+                  }}
+                  className="w-8 h-8 rounded-md flex items-center justify-center text-red-400/50 hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                  title="Kill team"
+                >
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6 6 18M6 6l12 12"/></svg>
+                </button>
+              )}
+              {tmuxSessionActive && sessionName && setupFilePath && (
+                <button
+                  onClick={async () => {
+                    if (!confirm("Restart team? This will kill all agents and start fresh.")) return;
+                    setTeamStarting(true);
+                    setMobileTeamOpen(false);
+                    try {
+                      await fetch(`/api/tmux/session/${encodeURIComponent(sessionName)}/kill`, { method: "POST" });
+                    } catch {}
+                    try {
+                      await fetch(`/api/terminal/sessions/boss-${selectedProjectId}`, { method: "DELETE" });
+                    } catch {}
+                    setTmuxSessionActive(false);
+                    setTmuxRoles([]);
+                    setTerminalOpen(true);
+                    setBossTerminalKey((k) => k + 1);
+                    setPendingTerminalCommand(`bash "${setupFilePath}"`);
+                    const cwdParam = projectCwd ? `&working_dir=${encodeURIComponent(projectCwd)}` : "";
+                    const poll = setInterval(async () => {
+                      try {
+                        const res = await fetch(`/api/tmux/session/${encodeURIComponent(sessionName)}?${cwdParam}`);
+                        if (res.ok) {
+                          const data = await res.json();
+                          if (data.tmux_active) {
+                            clearInterval(poll);
+                            setTeamStarting(false);
+                            refreshTeamStatus();
+                          }
+                        }
+                      } catch {}
+                    }, 5000);
+                    setTimeout(() => { clearInterval(poll); setTeamStarting(false); }, 120000);
+                  }}
+                  className="w-8 h-8 rounded-md flex items-center justify-center text-amber-400/50 hover:text-amber-400 hover:bg-amber-500/10 transition-colors"
+                  title="Restart team"
+                >
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 4v6h6M23 20v-6h-6"/><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"/></svg>
+                </button>
+              )}
+              <button
+                onClick={() => setMobileTeamOpen(false)}
+                className="text-xs px-3 py-1.5 rounded-md border border-border/50 text-foreground/70 hover:bg-muted/30"
+              >
+                ← Close
+              </button>
+            </div>
           </div>
-          {sessionName && (
+
+          {selectedProjectId && sessionName && tmuxSessionActive ? (
+            /* ── Team running: show tabs + pane view ── */
             <>
               <div className="border-b border-border/40 bg-muted/20 overflow-x-auto shrink-0">
                 <div className="flex gap-0.5 px-1 h-10 items-center w-max">
@@ -529,14 +666,95 @@ function ProjectPageContent() {
                 </div>
               </div>
               <div className="flex-1 min-h-0 relative">
-                <AgentPaneView
-                  key={`mobile-agent-${selectedProjectId}`}
-                  sessionName={sessionName}
-                  role={activeAgentTab}
-                  isVisible={mobileTeamOpen}
-                />
+                {(tmuxRoles.length > 0 ? tmuxRoles : ROLES).map((role) => (
+                  <div
+                    key={`mobile-agent-${role}`}
+                    className={`absolute inset-0 ${activeAgentTab === role ? "" : "hidden"}`}
+                  >
+                    <AgentPaneView
+                      sessionName={sessionName!}
+                      role={role}
+                      isVisible={mobileTeamOpen && activeAgentTab === role}
+                      output={paneOutputs[role] ?? ""}
+                    />
+                  </div>
+                ))}
               </div>
             </>
+          ) : selectedProjectId && hasSetupFile && !tmuxSessionActive ? (
+            /* ── Setup file exists but tmux not running: Start Team ── */
+            <div className="flex-1 flex items-center justify-center">
+              <div className="text-center">
+                {teamStarting ? (
+                  <>
+                    <div className="w-6 h-6 border-2 border-primary/30 border-t-primary rounded-full animate-spin mx-auto mb-3" />
+                    <p className="text-xs text-muted-foreground/50">Starting team...</p>
+                    <p className="text-[10px] text-muted-foreground/25 mt-1">Check terminal for progress</p>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-xs text-muted-foreground/40">Team ready to start</p>
+                    <p className="text-[10px] text-muted-foreground/25 mt-1 mb-3">
+                      {setupFilePath.split("/").pop()}
+                    </p>
+                    <Button
+                      size="sm"
+                      onClick={() => {
+                        setTeamStarting(true);
+                        setMobileTeamOpen(false);
+                        setTerminalOpen(true);
+                        setPendingTerminalCommand(`bash "${setupFilePath}"`);
+                        const cwdParam = projectCwd ? `&working_dir=${encodeURIComponent(projectCwd)}` : "";
+                        const poll = setInterval(async () => {
+                          try {
+                            const res = await fetch(`/api/tmux/session/${encodeURIComponent(sessionName!)}?${cwdParam}`);
+                            if (res.ok) {
+                              const data = await res.json();
+                              if (data.tmux_active) {
+                                clearInterval(poll);
+                                setTeamStarting(false);
+                                refreshTeamStatus();
+                              }
+                            }
+                          } catch {}
+                        }, 5000);
+                        setTimeout(() => { clearInterval(poll); setTeamStarting(false); }, 120000);
+                      }}
+                      className="text-xs font-mono"
+                    >
+                      Start Team
+                    </Button>
+                  </>
+                )}
+              </div>
+            </div>
+          ) : selectedProjectId ? (
+            /* ── No setup file: Create Team ── */
+            <div className="flex-1 flex items-center justify-center">
+              <div className="text-center">
+                <p className="text-xs text-muted-foreground/40">No team yet</p>
+                <p className="text-[10px] text-muted-foreground/25 mt-1 mb-3">
+                  Generate team files first
+                </p>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    setMobileTeamOpen(false);
+                    setTerminalOpen(true);
+                    const dir = projectCwd || "~";
+                    setPendingTerminalCommand(`cd "${dir}" && claude -p "/tmux-team-creator-mcp scrum-team for project ${project?.name}, session: ${sessionName || project?.name?.toLowerCase().replace(/\\s+/g, '-')}"`);
+                  }}
+                  className="text-xs font-mono"
+                >
+                  Create Team
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex-1 flex items-center justify-center">
+              <p className="text-xs text-muted-foreground/30">Select a project</p>
+            </div>
           )}
         </div>
       )}

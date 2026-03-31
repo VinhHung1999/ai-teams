@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import Link from "next/link";
 import {
   Sheet,
   SheetTrigger,
@@ -108,6 +109,17 @@ function SidebarContent({
         >
           <span className="text-muted-foreground/60">+</span> New Project
         </Button>
+      </div>
+
+      {/* Global nav links */}
+      <div className="px-3 pb-2">
+        <Link
+          href="/files"
+          className="flex items-center gap-2 px-2.5 py-1.5 rounded-sm text-[11px] font-mono text-muted-foreground/50 hover:bg-[#161616] hover:text-[#10b981] transition-colors w-full"
+        >
+          <span className="text-[#10b981]/60">📁</span>
+          File Manager
+        </Link>
       </div>
 
       <Separator className="opacity-40" />
