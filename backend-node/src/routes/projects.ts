@@ -1,8 +1,12 @@
 import { Router, Request, Response } from 'express';
 import path from 'path';
-import fs from 'fs';
+import fs, { globSync } from 'fs';
 import os from 'os';
+import { exec } from 'child_process';
+import { promisify } from 'util';
 import prisma from '../lib/prisma';
+
+const execAsync = promisify(exec);
 
 const router = Router();
 
@@ -93,19 +97,56 @@ router.post('/api/projects', async (req: Request, res: Response) => {
   });
 });
 
-// Get project
+// Get project (includes tmux status to avoid a separate round-trip)
 router.get('/api/projects/:id', async (req: Request, res: Response) => {
   const id = parseInt(req.params.id as string);
   const project = await prisma.project.findUnique({ where: { id } });
   if (!project) {
     return res.status(404).json({ detail: 'Project not found' });
   }
+
+  // Setup file check
+  let hasSetupFile = false;
+  let setupFilePath = '';
+  const workingDir = project.working_directory || '';
+  if (workingDir && fs.existsSync(workingDir) && fs.statSync(workingDir).isDirectory()) {
+    try {
+      const matches = globSync(path.join(workingDir, 'docs/tmux/*/setup-team.sh'));
+      if (matches.length > 0) {
+        hasSetupFile = true;
+        setupFilePath = matches[0];
+      }
+    } catch {}
+  }
+
+  // Tmux session check
+  let tmuxActive = false;
+  const roles: string[] = [];
+  const session = project.tmux_session_name;
+  if (session) {
+    try {
+      const { stdout } = await execAsync(
+        `tmux list-panes -t ${session} -F "#{pane_index} #{@role_name}" 2>/dev/null`,
+        { timeout: 3000, encoding: 'utf-8' }
+      );
+      tmuxActive = true;
+      for (const line of stdout.trim().split('\n')) {
+        const parts = line.trim().split(' ', 2);
+        if (parts.length === 2 && parts[1]) roles.push(parts[1]);
+      }
+    } catch {}
+  }
+
   res.json({
     id: project.id,
     name: project.name,
     tmux_session_name: project.tmux_session_name,
     working_directory: project.working_directory,
     created_at: project.created_at.toISOString(),
+    has_setup_file: hasSetupFile,
+    setup_file_path: setupFilePath,
+    tmux_active: tmuxActive,
+    roles,
   });
 });
 

@@ -33,7 +33,7 @@ interface FileViewerProps {
 }
 
 async function fetchTree(dirPath: string): Promise<FileEntry[]> {
-  const res = await fetch(`/api/files/tree?path=${encodeURIComponent(dirPath)}`);
+  const res = await fetch(`/api/files/tree?path=${encodeURIComponent(dirPath)}&show_hidden=true`);
   if (!res.ok) throw new Error("Failed to load directory");
   const data = await res.json();
   return data.entries;

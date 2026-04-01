@@ -1,38 +1,79 @@
 import { Router, Request, Response } from 'express';
-import { execSync } from 'child_process';
+import { exec } from 'child_process';
+import { promisify } from 'util';
 import { globSync } from 'fs';
 import path from 'path';
 import fs from 'fs';
 
+const execAsync = promisify(exec);
 const router = Router();
+
+// Limit concurrent exec calls to prevent process explosion
+let activeExecs = 0;
+const MAX_CONCURRENT = 3;
+const execQueue: Array<{ resolve: (v: string) => void; reject: (e: any) => void; cmd: string; timeout: number }> = [];
+
+function processQueue() {
+  while (execQueue.length > 0 && activeExecs < MAX_CONCURRENT) {
+    const item = execQueue.shift()!;
+    activeExecs++;
+    execAsync(item.cmd, { timeout: item.timeout, encoding: 'utf-8' })
+      .then(({ stdout }) => item.resolve(stdout))
+      .catch(item.reject)
+      .finally(() => { activeExecs--; processQueue(); });
+  }
+}
+
+async function runCmd(cmd: string, timeout = 5000): Promise<string> {
+  if (activeExecs < MAX_CONCURRENT) {
+    activeExecs++;
+    try {
+      const { stdout } = await execAsync(cmd, { timeout, encoding: 'utf-8' });
+      return stdout;
+    } finally {
+      activeExecs--;
+      processQueue();
+    }
+  }
+  return new Promise((resolve, reject) => {
+    execQueue.push({ resolve, reject, cmd, timeout });
+  });
+}
+
+async function findPaneIdx(sessionName: string, role: string): Promise<string | null> {
+  const result = await runCmd(
+    `tmux list-panes -t ${sessionName} -F "#{pane_index} #{@role_name}"`
+  );
+  for (const line of result.trim().split('\n')) {
+    const parts = line.trim().split(' ', 2);
+    if (parts.length === 2 && parts[1] === role) {
+      return parts[0];
+    }
+  }
+  return null;
+}
 
 router.get('/api/tmux/session/:sessionName', async (req: Request, res: Response) => {
   const sessionName = req.params.sessionName as string;
   const workingDir = (req.query.working_dir as string) || '';
 
-  // 1. Check if setup-team.sh exists in working dir
   let hasSetupFile = false;
   let setupFilePath = '';
   if (workingDir && fs.existsSync(workingDir) && fs.statSync(workingDir).isDirectory()) {
-    const pattern = path.join(workingDir, 'docs/tmux/*/setup-team.sh');
     try {
-      const matches = globSync(pattern);
+      const matches = globSync(path.join(workingDir, 'docs/tmux/*/setup-team.sh'));
       if (matches.length > 0) {
         hasSetupFile = true;
         setupFilePath = matches[0];
       }
-    } catch {
-      // glob error, ignore
-    }
+    } catch {}
   }
 
-  // 2. Check if tmux session is running
   let tmuxActive = false;
   const roles: string[] = [];
   try {
-    const result = execSync(
-      `tmux list-panes -t ${sessionName} -F "#{pane_index} #{@role_name}"`,
-      { timeout: 5000, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }
+    const result = await runCmd(
+      `tmux list-panes -t ${sessionName} -F "#{pane_index} #{@role_name}"`
     );
     tmuxActive = true;
     for (const line of result.trim().split('\n')) {
@@ -41,9 +82,7 @@ router.get('/api/tmux/session/:sessionName', async (req: Request, res: Response)
         roles.push(parts[1]);
       }
     }
-  } catch {
-    // tmux not running or command failed
-  }
+  } catch {}
 
   res.json({
     has_setup_file: hasSetupFile,
@@ -53,44 +92,28 @@ router.get('/api/tmux/session/:sessionName', async (req: Request, res: Response)
   });
 });
 
-// Send keys to a specific pane by role
+// Send text to a specific pane by role (with Enter)
 router.post('/api/tmux/session/:sessionName/send', async (req: Request, res: Response) => {
-  const { sessionName } = req.params;
-  const { role, text } = req.body;
+  const sessionName = req.params.sessionName as string;
+  const { role, text, keys } = req.body;
 
-  if (!role || !text) {
-    return res.status(400).json({ error: 'role and text required' });
+  // Support both {text} (send + Enter) and {keys} (send literally)
+  if (!role || (!text && !keys)) {
+    return res.status(400).json({ error: 'role and text/keys required' });
   }
 
   try {
-    // Find pane index for role
-    const result = execSync(
-      `tmux list-panes -t ${sessionName} -F "#{pane_index} #{@role_name}"`,
-      { timeout: 5000, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }
-    );
-    let paneIdx: string | null = null;
-    for (const line of result.trim().split('\n')) {
-      const parts = line.trim().split(' ', 2);
-      if (parts.length === 2 && parts[1] === role) {
-        paneIdx = parts[0];
-        break;
-      }
-    }
-
+    const paneIdx = await findPaneIdx(sessionName, role);
     if (paneIdx === null) {
       return res.status(404).json({ error: `Role ${role} not found` });
     }
 
-    // Send keys + Enter
-    execSync(
-      `tmux send-keys -t ${sessionName}:0.${paneIdx} ${JSON.stringify(text)} C-m`,
-      { timeout: 5000, stdio: ['pipe', 'pipe', 'pipe'] }
-    );
-    // Two-enter rule
-    execSync(
-      `tmux send-keys -t ${sessionName}:0.${paneIdx} C-m`,
-      { timeout: 5000, stdio: ['pipe', 'pipe', 'pipe'] }
-    );
+    if (text) {
+      await runCmd(`tmux send-keys -t ${sessionName}:0.${paneIdx} ${JSON.stringify(text)} C-m`);
+      await runCmd(`tmux send-keys -t ${sessionName}:0.${paneIdx} C-m`);
+    } else {
+      await runCmd(`tmux send-keys -t ${sessionName}:0.${paneIdx} -l ${JSON.stringify(keys)}`);
+    }
 
     res.json({ ok: true });
   } catch (e: any) {
@@ -98,41 +121,38 @@ router.post('/api/tmux/session/:sessionName/send', async (req: Request, res: Res
   }
 });
 
-// Check activity for all panes (compare output hash to detect changes)
-const paneHashes = new Map<string, string>(); // "session:pane" -> last output hash
+// Check activity for all panes
+const paneHashes = new Map<string, string>();
 
 router.get('/api/tmux/session/:sessionName/activity', async (req: Request, res: Response) => {
-  const { sessionName } = req.params;
+  const sessionName = req.params.sessionName as string;
   try {
-    const listResult = execSync(
-      `tmux list-panes -t ${sessionName} -F "#{pane_index} #{@role_name}"`,
-      { timeout: 5000, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }
+    const listResult = await runCmd(
+      `tmux list-panes -t ${sessionName} -F "#{pane_index} #{@role_name}"`
     );
 
     const activity: Record<string, boolean> = {};
-    for (const line of listResult.trim().split('\n')) {
+    const promises = listResult.trim().split('\n').map(async (line) => {
       const parts = line.trim().split(' ', 2);
-      if (parts.length !== 2 || !parts[1]) continue;
+      if (parts.length !== 2 || !parts[1]) return;
       const [paneIdx, roleName] = parts;
 
       try {
-        // Capture last 5 lines to check for changes
-        const output = execSync(
+        const output = await runCmd(
           `tmux capture-pane -p -t ${sessionName}:0.${paneIdx} -S -5`,
-          { timeout: 3000, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }
+          3000
         );
-
         const key = `${sessionName}:${paneIdx}`;
         const prevHash = paneHashes.get(key);
         const currentHash = simpleHash(output);
-
         activity[roleName] = prevHash !== undefined && prevHash !== currentHash;
         paneHashes.set(key, currentHash);
       } catch {
         activity[roleName] = false;
       }
-    }
+    });
 
+    await Promise.all(promises);
     res.json(activity);
   } catch {
     res.json({});
@@ -150,85 +170,28 @@ function simpleHash(str: string): string {
 
 // Kill tmux session
 router.post('/api/tmux/session/:sessionName/kill', async (req: Request, res: Response) => {
-  const { sessionName } = req.params;
+  const sessionName = req.params.sessionName as string;
   try {
-    execSync(`tmux kill-session -t ${sessionName} 2>/dev/null`, {
-      timeout: 5000, stdio: ['pipe', 'pipe', 'pipe'],
-    });
-    res.json({ ok: true });
-  } catch {
-    res.json({ ok: true }); // already dead is fine
-  }
+    await runCmd(`tmux kill-session -t ${sessionName} 2>/dev/null`);
+  } catch {}
+  res.json({ ok: true });
 });
 
 // Capture pane output
 router.get('/api/tmux/session/:sessionName/pane/:role', async (req: Request, res: Response) => {
-  const { sessionName, role } = req.params;
+  const sessionName = req.params.sessionName as string; const role = req.params.role as string;
   const lines = parseInt(req.query.lines as string) || 200;
 
   try {
-    // Find pane index for role
-    const listResult = execSync(
-      `tmux list-panes -t ${sessionName} -F "#{pane_index} #{@role_name}"`,
-      { timeout: 5000, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }
-    );
-    let paneIdx: string | null = null;
-    for (const line of listResult.trim().split('\n')) {
-      const parts = line.trim().split(' ', 2);
-      if (parts.length === 2 && parts[1] === role) {
-        paneIdx = parts[0];
-        break;
-      }
-    }
+    const paneIdx = await findPaneIdx(sessionName, role);
     if (paneIdx === null) {
       return res.status(404).json({ error: `Role ${role} not found` });
     }
 
-    // Capture pane content with ANSI colors
-    const output = execSync(
-      `tmux capture-pane -p -e -t ${sessionName}:0.${paneIdx} -S -${lines}`,
-      { timeout: 5000, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }
+    const output = await runCmd(
+      `tmux capture-pane -p -e -t ${sessionName}:0.${paneIdx} -S -${lines}`
     );
-
     res.json({ output, pane_index: paneIdx });
-  } catch (e: any) {
-    res.status(500).json({ error: e.message });
-  }
-});
-
-// Send keys to a specific pane by role
-router.post('/api/tmux/session/:sessionName/send', async (req: Request, res: Response) => {
-  const { sessionName } = req.params;
-  const { role, keys } = req.body;
-
-  if (!role || !keys) {
-    return res.status(400).json({ error: 'role and keys required' });
-  }
-
-  try {
-    const listResult = execSync(
-      `tmux list-panes -t ${sessionName} -F "#{pane_index} #{@role_name}"`,
-      { timeout: 5000, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }
-    );
-    let paneIdx: string | null = null;
-    for (const line of listResult.trim().split('\n')) {
-      const parts = line.trim().split(' ', 2);
-      if (parts.length === 2 && parts[1] === role) {
-        paneIdx = parts[0];
-        break;
-      }
-    }
-    if (paneIdx === null) {
-      return res.status(404).json({ error: `Role ${role} not found` });
-    }
-
-    // Send keys literally
-    execSync(
-      `tmux send-keys -t ${sessionName}:0.${paneIdx} -l ${JSON.stringify(keys)}`,
-      { timeout: 5000, stdio: ['pipe', 'pipe', 'pipe'] }
-    );
-
-    res.json({ ok: true });
   } catch (e: any) {
     res.status(500).json({ error: e.message });
   }
@@ -236,7 +199,7 @@ router.post('/api/tmux/session/:sessionName/send', async (req: Request, res: Res
 
 // Send special key (Enter, C-c, Up, Down, etc.)
 router.post('/api/tmux/session/:sessionName/send-key', async (req: Request, res: Response) => {
-  const { sessionName } = req.params;
+  const sessionName = req.params.sessionName as string;
   const { role, key } = req.body;
 
   if (!role || !key) {
@@ -244,28 +207,12 @@ router.post('/api/tmux/session/:sessionName/send-key', async (req: Request, res:
   }
 
   try {
-    const listResult = execSync(
-      `tmux list-panes -t ${sessionName} -F "#{pane_index} #{@role_name}"`,
-      { timeout: 5000, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }
-    );
-    let paneIdx: string | null = null;
-    for (const line of listResult.trim().split('\n')) {
-      const parts = line.trim().split(' ', 2);
-      if (parts.length === 2 && parts[1] === role) {
-        paneIdx = parts[0];
-        break;
-      }
-    }
+    const paneIdx = await findPaneIdx(sessionName, role);
     if (paneIdx === null) {
       return res.status(404).json({ error: `Role ${role} not found` });
     }
 
-    // Send special key (C-c, Enter, Up, Down, etc.)
-    execSync(
-      `tmux send-keys -t ${sessionName}:0.${paneIdx} ${key}`,
-      { timeout: 5000, stdio: ['pipe', 'pipe', 'pipe'] }
-    );
-
+    await runCmd(`tmux send-keys -t ${sessionName}:0.${paneIdx} ${key}`);
     res.json({ ok: true });
   } catch (e: any) {
     res.status(500).json({ error: e.message });

@@ -1,11 +1,13 @@
 "use client";
 
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState } from "react";
 
 interface AgentPaneViewProps {
   sessionName: string;
   role: string;
   isVisible: boolean;
+  output: string; // provided by parent via useTmuxWs — no WS managed here
+  wsStatus?: "connecting" | "connected" | "disconnected";
 }
 
 const SPECIAL_KEYS: Record<string, string> = {
@@ -14,10 +16,10 @@ const SPECIAL_KEYS: Record<string, string> = {
   Delete: "DC", Home: "Home", End: "End", PageUp: "PPage", PageDown: "NPage",
 };
 
-export function AgentPaneView({ sessionName, role, isVisible }: AgentPaneViewProps) {
+export function AgentPaneView({ sessionName, role, isVisible, output, wsStatus }: AgentPaneViewProps) {
   const outputRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
-  const [output, setOutput] = useState("");
+  const prevOutputLen = useRef(0);
   const [autoScroll, setAutoScroll] = useState(true);
   const [inputValue, setInputValue] = useState("");
   const [isPending, setIsPending] = useState(false);
@@ -26,97 +28,18 @@ export function AgentPaneView({ sessionName, role, isVisible }: AgentPaneViewPro
   const [speechInterim, setSpeechInterim] = useState("");
   const recognitionRef = useRef<any>(null);
 
-  const startSpeech = () => {
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SpeechRecognition) {
-      alert("Speech recognition not supported");
-      return;
-    }
-
-    const recognition = new SpeechRecognition();
-    recognition.lang = "vi-VN"; // Handles mixed VI/EN well on iOS/macOS
-    recognition.continuous = true;
-    recognition.interimResults = true;
-
-    let accumulated = "";
-
-    recognition.onresult = (event: any) => {
-      let interim = "";
-      let finalChunk = "";
-      for (let i = event.resultIndex; i < event.results.length; i++) {
-        if (event.results[i].isFinal) {
-          finalChunk += event.results[i][0].transcript;
-        } else {
-          interim = event.results[i][0].transcript;
-        }
-      }
-      if (finalChunk) {
-        accumulated += (accumulated ? " " : "") + finalChunk;
-        setSpeechTranscript(accumulated);
-      }
-      setSpeechInterim(interim);
-    };
-
-    recognition.onerror = () => { setIsListening(false); };
-    recognition.onend = () => { setIsListening(false); };
-
-    recognition.start();
-    recognitionRef.current = recognition;
-    setSpeechTranscript("");
-    setSpeechInterim("");
-    setIsListening(true);
-  };
-
-  const stopSpeechAndSend = () => {
-    recognitionRef.current?.stop();
-    setIsListening(false);
-    const text = speechTranscript.trim();
-    if (text) {
-      // Send directly
-      sendText(text);
-    }
-    setSpeechTranscript("");
-    setSpeechInterim("");
-  };
-
-  const cancelSpeech = () => {
-    recognitionRef.current?.stop();
-    setIsListening(false);
-    setSpeechTranscript("");
-    setSpeechInterim("");
-  };
-  const prevOutputLen = useRef(0);
-  const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  // Fetch pane content
-  const fetchPaneContent = useCallback(async () => {
-    try {
-      const res = await fetch(`/api/tmux/session/${encodeURIComponent(sessionName)}/pane/${encodeURIComponent(role)}`);
-      if (res.ok) {
-        const data = await res.json();
-        setOutput(data.output || "");
-      }
-    } catch {}
-  }, [sessionName, role]);
-
-  // Polling
+  // Auto-scroll on output change (only when visible)
   useEffect(() => {
-    if (!isVisible) {
-      if (pollingRef.current) clearInterval(pollingRef.current);
-      return;
-    }
-    fetchPaneContent();
-    pollingRef.current = setInterval(fetchPaneContent, 500);
-    return () => { if (pollingRef.current) clearInterval(pollingRef.current); };
-  }, [isVisible, fetchPaneContent]);
-
-  // Auto-scroll
-  useEffect(() => {
-    if (autoScroll && outputRef.current && output.length !== prevOutputLen.current) {
+    if (isVisible && autoScroll && outputRef.current && output.length !== prevOutputLen.current) {
       outputRef.current.scrollTop = outputRef.current.scrollHeight;
     }
     prevOutputLen.current = output.length;
-  }, [output, autoScroll]);
+  }, [output, autoScroll, isVisible]);
+
+  // Refocus input after send completes
+  useEffect(() => {
+    if (!isPending) inputRef.current?.focus();
+  }, [isPending]);
 
   const handleScroll = () => {
     if (!outputRef.current) return;
@@ -124,7 +47,7 @@ export function AgentPaneView({ sessionName, role, isVisible }: AgentPaneViewPro
     setAutoScroll(scrollHeight - scrollTop - clientHeight < 50);
   };
 
-  // Send text (backend auto-appends Enter)
+  // ── Send text / key to tmux pane ──
   const sendText = async (text: string) => {
     try {
       await fetch(`/api/tmux/session/${encodeURIComponent(sessionName)}/send`, {
@@ -135,7 +58,6 @@ export function AgentPaneView({ sessionName, role, isVisible }: AgentPaneViewPro
     } catch {}
   };
 
-  // Send special key
   const sendSpecialKey = async (key: string) => {
     try {
       await fetch(`/api/tmux/session/${encodeURIComponent(sessionName)}/send-key`, {
@@ -146,7 +68,6 @@ export function AgentPaneView({ sessionName, role, isVisible }: AgentPaneViewPro
     } catch {}
   };
 
-  // Send message (backend sends text + Enter)
   const handleSendMessage = async () => {
     if (!inputValue.trim() || isPending) return;
     setIsPending(true);
@@ -155,34 +76,68 @@ export function AgentPaneView({ sessionName, role, isVisible }: AgentPaneViewPro
     setTimeout(() => setIsPending(false), 500);
   };
 
-  // Handle key events in input
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "Enter") {
-      e.preventDefault();
-      handleSendMessage();
-      return;
-    }
-
-    // Ctrl+C → send to pane
-    if (e.ctrlKey && e.key === "c") {
-      e.preventDefault();
-      sendSpecialKey("C-c");
-      return;
-    }
-
-    // Arrow up/down → send to pane
+    if (e.key === "Enter") { e.preventDefault(); handleSendMessage(); return; }
+    if (e.ctrlKey && e.key === "c") { e.preventDefault(); sendSpecialKey("C-c"); return; }
     if (e.key === "ArrowUp" || e.key === "ArrowDown") {
-      e.preventDefault();
-      sendSpecialKey(SPECIAL_KEYS[e.key]);
-      return;
+      e.preventDefault(); sendSpecialKey(SPECIAL_KEYS[e.key]); return;
     }
+  };
+
+  // ── Speech ──
+  const startSpeech = () => {
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) { alert("Speech recognition not supported"); return; }
+    const recognition = new SpeechRecognition();
+    recognition.lang = "vi-VN";
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    let accumulated = "";
+    recognition.onresult = (event: any) => {
+      let interim = "";
+      let finalChunk = "";
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        if (event.results[i].isFinal) finalChunk += event.results[i][0].transcript;
+        else interim = event.results[i][0].transcript;
+      }
+      if (finalChunk) { accumulated += (accumulated ? " " : "") + finalChunk; setSpeechTranscript(accumulated); }
+      setSpeechInterim(interim);
+    };
+    recognition.onerror = () => setIsListening(false);
+    recognition.onend = () => setIsListening(false);
+    recognition.start();
+    recognitionRef.current = recognition;
+    setSpeechTranscript(""); setSpeechInterim(""); setIsListening(true);
+  };
+
+  const stopSpeechAndSend = () => {
+    recognitionRef.current?.stop();
+    setIsListening(false);
+    const text = speechTranscript.trim();
+    if (text) sendText(text);
+    setSpeechTranscript(""); setSpeechInterim("");
+  };
+
+  const cancelSpeech = () => {
+    recognitionRef.current?.stop();
+    setIsListening(false);
+    setSpeechTranscript(""); setSpeechInterim("");
   };
 
   const outputHtml = ansiToHtml(cleanOutput(output));
 
   return (
     <div className="flex flex-col h-full overflow-hidden" style={{ overscrollBehavior: "none" }}>
-      {/* Output area - vertical scroll only */}
+      {/* WS status — top bar */}
+      {wsStatus && wsStatus !== "connected" && (
+        <div className={`flex items-center gap-1 px-3 py-1 text-[10px] font-mono shrink-0 border-b ${
+          wsStatus === "connecting" ? "text-yellow-400 border-yellow-500/20 bg-yellow-500/5" : "text-red-400 border-red-500/20 bg-red-500/5"
+        }`}>
+          <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${wsStatus === "connecting" ? "bg-yellow-400 animate-pulse" : "bg-red-400"}`} />
+          {wsStatus}
+        </div>
+      )}
+      {/* Output area */}
       <div
         ref={outputRef}
         onScroll={handleScroll}
@@ -196,7 +151,7 @@ export function AgentPaneView({ sessionName, role, isVisible }: AgentPaneViewPro
         />
       </div>
 
-      {/* Streaming badge + scroll button */}
+      {/* Scroll-to-bottom button */}
       {!autoScroll && (
         <div className="absolute bottom-14 right-4 z-10">
           <button
@@ -223,18 +178,12 @@ export function AgentPaneView({ sessionName, role, isVisible }: AgentPaneViewPro
                 {!speechTranscript && !speechInterim && <span className="text-muted-foreground/30">Listening...</span>}
               </p>
             </div>
-            <button
-              onClick={cancelSpeech}
-              className="text-[10px] text-muted-foreground/40 hover:text-foreground/60 shrink-0"
-              title="Cancel"
-            >
-              ✕
-            </button>
+            <button onClick={cancelSpeech} className="text-[10px] text-muted-foreground/40 hover:text-foreground/60 shrink-0" title="Cancel">✕</button>
           </div>
         </div>
       )}
 
-      {/* Input area with safe-area padding */}
+      {/* Input area */}
       <div className="border-t border-border/40 bg-card px-3 py-2 shrink-0" style={{ paddingBottom: "max(0.5rem, env(safe-area-inset-bottom))" }}>
         <div className="flex gap-2 items-end">
           <textarea
@@ -242,7 +191,6 @@ export function AgentPaneView({ sessionName, role, isVisible }: AgentPaneViewPro
             value={inputValue}
             onChange={(e) => {
               setInputValue(e.target.value);
-              // Auto-resize
               e.target.style.height = "auto";
               e.target.style.height = Math.min(e.target.scrollHeight, 120) + "px";
             }}
@@ -250,21 +198,19 @@ export function AgentPaneView({ sessionName, role, isVisible }: AgentPaneViewPro
               if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();
                 handleSendMessage();
-                // Reset height
-                const el = e.target as HTMLTextAreaElement;
-                el.style.height = "36px";
+                (e.target as HTMLTextAreaElement).style.height = "36px";
                 return;
               }
               handleKeyDown(e as unknown as React.KeyboardEvent<HTMLInputElement>);
             }}
-            placeholder={isPending ? "Sending..." : `Message ${role}... (Shift+Enter for new line)`}
+            placeholder={isPending ? "Sending..." : `Message ${role}...`}
             disabled={isPending}
             className="flex-1 font-mono px-3 py-2 rounded-md bg-muted/30 border border-border/40 text-foreground placeholder:text-muted-foreground/30 focus:outline-none focus:border-primary/40 disabled:opacity-50 resize-none overflow-hidden"
             style={{ fontSize: "16px", height: "36px", maxHeight: "120px" }}
             autoComplete="off"
             rows={1}
           />
-          {/* Mic button */}
+          {/* Mic */}
           <button
             onClick={isListening ? stopSpeechAndSend : startSpeech}
             className={`h-9 w-9 rounded-sm flex items-center justify-center shrink-0 transition-all ${
@@ -276,12 +222,11 @@ export function AgentPaneView({ sessionName, role, isVisible }: AgentPaneViewPro
           >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg>
           </button>
-          {/* Send button */}
+          {/* Send */}
           <button
             onClick={() => {
               handleSendMessage();
-              const el = inputRef.current as HTMLTextAreaElement | null;
-              if (el) el.style.height = "36px";
+              if (inputRef.current) inputRef.current.style.height = "36px";
             }}
             disabled={!inputValue.trim() || isPending}
             className="h-9 px-3 rounded-md bg-primary text-primary-foreground text-xs font-mono hover:bg-primary/90 disabled:opacity-30 shrink-0"
@@ -294,26 +239,20 @@ export function AgentPaneView({ sessionName, role, isVisible }: AgentPaneViewPro
   );
 }
 
-/* ─── Clean output: trim long separator lines ─── */
+/* ─── Clean separator lines ─── */
 function cleanOutput(text: string): string {
-  // Replace long lines of ─ (box drawing) with just the arrow/symbol if present
-  // e.g. "────────── ❯ ──────────" → "❯"
-  // e.g. "──────────────────────" → "───"
-  return text.replace(/[─━─]{4,}([^─━\n]*?)[─━─]{4,}/g, (_, middle) => {
-    const trimmed = middle.trim();
-    return trimmed || "───";
-  }).replace(/[─━]{10,}/g, "───");
+  return text
+    .replace(/[─━─]{4,}([^─━\n]*?)[─━─]{4,}/g, (_, middle) => middle.trim() || "───")
+    .replace(/[─━]{10,}/g, "───");
 }
 
-/* ─── Full ANSI to HTML (16 + 256 + RGB colors, fg/bg, bold/italic/underline/dim/strikethrough) ─── */
-
+/* ─── ANSI → HTML ─── */
 const ANSI_16: Record<number, string> = {
   30: "#15161e", 31: "#f7768e", 32: "#9ece6a", 33: "#e0af68",
   34: "#7aa2f7", 35: "#bb9af7", 36: "#7dcfff", 37: "#a9b1d6",
   90: "#414868", 91: "#f7768e", 92: "#9ece6a", 93: "#e0af68",
   94: "#7aa2f7", 95: "#bb9af7", 96: "#7dcfff", 97: "#c0caf5",
 };
-
 const ANSI_16_BG: Record<number, string> = {
   40: "#15161e", 41: "#f7768e", 42: "#9ece6a", 43: "#e0af68",
   44: "#7aa2f7", 45: "#bb9af7", 46: "#7dcfff", 47: "#a9b1d6",
@@ -321,54 +260,26 @@ const ANSI_16_BG: Record<number, string> = {
   104: "#7aa2f7", 105: "#bb9af7", 106: "#7dcfff", 107: "#c0caf5",
 };
 
-// 256-color palette (0-15 = standard, 16-231 = 6x6x6 cube, 232-255 = grayscale)
 function color256(n: number): string {
-  if (n < 16) {
-    const c16 = [
-      "#15161e","#f7768e","#9ece6a","#e0af68","#7aa2f7","#bb9af7","#7dcfff","#a9b1d6",
-      "#414868","#f7768e","#9ece6a","#e0af68","#7aa2f7","#bb9af7","#7dcfff","#c0caf5",
-    ];
-    return c16[n];
-  }
+  if (n < 16) return ["#15161e","#f7768e","#9ece6a","#e0af68","#7aa2f7","#bb9af7","#7dcfff","#a9b1d6","#414868","#f7768e","#9ece6a","#e0af68","#7aa2f7","#bb9af7","#7dcfff","#c0caf5"][n];
   if (n < 232) {
     const idx = n - 16;
-    const r = Math.floor(idx / 36);
-    const g = Math.floor((idx % 36) / 6);
-    const b = idx % 6;
     const toHex = (v: number) => (v === 0 ? 0 : 55 + v * 40).toString(16).padStart(2, "0");
-    return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+    return `#${toHex(Math.floor(idx / 36))}${toHex(Math.floor((idx % 36) / 6))}${toHex(idx % 6)}`;
   }
-  const gray = 8 + (n - 232) * 10;
-  const hex = gray.toString(16).padStart(2, "0");
-  return `#${hex}${hex}${hex}`;
+  const gray = (8 + (n - 232) * 10).toString(16).padStart(2, "0");
+  return `#${gray}${gray}${gray}`;
 }
 
 function ansiToHtml(text: string): string {
-  // Escape HTML first
-  let html = text
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-
-  // Remove OSC sequences (title, color queries, etc.)
+  let html = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
   html = html.replace(/\x1b\].*?(?:\x1b\\|\x07|\u009c)/g, "");
-  // Remove cursor/erase sequences but keep SGR (color)
   html = html.replace(/\x1b\[[0-9;]*[A-LN-Za-hjklnp-z]/g, "");
 
-  // Process SGR (Select Graphic Rendition) sequences
   let openSpans = 0;
   html = html.replace(/\x1b\[([0-9;]*)m/g, (_, codesStr) => {
     const codes = (codesStr || "0").split(";").map(Number);
-    let fg = "";
-    let bg = "";
-    let bold = false;
-    let dim = false;
-    let italic = false;
-    let underline = false;
-    let strike = false;
-    let closeAll = false;
-
+    let fg = "", bg = "", bold = false, dim = false, italic = false, underline = false, strike = false, closeAll = false;
     for (let i = 0; i < codes.length; i++) {
       const c = codes[i];
       if (c === 0) { closeAll = true; continue; }
@@ -377,37 +288,17 @@ function ansiToHtml(text: string): string {
       if (c === 3) { italic = true; continue; }
       if (c === 4) { underline = true; continue; }
       if (c === 9) { strike = true; continue; }
-
-      // 256-color foreground: 38;5;N
-      if (c === 38 && codes[i + 1] === 5 && codes[i + 2] !== undefined) {
-        fg = color256(codes[i + 2]); i += 2; continue;
-      }
-      // RGB foreground: 38;2;R;G;B
-      if (c === 38 && codes[i + 1] === 2 && codes[i + 4] !== undefined) {
-        fg = `rgb(${codes[i + 2]},${codes[i + 3]},${codes[i + 4]})`; i += 4; continue;
-      }
-      // 256-color background: 48;5;N
-      if (c === 48 && codes[i + 1] === 5 && codes[i + 2] !== undefined) {
-        bg = color256(codes[i + 2]); i += 2; continue;
-      }
-      // RGB background: 48;2;R;G;B
-      if (c === 48 && codes[i + 1] === 2 && codes[i + 4] !== undefined) {
-        bg = `rgb(${codes[i + 2]},${codes[i + 3]},${codes[i + 4]})`; i += 4; continue;
-      }
-
-      // Standard 16 colors
+      if (c === 38 && codes[i+1] === 5 && codes[i+2] !== undefined) { fg = color256(codes[i+2]); i += 2; continue; }
+      if (c === 38 && codes[i+1] === 2 && codes[i+4] !== undefined) { fg = `rgb(${codes[i+2]},${codes[i+3]},${codes[i+4]})`; i += 4; continue; }
+      if (c === 48 && codes[i+1] === 5 && codes[i+2] !== undefined) { bg = color256(codes[i+2]); i += 2; continue; }
+      if (c === 48 && codes[i+1] === 2 && codes[i+4] !== undefined) { bg = `rgb(${codes[i+2]},${codes[i+3]},${codes[i+4]})`; i += 4; continue; }
       if (ANSI_16[c]) { fg = ANSI_16[c]; continue; }
       if (ANSI_16_BG[c]) { bg = ANSI_16_BG[c]; continue; }
-      if (c === 39) { fg = ""; continue; } // default fg
-      if (c === 49) { bg = ""; continue; } // default bg
+      if (c === 39) { fg = ""; continue; }
+      if (c === 49) { bg = ""; continue; }
     }
-
     let result = "";
-    if (closeAll) {
-      for (let j = 0; j < openSpans; j++) result += "</span>";
-      openSpans = 0;
-    }
-
+    if (closeAll) { for (let j = 0; j < openSpans; j++) result += "</span>"; openSpans = 0; }
     let style = "";
     if (fg) style += `color:${fg};`;
     if (bg) style += `background:${bg};padding:0 2px;border-radius:2px;`;
@@ -416,19 +307,10 @@ function ansiToHtml(text: string): string {
     if (italic) style += "font-style:italic;";
     if (underline) style += "text-decoration:underline;";
     if (strike) style += "text-decoration:line-through;";
-
-    if (style) {
-      result += `<span style="${style}">`;
-      openSpans++;
-    }
+    if (style) { result += `<span style="${style}">`; openSpans++; }
     return result;
   });
-
-  // Close any remaining open spans
   for (let i = 0; i < openSpans; i++) html += "</span>";
-
-  // Clean any remaining escape sequences
   html = html.replace(/\x1b\[[^a-zA-Z]*[a-zA-Z]/g, "");
-
   return html;
 }

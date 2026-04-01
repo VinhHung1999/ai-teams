@@ -16,6 +16,7 @@ Agents connect via MCP and use tools like:
 """
 
 import asyncio
+import aiohttp
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import Tool, TextContent
@@ -241,6 +242,24 @@ async def list_tools() -> list[Tool]:
                 "required": ["sprint_id", "item_id"],
             },
         ),
+        Tool(
+            name="notify_boss",
+            description="Send a notification to the Boss (human user) via the board UI. Use when: sprint is done and needs review, you are blocked and need help, important decision required, or significant milestone reached.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "session_name": SESSION_NAME_PROP,
+                    "message": {"type": "string", "description": "Notification message for the Boss"},
+                    "from_role": {"type": "string", "description": "Your role name (PO, DEV, etc.)"},
+                    "urgency": {
+                        "type": "string",
+                        "enum": ["low", "normal", "high"],
+                        "description": "Urgency level (default: normal). Use 'high' for blockers.",
+                    },
+                },
+                "required": ["session_name", "message"],
+            },
+        ),
     ]
 
 
@@ -295,6 +314,11 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             return await _delete_sprint(db, arguments["sprint_id"])
         elif name == "remove_item_from_sprint":
             return await _remove_item_from_sprint(db, arguments["sprint_id"], arguments["item_id"])
+        elif name == "notify_boss":
+            return await _notify_boss(
+                arguments["session_name"], arguments["message"],
+                arguments.get("from_role"), arguments.get("urgency", "normal"),
+            )
         else:
             return [TextContent(type="text", text=f"Unknown tool: {name}")]
 
@@ -633,6 +657,24 @@ async def _add_task_note(db: AsyncSession, task_id: int, note: str) -> list[Text
     await db.commit()
 
     return [TextContent(type="text", text=f"Note added to task [{task_id}].")]
+
+
+async def _notify_boss(session_name: str, message: str, from_role: str | None, urgency: str) -> list[TextContent]:
+    """POST notification to Node.js backend which pushes via Board WS."""
+    try:
+        async with aiohttp.ClientSession() as http:
+            resp = await http.post(
+                "http://localhost:17070/api/notifications",
+                json={"session_name": session_name, "message": message, "from_role": from_role, "urgency": urgency},
+                timeout=aiohttp.ClientTimeout(total=5),
+            )
+            if resp.status == 200:
+                return [TextContent(type="text", text=f"Notification sent to Boss: '{message}' [{urgency}]")]
+            else:
+                text = await resp.text()
+                return [TextContent(type="text", text=f"Failed to notify Boss: {text}")]
+    except Exception as e:
+        return [TextContent(type="text", text=f"Notification error: {str(e)}")]
 
 
 async def main():

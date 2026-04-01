@@ -34,6 +34,7 @@ model BacklogItem {
   updated_at          DateTime     @default(now()) @updatedAt
   sprint_items        SprintItem[]
 
+  @@index([project_id])
   @@map("backlog_items")
 }
 
@@ -49,6 +50,7 @@ model Sprint {
   created_at   DateTime     @default(now())
   items        SprintItem[]
 
+  @@index([project_id])
   @@map("sprints")
 }
 
@@ -62,7 +64,23 @@ model SprintItem {
   board_status    String      @default("todo")
   order           Int         @default(0)
   notes           String?
-  updated_at      DateTime    @updatedAt
+  updated_at      DateTime    @default(now()) @updatedAt
 
+  @@index([sprint_id])
+  @@index([backlog_item_id])
   @@map("sprint_items")
+}
+
+model Notification {
+  id           Int      @id @default(autoincrement())
+  project_id   Int
+  session_name String
+  from_role    String?
+  message      String
+  urgency      String   @default("normal")
+  read         Boolean  @default(false)
+  created_at   DateTime @default(now())
+
+  @@index([project_id])
+  @@map("notifications")
 }

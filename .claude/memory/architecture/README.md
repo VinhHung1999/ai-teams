@@ -41,8 +41,9 @@ IDE-like web app for managing tmux-based AI agent teams with Kanban board.
 - **routes/projects.ts** — CRUD projects + directory browsing
 - **routes/backlog.ts** — CRUD backlog items
 - **routes/sprints.ts** — Sprint lifecycle
-- **routes/board.ts** — Board operations + dashboard endpoint
-- **routes/terminal.ts** — WebSocket PTY with persistent named sessions
+- **routes/board.ts** — Board operations + dashboard REST endpoint
+- **routes/board-ws.ts** — Real-time board WebSocket (PG LISTEN/NOTIFY → WS push)
+- **routes/terminal.ts** — WebSocket PTY + tmux-pane WS + board WS registration
 - **routes/tmux.ts** — Tmux session management (status, capture, send-keys, kill)
 - **routes/files.ts** — File tree + file reading
 
@@ -64,14 +65,16 @@ IDE-like web app for managing tmux-based AI agent teams with Kanban board.
 - Session named by purpose: `boss-{projectId}-{key}`, `agent-{projectId}-{role}`
 
 ### Agent pane viewing
-- Polling `tmux capture-pane` every 500ms (not tmux attach)
+- WebSocket `/ws/tmux-pane` — server polls tmux every 1s, pushes on change (hash-based)
 - ANSI → HTML conversion (256 colors + RGB)
 - Send input via `tmux send-keys` API
 
-### Dashboard auto-refresh
-- Single `/api/projects/:id/dashboard` endpoint returns all data
-- Polls every 3 seconds
-- Pauses during drag-drop
+### Dashboard real-time updates
+- PG LISTEN/NOTIFY triggers on sprint_items, backlog_items, sprints → `board_change` channel
+- WebSocket `/ws/board` — persistent connection, client sends `{type:"subscribe", projectId}` to switch projects
+- Backend debounces rapid changes (300ms), fetches dashboard data, pushes to subscribed clients
+- Connection persists across project switches (no reconnect needed)
+- Pauses updates during drag-drop
 
 ## Cross-Cutting Concerns
 
