@@ -4,6 +4,11 @@ export interface Project {
   tmux_session_name: string | null;
   working_directory: string | null;
   created_at: string;
+  // Enriched fields returned by GET /api/projects/:id (not present in list)
+  has_setup_file?: boolean;
+  setup_file_path?: string;
+  tmux_active?: boolean;
+  roles?: string[];
 }
 
 export interface BacklogItem {

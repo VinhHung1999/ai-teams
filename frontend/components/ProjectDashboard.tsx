@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useEffect, useRef, useState, useCallback, useMemo, type ComponentProps } from "react";
 import {
   DndContext,
   DragOverlay,
@@ -472,7 +472,7 @@ function CompletedSprintRow({
 }
 
 /* ─── Main ProjectDashboard Component ─── */
-export function ProjectDashboard({ projectId }: { projectId: number }) {
+export function ProjectDashboard({ projectId, wsData }: { projectId: number; wsData?: any }) {
   const [project, setProject] = useState<Project | null>(null);
   const [sprints, setSprints] = useState<Sprint[]>([]);
   const [activeBoard, setActiveBoard] = useState<Board | null>(null);
@@ -511,76 +511,63 @@ export function ProjectDashboard({ projectId }: { projectId: number }) {
     [backlogItems]
   );
 
-  /* ─── Data fetching ─── */
+  /* ─── Apply dashboard data (shared by REST fetch + WebSocket push) ─── */
+  const isDraggingRef = useRef(false);
+  isDraggingRef.current = isDragging;
+
+  const applyDashboard = useCallback((data: { project: any; sprints: any[]; backlog: any[]; boards: Record<string, any> }) => {
+    setProject(data.project);
+    setSprints(data.sprints);
+    setBacklogItems(data.backlog);
+
+    const active = data.sprints.find((s) => s.status === "active");
+    if (active && data.boards[String(active.id)]) {
+      setActiveBoard(data.boards[String(active.id)]);
+    } else {
+      setActiveBoard(null);
+    }
+
+    const planBoards: Record<number, Board> = {};
+    const compBoards: Record<number, Board> = {};
+    for (const s of data.sprints) {
+      const board = data.boards[String(s.id)];
+      if (!board) continue;
+      if (s.status === "planning") planBoards[s.id] = board;
+      if (s.status === "completed") compBoards[s.id] = board;
+    }
+    setPlanningBoards(planBoards);
+    setCompletedBoards(compBoards);
+  }, []);
+
+  /* ─── Data fetching (initial load + after user actions) ─── */
   const fetchData = useCallback(async () => {
     try {
       const data = await api.getDashboard(projectId);
-      setProject(data.project);
-      setSprints(data.sprints);
-      setBacklogItems(data.backlog);
-
-      const active = data.sprints.find((s) => s.status === "active");
-      if (active && data.boards[String(active.id)]) {
-        setActiveBoard(data.boards[String(active.id)]);
-      } else {
-        setActiveBoard(null);
-      }
-
-      const planBoards: Record<number, Board> = {};
-      const compBoards: Record<number, Board> = {};
-      for (const s of data.sprints) {
-        const board = data.boards[String(s.id)];
-        if (!board) continue;
-        if (s.status === "planning") planBoards[s.id] = board;
-        if (s.status === "completed") compBoards[s.id] = board;
-      }
-      setPlanningBoards(planBoards);
-      setCompletedBoards(compBoards);
+      applyDashboard(data);
     } catch (e) {
       console.error(e);
     } finally {
       setLoading(false);
     }
-  }, [projectId]);
+  }, [projectId, applyDashboard]);
 
   useEffect(() => {
+    // Skip REST fetch if WS already provided data
+    if (wsData) {
+      applyDashboard(wsData);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     fetchData();
-  }, [fetchData]);
+  }, [fetchData, wsData, applyDashboard]);
 
-  // Auto-refresh all dashboard data every 5 seconds
+  /* ─── Real-time updates via WebSocket (passed from parent) ─── */
   useEffect(() => {
-    const interval = setInterval(async () => {
-      if (isDragging) return;
-      try {
-        const data = await api.getDashboard(projectId);
-        setProject(data.project);
-        setSprints(data.sprints);
-        setBacklogItems(data.backlog);
-
-        const active = data.sprints.find((s) => s.status === "active");
-        if (active && data.boards[String(active.id)]) {
-          setActiveBoard(data.boards[String(active.id)]);
-        } else {
-          setActiveBoard(null);
-        }
-
-        const planBoards: Record<number, Board> = {};
-        const compBoards: Record<number, Board> = {};
-        for (const s of data.sprints) {
-          const board = data.boards[String(s.id)];
-          if (!board) continue;
-          if (s.status === "planning") planBoards[s.id] = board;
-          if (s.status === "completed") compBoards[s.id] = board;
-        }
-        setPlanningBoards(planBoards);
-        setCompletedBoards(compBoards);
-      } catch {
-        // ignore
-      }
-    }, 3000);
-    return () => clearInterval(interval);
-  }, [projectId, isDragging]);
+    if (wsData && !isDraggingRef.current) {
+      applyDashboard(wsData);
+    }
+  }, [wsData, applyDashboard]);
 
   /* ─── Sprint actions ─── */
   const handleStartSprint = async (sprintId: number) => {

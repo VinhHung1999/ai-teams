@@ -1,8 +1,9 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import Link from "next/link";
 import { FileManager } from "@/components/FileManager";
-import { FolderOpen, ChevronRight, Home } from "lucide-react";
+import { FolderOpen, ChevronRight, Home, ArrowLeft } from "lucide-react";
 
 const DEFAULT_PATH = process.env.NEXT_PUBLIC_DEFAULT_FILES_PATH || "/";
 
@@ -33,6 +34,7 @@ export default function FilesPage() {
   const [history, setHistory] = useState<string[]>([]);
   const [showHistory, setShowHistory] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const blurTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     const hist = loadHistory();
@@ -56,10 +58,19 @@ export default function FilesPage() {
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "Enter") navigate(inputValue);
-    if (e.key === "Escape") {
-      setInputValue(rootPath);
+    if (e.key === "Enter") {
+      e.preventDefault();
+      e.stopPropagation();
       setShowHistory(false);
+      navigate(inputValue);
+      inputRef.current?.blur();
+    }
+    if (e.key === "Escape") {
+      e.preventDefault();
+      e.stopPropagation();
+      setShowHistory(false);
+      setInputValue(rootPath);
+      inputRef.current?.blur();
     }
   };
 
@@ -67,6 +78,13 @@ export default function FilesPage() {
     <div className="h-screen flex flex-col bg-[#000000] text-[#e0e0e0]">
       {/* Top bar */}
       <div className="shrink-0 flex items-center gap-2 px-3 py-2 border-b border-[#1f1f1f] bg-[#050505]">
+        <Link
+          href="/"
+          className="flex items-center gap-1 p-0.5 text-[#555] hover:text-[#10b981] transition-colors shrink-0"
+          title="Back to dashboard"
+        >
+          <ArrowLeft className="h-3.5 w-3.5" />
+        </Link>
         <FolderOpen className="h-4 w-4 text-[#10b981] shrink-0" />
         <span className="text-[11px] font-semibold text-[#10b981] uppercase tracking-wider shrink-0">
           File Manager
@@ -79,8 +97,13 @@ export default function FilesPage() {
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
             onKeyDown={handleKeyDown}
-            onFocus={() => setShowHistory(true)}
-            onBlur={() => setTimeout(() => setShowHistory(false), 150)}
+            onFocus={() => {
+              if (blurTimerRef.current) clearTimeout(blurTimerRef.current);
+              setShowHistory(true);
+            }}
+            onBlur={() => {
+              blurTimerRef.current = setTimeout(() => setShowHistory(false), 150);
+            }}
             placeholder="/path/to/directory"
             className="w-full bg-[#111] border border-[#1f1f1f] focus:border-[#10b981]/40 text-[12px] text-[#e0e0e0] font-mono px-2 py-1 rounded outline-none transition-colors"
           />

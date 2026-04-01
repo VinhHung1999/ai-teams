@@ -8,12 +8,18 @@ Jira-like Kanban board for managing tmux-based AI agent teams. Each project has 
 
 ## Commands
 
-### Backend (from `backend/`)
+### Backend Node.js (from `backend-node/`) — PRIMARY BACKEND
+```bash
+npm install                   # Install deps
+npm run build                 # Build TypeScript
+npm start                     # Run server on port 17070
+```
+
+### Backend Python (from `backend/`) — LEGACY, not in use
 ```bash
 uv sync --all-extras          # Install deps
 uv run uvicorn app.main:app --host 0.0.0.0 --port 17070  # Run server
 uv run pytest app/tests/ -v   # Run all tests
-uv run pytest app/tests/test_board.py -v                  # Single test file
 uv run python -m app.mcp_server                           # Run MCP server (stdio)
 ```
 
@@ -45,12 +51,14 @@ Frontend (Next.js 15 + React 19)
   ├── lib/api.ts                      → API client (relative URLs, works through proxy)
   └── lib/types.ts                    → Shared TypeScript types
 
-Backend (FastAPI + SQLAlchemy async + SQLite)
-  ├── app/main.py                     → FastAPI app with CORS + lifespan
-  ├── app/models/                     → SQLAlchemy models (Project, BacklogItem, Sprint, SprintItem)
-  ├── app/api/                        → Route modules (projects, backlog, sprints, board, tmux)
-  ├── app/mcp_server.py               → MCP server for agent board interaction
-  └── app/tests/                      → pytest-asyncio tests with in-memory SQLite
+Backend Node.js (Express + Prisma + PostgreSQL) ← PRIMARY
+  ├── backend-node/src/               → TypeScript source
+  ├── backend-node/dist/index.js      → Compiled entry point
+  └── DB: postgresql://postgres:postgres@localhost:5432/ai_teams
+
+Backend Python (FastAPI + SQLAlchemy) ← LEGACY, not in use
+  ├── backend/app/                    → Python source
+  └── backend/app/tests/              → pytest-asyncio tests
 
 MCP Server (stdio, same DB)
   Tools: list_backlog, create_backlog_item, update_backlog_item, delete_backlog_item, list_sprints, create_sprint, start_sprint, complete_sprint, delete_sprint, get_board, get_my_tasks, update_task_status, add_task_note, add_item_to_sprint, remove_item_from_sprint
@@ -58,8 +66,8 @@ MCP Server (stdio, same DB)
 
 ## Key Design Decisions
 
-- **SQLite as source of truth** — markdown files are hard to parse for drag-drop reordering; SQLite enables fast queries and relationships.
-- **MCP over REST for agents** — tmux agents (Claude instances) natively support MCP; no curl/httpx hacking needed. MCP server shares the same SQLite DB file.
+- **PostgreSQL as source of truth** — DB: `postgresql://postgres:postgres@localhost:5432/ai_teams`. Backend is Node.js (`backend-node/`), NOT the Python backend.
+- **MCP over REST for agents** — tmux agents (Claude instances) natively support MCP; no curl/httpx hacking needed. MCP server shares the same PostgreSQL DB.
 - **Next.js rewrites as API proxy** — frontend uses relative URLs (`/api/...`), Next.js proxies to backend. This makes the app work identically through cloudflare tunnel and locally.
 - **Board auto-refresh** — project board page polls every 5 seconds for updates (WebSocket available but polling used for simplicity).
 - **Sprint lifecycle**: planning → active → completed. Only one active sprint per project. Incomplete items return to backlog on sprint completion.
@@ -70,7 +78,7 @@ MCP Server (stdio, same DB)
 
 ## Testing
 
-Backend tests use an in-memory SQLite database (`sqlite+aiosqlite://`) with per-test fixtures. The conftest overrides `get_db` dependency. All tests are async (`asyncio_mode = "auto"`).
+Backend tests use an in-memory SQLite database (`sqlite+aiosqlite://`) with per-test fixtures (not PostgreSQL). The conftest overrides `get_db` dependency. All tests are async (`asyncio_mode = "auto"`).
 
 ## Project Memory
 

@@ -8,7 +8,7 @@ import {
   File, FileCode, FileJson, FileText, FileType,
   Image, Settings, Database, FileArchive, Lock,
   Folder, FolderOpen, Upload, Download,
-  Trash2, Pencil, FolderPlus, FilePlus, Save, Eye,
+  Trash2, Pencil, FolderPlus, FilePlus, Save, ExternalLink,
 } from "lucide-react";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -141,6 +141,208 @@ function formatSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)}M`;
 }
 
+// ─── Folder reading from DataTransfer ────────────────────────────────────────
+
+interface DroppedFile {
+  file: File;
+  relativePath: string;
+}
+
+async function readEntry(
+  entry: FileSystemEntry,
+  parentPath = ""
+): Promise<DroppedFile[]> {
+  if (entry.isFile) {
+    return new Promise((resolve) => {
+      (entry as FileSystemFileEntry).file((file) => {
+        const rel = parentPath ? `${parentPath}/${entry.name}` : entry.name;
+        resolve([{ file, relativePath: rel }]);
+      }, () => resolve([]));
+    });
+  }
+  if (entry.isDirectory) {
+    const dirEntry = entry as FileSystemDirectoryEntry;
+    const dirPath = parentPath ? `${parentPath}/${entry.name}` : entry.name;
+    const results: DroppedFile[] = [];
+    await new Promise<void>((resolve) => {
+      const reader = dirEntry.createReader();
+      const readBatch = () => {
+        reader.readEntries(async (entries) => {
+          if (!entries.length) { resolve(); return; }
+          const nested = await Promise.all(entries.map((e) => readEntry(e, dirPath)));
+          results.push(...nested.flat());
+          readBatch(); // readEntries may return partial batches
+        }, () => resolve());
+      };
+      readBatch();
+    });
+    return results;
+  }
+  return [];
+}
+
+async function readFilesFromDrop(dt: DataTransfer): Promise<DroppedFile[]> {
+  const results: DroppedFile[] = [];
+  const items = Array.from(dt.items);
+  for (const item of items) {
+    if (item.kind !== "file") continue;
+    const entry = item.webkitGetAsEntry?.();
+    if (entry) {
+      const nested = await readEntry(entry);
+      results.push(...nested);
+    } else {
+      const file = item.getAsFile();
+      if (file) results.push({ file, relativePath: file.name });
+    }
+  }
+  return results;
+}
+
+// ─── Upload Modal ─────────────────────────────────────────────────────────────
+
+interface UploadProgress {
+  total: number;
+  done: number;
+  error?: string;
+}
+
+function UploadModal({
+  targetDir,
+  rootPath,
+  onClose,
+  onDone,
+}: {
+  targetDir: string;
+  rootPath: string;
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const [dragging, setDragging] = useState(false);
+  const [progress, setProgress] = useState<UploadProgress | null>(null);
+
+  const doUpload = async (dropped: DroppedFile[]) => {
+    if (!dropped.length) return;
+    setProgress({ total: dropped.length, done: 0 });
+
+    // Upload in small batches of 5 to show incremental progress
+    const BATCH = 5;
+    for (let i = 0; i < dropped.length; i += BATCH) {
+      const batch = dropped.slice(i, i + BATCH);
+      try {
+        await apiUpload(
+          targetDir,
+          rootPath,
+          batch.map((d) => Object.assign(d.file, { webkitRelativePath: d.relativePath }))
+        );
+      } catch (e: any) {
+        setProgress((p) => p ? { ...p, error: e.message } : null);
+        return;
+      }
+      setProgress((p) => p ? { ...p, done: Math.min(p.total, i + BATCH) } : null);
+    }
+    onDone();
+  };
+
+  const handleDrop = async (e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setDragging(false);
+    const dropped = await readFilesFromDrop(e.dataTransfer);
+    doUpload(dropped);
+  };
+
+  const isDone = progress && progress.done >= progress.total && !progress.error;
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/80"
+      onClick={(e) => { if (e.target === e.currentTarget && !progress) onClose(); }}
+      onKeyDown={(e) => { if (e.key === "Escape" && !progress) onClose(); }}
+    >
+      <div className="bg-[#0a0a0a] border border-[#1f1f1f] rounded-xl w-[500px] max-w-[95vw] shadow-2xl overflow-hidden">
+        {/* Header */}
+        <div className="flex items-center justify-between px-4 py-3 border-b border-[#1f1f1f]">
+          <div>
+            <p className="text-[12px] font-semibold text-[#e0e0e0]">Upload</p>
+            <p className="text-[10px] text-[#555] font-mono truncate max-w-[360px]">{targetDir}</p>
+          </div>
+          {!progress && (
+            <button onClick={onClose} className="text-[#555] hover:text-[#e0e0e0] transition-colors">
+              <span className="text-[14px]">✕</span>
+            </button>
+          )}
+        </div>
+
+        {/* Drop zone */}
+        {!progress && (
+          <div
+            onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+            onDragLeave={() => setDragging(false)}
+            onDrop={handleDrop}
+            className={`mx-4 my-4 rounded-lg border-2 border-dashed flex flex-col items-center justify-center py-14 gap-3 transition-colors ${
+              dragging
+                ? "border-[#10b981] bg-[#0d1f17]/60"
+                : "border-[#2a2a2a] hover:border-[#10b981]/40"
+            }`}
+          >
+            <Upload className={`h-10 w-10 transition-colors ${dragging ? "text-[#10b981]" : "text-[#333]"}`} />
+            <p className={`text-[13px] font-mono transition-colors ${dragging ? "text-[#10b981]" : "text-[#555]"}`}>
+              {dragging ? "Drop to upload" : "Drag files or folders here"}
+            </p>
+            <p className="text-[11px] text-[#333] font-mono">
+              Folders preserve their structure
+            </p>
+          </div>
+        )}
+
+        {/* Progress */}
+        {progress && (
+          <div className="px-4 py-5">
+            {progress.error ? (
+              <div className="text-center">
+                <p className="text-[12px] text-red-400 mb-3">{progress.error}</p>
+                <button
+                  onClick={onClose}
+                  className="px-4 py-1.5 text-[11px] rounded border border-[#333] text-[#888] hover:text-[#e0e0e0] transition-colors"
+                >
+                  Close
+                </button>
+              </div>
+            ) : isDone ? (
+              <div className="text-center">
+                <p className="text-[13px] text-[#10b981] mb-1 font-mono">
+                  ✓ {progress.total} file{progress.total !== 1 ? "s" : ""} uploaded
+                </p>
+                <p className="text-[10px] text-[#555] mb-3">Files are ready in the tree</p>
+                <button
+                  onClick={onClose}
+                  className="px-4 py-1.5 text-[11px] rounded bg-[#10b981]/20 text-[#10b981] hover:bg-[#10b981]/30 transition-colors"
+                >
+                  Done
+                </button>
+              </div>
+            ) : (
+              <div>
+                <div className="flex justify-between mb-1.5">
+                  <span className="text-[11px] text-[#888] font-mono">Uploading...</span>
+                  <span className="text-[11px] text-[#10b981] font-mono">
+                    {progress.done} / {progress.total}
+                  </span>
+                </div>
+                <div className="h-1.5 bg-[#1a1a1a] rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-[#10b981] rounded-full transition-all duration-300"
+                    style={{ width: `${Math.round((progress.done / progress.total) * 100)}%` }}
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── File Icon ────────────────────────────────────────────────────────────────
 
 function FileIcon({ name }: { name: string }) {
@@ -225,7 +427,6 @@ function TreeItem({
   onNewFile,
   onNewFolder,
   onUpload,
-  onUploadFolder,
   readOnly,
 }: {
   node: TreeNode;
@@ -242,7 +443,6 @@ function TreeItem({
   onNewFile: (dirPath: string) => void;
   onNewFolder: (dirPath: string) => void;
   onUpload: (dirPath: string) => void;
-  onUploadFolder: (dirPath: string) => void;
   readOnly?: boolean;
 }) {
   const [showActions, setShowActions] = useState(false);
@@ -298,18 +498,11 @@ function TreeItem({
                 <FolderPlus className="h-3 w-3" />
               </button>
               <button
-                title="Upload files here"
+                title="Upload here"
                 onClick={(e) => { e.stopPropagation(); onUpload(node.path); }}
                 className="p-0.5 hover:text-[#10b981] text-[#555555] transition-colors"
               >
                 <Upload className="h-3 w-3" />
-              </button>
-              <button
-                title="Upload folder here"
-                onClick={(e) => { e.stopPropagation(); onUploadFolder(node.path); }}
-                className="p-0.5 hover:text-[#10b981] text-[#555555] transition-colors"
-              >
-                <FolderPlus className="h-3 w-3" />
               </button>
               <button
                 title="Rename"
@@ -347,7 +540,6 @@ function TreeItem({
                 onNewFile={onNewFile}
                 onNewFolder={onNewFolder}
                 onUpload={onUpload}
-                onUploadFolder={onUploadFolder}
                 readOnly={readOnly}
               />
             ))}
@@ -524,11 +716,8 @@ export function FileManager({ rootPath, readOnly = false }: FileManagerProps) {
   const [renamingPath, setRenamingPath] = useState<string | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<{ path: string; type: "dir" | "file"; name: string } | null>(null);
   const [newItemDialog, setNewItemDialog] = useState<{ type: "file" | "dir"; dirPath: string } | null>(null);
-  const [dragOver, setDragOver] = useState(false);
-  const [uploadDir, setUploadDir] = useState<string>("");
+  const [uploadModalDir, setUploadModalDir] = useState<string | null>(null);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const folderInputRef = useRef<HTMLInputElement>(null);
 
   const showToast = (msg: string) => {
     setToastMsg(msg);
@@ -539,7 +728,6 @@ export function FileManager({ rootPath, readOnly = false }: FileManagerProps) {
   useEffect(() => {
     if (!rootPath) return;
     setTreeLoading(true);
-    setUploadDir(rootPath);
     fetchTree(rootPath, rootPath)
       .then((entries) =>
         setTree(
@@ -779,79 +967,32 @@ export function FileManager({ rootPath, readOnly = false }: FileManagerProps) {
     a.click();
   }, []);
 
-  const handleUploadFiles = useCallback(
-    async (dir: string, files: File[]) => {
-      if (!files.length) return;
-      try {
-        await apiUpload(dir, rootPath, files);
-        await refreshDir(dir);
-        showToast(`Uploaded ${files.length} file(s) to ${dir.split("/").pop()}`);
-      } catch (err: any) {
-        showToast(`Upload error: ${err.message}`);
-      }
-    },
-    [refreshDir, rootPath]
-  );
-
   const handleUploadClick = useCallback((dirPath: string) => {
-    setUploadDir(dirPath);
-    fileInputRef.current?.click();
+    setUploadModalDir(dirPath);
   }, []);
 
-  const handleFolderUploadClick = useCallback((dirPath: string) => {
-    setUploadDir(dirPath);
-    folderInputRef.current?.click();
-  }, []);
-
-  const handleFileInputChange = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
-      const files = Array.from(e.target.files || []);
-      if (files.length) handleUploadFiles(uploadDir, files);
-      e.target.value = "";
+  const handleUploadDone = useCallback(
+    async (dir: string) => {
+      setUploadModalDir(null);
+      await refreshDir(dir);
+      showToast("Upload complete");
     },
-    [uploadDir, handleUploadFiles]
-  );
-
-  // Drag & drop over the tree panel
-  const handleDragOver = useCallback((e: DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    setDragOver(true);
-  }, []);
-
-  const handleDragLeave = useCallback(() => setDragOver(false), []);
-
-  const handleDrop = useCallback(
-    (e: DragEvent<HTMLDivElement>) => {
-      e.preventDefault();
-      setDragOver(false);
-      const files = Array.from(e.dataTransfer.files);
-      if (files.length) handleUploadFiles(rootPath, files);
-    },
-    [rootPath, handleUploadFiles]
+    [refreshDir]
   );
 
   const lines = selectedFile?.content.split("\n") || [];
 
   return (
     <div className="flex h-full bg-[#000000] text-[#e0e0e0] relative">
-      {/* Hidden file input */}
-      <input
-        ref={fileInputRef}
-        type="file"
-        multiple
-        className="hidden"
-        onChange={handleFileInputChange}
-      />
-      {/* Hidden folder input */}
-      <input
-        ref={folderInputRef}
-        type="file"
-        multiple
-        // @ts-ignore — webkitdirectory is not in TS types but works in all modern browsers
-        webkitdirectory=""
-        className="hidden"
-        onChange={handleFileInputChange}
-      />
+      {/* Upload Modal */}
+      {uploadModalDir && (
+        <UploadModal
+          targetDir={uploadModalDir}
+          rootPath={rootPath}
+          onClose={() => setUploadModalDir(null)}
+          onDone={() => handleUploadDone(uploadModalDir)}
+        />
+      )}
 
       {/* Delete confirm dialog */}
       {deleteConfirm && (
@@ -881,10 +1022,7 @@ export function FileManager({ rootPath, readOnly = false }: FileManagerProps) {
 
       {/* File tree — left panel */}
       <div
-        className={`shrink-0 border-r border-[#1f1f1f] flex flex-col overflow-hidden transition-all ${treeVisible ? "w-64" : "w-0 border-r-0"} ${dragOver ? "bg-[#0d1f17]/50" : ""}`}
-        onDragOver={!readOnly ? handleDragOver : undefined}
-        onDragLeave={!readOnly ? handleDragLeave : undefined}
-        onDrop={!readOnly ? handleDrop : undefined}
+        className={`shrink-0 border-r border-[#1f1f1f] flex flex-col overflow-hidden transition-all ${treeVisible ? "w-64" : "w-0 border-r-0"}`}
       >
         {/* Tree header */}
         <div className="px-3 py-2 border-b border-[#1f1f1f] shrink-0 flex items-center justify-between gap-1">
@@ -894,18 +1032,11 @@ export function FileManager({ rootPath, readOnly = false }: FileManagerProps) {
           {!readOnly && (
             <div className="flex items-center gap-1 ml-auto mr-1">
               <button
-                title="Upload files"
+                title="Upload (drag & drop)"
                 onClick={() => handleUploadClick(rootPath)}
                 className="p-0.5 text-[#555555] hover:text-[#10b981] transition-colors"
               >
                 <Upload className="h-3 w-3" />
-              </button>
-              <button
-                title="Upload folder"
-                onClick={() => handleFolderUploadClick(rootPath)}
-                className="p-0.5 text-[#555555] hover:text-[#10b981] transition-colors"
-              >
-                <FolderPlus className="h-3 w-3" />
               </button>
               <button
                 title="New file"
@@ -930,15 +1061,6 @@ export function FileManager({ rootPath, readOnly = false }: FileManagerProps) {
             ✕
           </button>
         </div>
-
-        {/* Drag overlay hint */}
-        {dragOver && (
-          <div className="absolute inset-0 z-10 flex items-center justify-center pointer-events-none">
-            <div className="bg-[#0d1f17] border border-[#10b981]/50 rounded-lg px-4 py-2">
-              <span className="text-[11px] text-[#10b981] font-mono">Drop to upload</span>
-            </div>
-          </div>
-        )}
 
         <div className="flex-1 overflow-y-auto overflow-x-hidden py-1">
           {treeLoading ? (
@@ -967,7 +1089,6 @@ export function FileManager({ rootPath, readOnly = false }: FileManagerProps) {
                 onNewFile={handleNewFile}
                 onNewFolder={handleNewFolder}
                 onUpload={handleUploadClick}
-                onUploadFolder={handleFolderUploadClick}
                 readOnly={readOnly}
               />
             ))
@@ -1032,6 +1153,20 @@ export function FileManager({ rootPath, readOnly = false }: FileManagerProps) {
                 <span className="text-[10px] text-[#555555]">{selectedFile.language}</span>
                 <span className="text-[10px] text-[#555555]">{formatSize(selectedFile.size)}</span>
                 <span className="text-[10px] text-[#555555]">{lines.length} lines</span>
+                {/* HTML preview button */}
+                {(selectedFile.language === "html") && (
+                  <button
+                    title="Open HTML preview in new tab"
+                    onClick={() => window.open(
+                      `/api/files/preview?path=${encodeURIComponent(selectedFile.path)}&root=${encodeURIComponent(rootPath)}`,
+                      "_blank"
+                    )}
+                    className="flex items-center gap-1 px-1.5 py-0.5 text-[10px] rounded border border-[#10b981]/30 text-[#10b981] hover:bg-[#10b981]/10 transition-colors"
+                  >
+                    <ExternalLink className="h-3 w-3" />
+                    Preview
+                  </button>
+                )}
                 {!readOnly && (
                   <>
                     {editMode ? (
@@ -1132,7 +1267,7 @@ export function FileManager({ rootPath, readOnly = false }: FileManagerProps) {
             )}
             <span className="text-[12px] text-[#333333]">Select a file to view</span>
             {!readOnly && (
-              <span className="text-[11px] text-[#333333]">Drag & drop files onto the tree to upload</span>
+              <span className="text-[11px] text-[#333333]">Use the ↑ Upload button to add files or folders</span>
             )}
           </div>
         )}

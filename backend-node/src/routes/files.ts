@@ -218,6 +218,46 @@ router.get('/api/files/read', (req: Request, res: Response) => {
   }
 });
 
+// ─── GET /api/files/preview ───────────────────────────────────────────────────
+// Serves HTML files with Content-Type text/html so they render in a browser tab.
+
+router.get('/api/files/preview', (req: Request, res: Response) => {
+  const rawPath = req.query.path as string;
+  const rawRoot = req.query.root as string | undefined;
+
+  let filePath: string;
+  try {
+    filePath = validatePath(rawPath, rawRoot);
+  } catch (e) {
+    return pathError(res, e);
+  }
+
+  const ext = path.extname(filePath).toLowerCase();
+  if (ext !== '.html' && ext !== '.htm') {
+    return res.status(400).json({ error: 'Only HTML files can be previewed' });
+  }
+
+  try {
+    const stat = fs.statSync(filePath);
+    if (!stat.isFile()) return res.status(400).json({ error: 'Not a file' });
+    if (stat.size > 5 * 1024 * 1024) {
+      return res.status(400).json({ error: 'HTML file too large for preview (max 5MB)' });
+    }
+
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.setHeader('Content-Length', stat.size);
+    // Allow iframe embedding from same origin; block external embedding for security
+    res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+
+    const stream = fs.createReadStream(filePath);
+    stream.pipe(res);
+    stream.on('error', (err) => { if (!res.headersSent) res.status(500).json({ error: err.message }); });
+  } catch (err: any) {
+    if (err.code === 'ENOENT') return res.status(404).json({ error: 'File not found' });
+    return res.status(500).json({ error: err.message || 'Failed to serve HTML preview' });
+  }
+});
+
 // ─── GET /api/files/image ─────────────────────────────────────────────────────
 
 router.get('/api/files/image', (req: Request, res: Response) => {
