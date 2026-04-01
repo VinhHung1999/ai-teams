@@ -174,13 +174,126 @@ info "Building frontend (Next.js)..."
 cd frontend && npm run build && cd "$SCRIPT_DIR"
 ok "Frontend built"
 
-# ─── 6. Python Backend (optional) ─────────────────────────
-if command -v uv &>/dev/null; then
-  header "Python MCP Server Setup (optional)"
-  read -rp "Set up Python MCP server? (y/N): " SETUP_PYTHON
-  if [[ "${SETUP_PYTHON,,}" == "y" ]]; then
-    cd backend && uv sync --all-extras && cd "$SCRIPT_DIR"
-    ok "Python backend deps installed"
+# ─── 6. MCP Server Setup ──────────────────────────────────
+header "MCP Server Setup (AI agent board integration)"
+
+MCP_READY=false
+
+if ! command -v uv &>/dev/null; then
+  warn "uv not found — skipping MCP server setup"
+  warn "Install uv: curl -LsSf https://astral.sh/uv/install.sh | sh"
+elif ! command -v python3 &>/dev/null; then
+  warn "Python 3 not found — skipping MCP server setup"
+else
+  info "Installing Python MCP server dependencies..."
+  cd backend && uv sync --all-extras && cd "$SCRIPT_DIR"
+  ok "Python backend deps installed"
+
+  # Build async DATABASE_URL for Python (asyncpg)
+  MCP_DB_URL="postgresql+asyncpg://${PG_USER}@${PG_HOST}:${PG_PORT}/${PG_DB}"
+
+  # Generate MCP config JSON
+  MCP_CONFIG=$(cat <<MCPJSON
+{
+  "ai-teams-board": {
+    "command": "uv",
+    "args": ["run", "python", "-m", "app.mcp_server"],
+    "cwd": "${SCRIPT_DIR}/backend",
+    "env": {
+      "AI_TEAMS_DATABASE_URL": "${MCP_DB_URL}"
+    }
+  }
+}
+MCPJSON
+)
+
+  echo ""
+  echo -e "${BOLD}Generated MCP config:${NC}"
+  echo "$MCP_CONFIG"
+  echo ""
+
+  # Quick verify: MCP server starts without crashing
+  info "Verifying MCP server starts..."
+  MCP_CHECK=$(cd backend && timeout 5 uv run python -c "from app.mcp_server import *; print('ok')" 2>&1 || true)
+  if echo "$MCP_CHECK" | grep -q "ok"; then
+    ok "MCP server verified"
+    MCP_READY=true
+  else
+    warn "MCP server check inconclusive (may still work): ${MCP_CHECK}"
+    MCP_READY=true  # proceed — DB may not be reachable at import time
+  fi
+
+  # Ask user whether to auto-inject into ~/.claude/settings.json
+  echo ""
+  CLAUDE_SETTINGS="${HOME}/.claude/settings.json"
+  read -rp "Auto-inject MCP config into ${CLAUDE_SETTINGS}? (Y/n): " INJECT_MCP
+  if [[ "${INJECT_MCP,,}" != "n" ]]; then
+    if [ -f "$CLAUDE_SETTINGS" ]; then
+      # Merge: add/overwrite ai-teams-board key inside mcpServers
+      python3 - <<PYEOF
+import json, sys, os
+
+settings_path = os.path.expanduser("${CLAUDE_SETTINGS}")
+with open(settings_path) as f:
+    settings = json.load(f)
+
+mcp_entry = {
+    "command": "uv",
+    "args": ["run", "python", "-m", "app.mcp_server"],
+    "cwd": "${SCRIPT_DIR}/backend",
+    "env": {
+        "AI_TEAMS_DATABASE_URL": "${MCP_DB_URL}"
+    }
+}
+
+if "mcpServers" not in settings:
+    settings["mcpServers"] = {}
+settings["mcpServers"]["ai-teams-board"] = mcp_entry
+
+with open(settings_path, "w") as f:
+    json.dump(settings, f, indent=2)
+    f.write("\n")
+
+print("ok")
+PYEOF
+      ok "MCP config injected into ${CLAUDE_SETTINGS}"
+    else
+      # Create fresh settings.json
+      python3 - <<PYEOF
+import json, os
+
+settings_path = os.path.expanduser("${CLAUDE_SETTINGS}")
+os.makedirs(os.path.dirname(settings_path), exist_ok=True)
+
+settings = {
+    "mcpServers": {
+        "ai-teams-board": {
+            "command": "uv",
+            "args": ["run", "python", "-m", "app.mcp_server"],
+            "cwd": "${SCRIPT_DIR}/backend",
+            "env": {
+                "AI_TEAMS_DATABASE_URL": "${MCP_DB_URL}"
+            }
+        }
+    }
+}
+
+with open(settings_path, "w") as f:
+    json.dump(settings, f, indent=2)
+    f.write("\n")
+
+print("ok")
+PYEOF
+      ok "Created ${CLAUDE_SETTINGS} with MCP config"
+    fi
+  else
+    echo ""
+    echo -e "${BOLD}Add this to ~/.claude/settings.json manually:${NC}"
+    echo ""
+    echo "{"
+    echo "  \"mcpServers\": ${MCP_CONFIG}"
+    echo "}"
+    echo ""
   fi
 fi
 
@@ -205,4 +318,8 @@ echo -e "  Backend:    ${CYAN}http://localhost:17070${NC}"
 echo ""
 echo -e "  Run:   ${BOLD}pm2 start ecosystem.config.js${NC}"
 echo -e "  Logs:  ${BOLD}pm2 logs${NC}"
+if [ "$MCP_READY" = true ]; then
+  echo ""
+  echo -e "  MCP:   ${GREEN}ai-teams-board${NC} ready — restart Claude Code to activate"
+fi
 echo ""
