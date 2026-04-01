@@ -116,12 +116,12 @@ async function apiSave(filePath: string, content: string, root: string): Promise
   }
 }
 
-async function apiUpload(dir: string, root: string, files: File[]): Promise<void> {
+async function apiUpload(dir: string, root: string, files: DroppedFile[]): Promise<void> {
   const form = new FormData();
-  for (const f of files) {
-    form.append("files", f);
+  for (const d of files) {
+    form.append("files", d.file);
     // Send relative path so backend can recreate folder structure
-    form.append("relativePaths", (f as any).webkitRelativePath || f.name);
+    form.append("relativePaths", d.relativePath);
   }
   const res = await fetch(
     `/api/files/upload?dir=${encodeURIComponent(dir)}&root=${encodeURIComponent(root)}`,
@@ -229,11 +229,7 @@ function UploadModal({
     for (let i = 0; i < dropped.length; i += BATCH) {
       const batch = dropped.slice(i, i + BATCH);
       try {
-        await apiUpload(
-          targetDir,
-          rootPath,
-          batch.map((d) => Object.assign(d.file, { webkitRelativePath: d.relativePath }))
-        );
+        await apiUpload(targetDir, rootPath, batch);
       } catch (e: any) {
         setProgress((p) => p ? { ...p, error: e.message } : null);
         return;
