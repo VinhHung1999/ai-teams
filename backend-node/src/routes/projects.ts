@@ -64,18 +64,31 @@ router.post('/api/projects/mkdir', async (req: Request, res: Response) => {
   }
 });
 
-// List projects
+// List projects — pinned first, then by created_at desc
 router.get('/api/projects', async (_req: Request, res: Response) => {
   const projects = await prisma.project.findMany({
-    orderBy: { created_at: 'desc' },
+    orderBy: [{ pinned: 'desc' }, { created_at: 'desc' }],
   });
   res.json(projects.map(p => ({
     id: p.id,
     name: p.name,
     tmux_session_name: p.tmux_session_name,
     working_directory: p.working_directory,
+    pinned: p.pinned,
     created_at: p.created_at.toISOString(),
   })));
+});
+
+// Toggle pin
+router.patch('/api/projects/:id/pin', async (req: Request, res: Response) => {
+  const id = parseInt(req.params.id as string);
+  const project = await prisma.project.findUnique({ where: { id } });
+  if (!project) return res.status(404).json({ detail: 'Project not found' });
+  const updated = await prisma.project.update({
+    where: { id },
+    data: { pinned: !project.pinned },
+  });
+  res.json({ id: updated.id, pinned: updated.pinned });
 });
 
 // Create project
@@ -142,6 +155,7 @@ router.get('/api/projects/:id', async (req: Request, res: Response) => {
     name: project.name,
     tmux_session_name: project.tmux_session_name,
     working_directory: project.working_directory,
+    pinned: project.pinned,
     created_at: project.created_at.toISOString(),
     has_setup_file: hasSetupFile,
     setup_file_path: setupFilePath,

@@ -3,6 +3,7 @@ export interface Project {
   name: string;
   tmux_session_name: string | null;
   working_directory: string | null;
+  pinned: boolean;
   created_at: string;
   // Enriched fields returned by GET /api/projects/:id (not present in list)
   has_setup_file?: boolean;

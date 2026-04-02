@@ -12,6 +12,7 @@ model Project {
   name              String
   tmux_session_name String?
   working_directory String?
+  pinned            Boolean       @default(false)
   created_at        DateTime      @default(now())
   backlog_items     BacklogItem[]
   sprints           Sprint[]

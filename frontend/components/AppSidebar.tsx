@@ -32,6 +32,7 @@ function SidebarContent({
   onToggle,
   onCreateProject,
   onDeleteProject,
+  onPinProject,
   loading,
 }: {
   projects: Project[];
@@ -41,6 +42,7 @@ function SidebarContent({
   onToggle: () => void;
   onCreateProject: () => void;
   onDeleteProject: (id: number) => void;
+  onPinProject: (id: number) => void;
   loading: boolean;
 }) {
   if (collapsed) {
@@ -159,7 +161,10 @@ function SidebarContent({
                   {project.name.slice(0, 2).toUpperCase()}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-[12px] font-medium truncate">
+                  <p className="text-[12px] font-medium truncate flex items-center gap-1">
+                    {project.pinned && (
+                      <span className="text-[#10b981] text-[9px] leading-none" title="Pinned">📌</span>
+                    )}
                     {project.name}
                   </p>
                   {project.tmux_session_name && (
@@ -168,6 +173,17 @@ function SidebarContent({
                     </p>
                   )}
                 </div>
+                <button
+                  onClick={(e) => { e.stopPropagation(); onPinProject(project.id); }}
+                  className={`opacity-0 group-hover:opacity-100 text-[10px] px-1 py-0.5 rounded transition-all shrink-0 ${
+                    project.pinned
+                      ? "text-[#10b981] opacity-100"
+                      : "text-muted-foreground/30 hover:text-[#10b981]"
+                  }`}
+                  title={project.pinned ? "Unpin" : "Pin to top"}
+                >
+                  📌
+                </button>
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
@@ -229,6 +245,18 @@ export function AppSidebar({ selectedProjectId, onSelectProject, onTeamCommand, 
     }
   };
 
+  const handlePin = async (projectId: number) => {
+    try {
+      const result = await api.togglePin(projectId);
+      setProjects((prev) =>
+        [...prev.map((p) => p.id === projectId ? { ...p, pinned: result.pinned } : p)]
+          .sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0))
+      );
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
   const handleSelectProject = (id: number) => {
     onSelectProject(id);
     setMobileOpen(false);
@@ -250,6 +278,7 @@ export function AppSidebar({ selectedProjectId, onSelectProject, onTeamCommand, 
           onToggle={() => setCollapsed(!collapsed)}
           onCreateProject={() => setCreating(true)}
           onDeleteProject={handleDelete}
+          onPinProject={handlePin}
           loading={loading}
         />
       </aside>
@@ -285,6 +314,7 @@ export function AppSidebar({ selectedProjectId, onSelectProject, onTeamCommand, 
                   setMobileOpen(false);
                 }}
                 onDeleteProject={handleDelete}
+                onPinProject={handlePin}
                 loading={loading}
               />
             </SheetContent>

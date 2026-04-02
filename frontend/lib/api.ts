@@ -21,6 +21,7 @@ export const api = {
     fetchAPI<import("./types").Project>("/api/projects", { method: "POST", body: JSON.stringify(data) }),
   getProject: (id: number) => fetchAPI<import("./types").Project>(`/api/projects/${id}`),
   deleteProject: (id: number) => fetchAPI<{ ok: boolean }>(`/api/projects/${id}`, { method: "DELETE" }),
+  togglePin: (id: number) => fetchAPI<{ id: number; pinned: boolean }>(`/api/projects/${id}/pin`, { method: "PATCH" }),
   browseDirs: (path?: string) =>
     fetchAPI<{ current: string; parent: string; dirs: { name: string; path: string }[] }>(
       `/api/projects/browse-dirs${path ? `?path=${encodeURIComponent(path)}` : ""}`
