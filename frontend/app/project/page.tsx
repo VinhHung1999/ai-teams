@@ -781,17 +781,22 @@ function AgentInput({ sessionName, role }: { sessionName: string; role: string }
     setPending(false);
   };
 
+  const sendKey = (key: string) => {
+    fetch(`/api/tmux/session/${encodeURIComponent(sessionName)}/send-key`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ role, key }),
+    }).catch(() => {});
+  };
+
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "Enter") { e.preventDefault(); handleSend(); return; }
-    if (e.shiftKey && e.key === "Tab") { e.preventDefault(); return; }
-    if (e.ctrlKey && e.key === "c") {
+    if (e.key === "Enter") {
       e.preventDefault();
-      fetch(`/api/tmux/session/${encodeURIComponent(sessionName)}/send-key`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ role, key: "C-c" }),
-      }).catch(() => {});
+      if (message.trim()) { handleSend(); } else { sendKey("Enter"); }
+      return;
     }
+    if (e.shiftKey && e.key === "Tab") { e.preventDefault(); sendKey("BackTab"); return; }
+    if (e.ctrlKey && e.key === "c") { e.preventDefault(); sendKey("C-c"); return; }
   };
 
   return (
