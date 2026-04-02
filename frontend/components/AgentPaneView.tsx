@@ -77,9 +77,9 @@ export function AgentPaneView({ sessionName, role, isVisible, output, wsStatus }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "Enter") { e.preventDefault(); handleSendMessage(); return; }
+    if (e.key === "Enter") { e.preventDefault(); if (inputValue.trim()) { handleSendMessage(); } else { sendSpecialKey("Enter"); } return; }
     if (e.ctrlKey && e.key === "c") { e.preventDefault(); sendSpecialKey("C-c"); return; }
-    if (e.shiftKey && e.key === "Tab") { e.preventDefault(); return; }
+    if (e.shiftKey && e.key === "Tab") { e.preventDefault(); sendSpecialKey("BTab"); return; }
     if (e.key === "ArrowUp" || e.key === "ArrowDown") {
       e.preventDefault(); sendSpecialKey(SPECIAL_KEYS[e.key]); return;
     }
@@ -198,7 +198,11 @@ export function AgentPaneView({ sessionName, role, isVisible, output, wsStatus }
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();
-                handleSendMessage();
+                if (inputValue.trim()) {
+                  handleSendMessage();
+                } else {
+                  sendSpecialKey("Enter");
+                }
                 (e.target as HTMLTextAreaElement).style.height = "36px";
                 return;
               }
