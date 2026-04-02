@@ -765,14 +765,33 @@ function ProjectPageContent() {
 /* ─── Agent input box ─── */
 function AgentInput({ sessionName, role }: { sessionName: string; role: string }) {
   const [message, setMessage] = useState("");
+  const [pending, setPending] = useState(false);
 
-  const handleSend = () => {
-    if (!message.trim()) return;
-    // Use tm-send to send message to the agent's pane
-    const cmd = `tm-send ${role} "BOSS: ${message.trim()}"`;
-    // TODO: send via terminal WebSocket or API
-    console.log("Send to agent:", cmd);
+  const handleSend = async () => {
+    if (!message.trim() || pending) return;
+    setPending(true);
+    try {
+      await fetch(`/api/tmux/session/${encodeURIComponent(sessionName)}/send`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ role, text: message.trim() }),
+      });
+    } catch {}
     setMessage("");
+    setPending(false);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter") { e.preventDefault(); handleSend(); return; }
+    if (e.shiftKey && e.key === "Tab") { e.preventDefault(); return; }
+    if (e.ctrlKey && e.key === "c") {
+      e.preventDefault();
+      fetch(`/api/tmux/session/${encodeURIComponent(sessionName)}/send-key`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ role, key: "C-c" }),
+      }).catch(() => {});
+    }
   };
 
   return (
@@ -780,13 +799,15 @@ function AgentInput({ sessionName, role }: { sessionName: string; role: string }
       <input
         value={message}
         onChange={(e) => setMessage(e.target.value)}
-        onKeyDown={(e) => e.key === "Enter" && handleSend()}
-        placeholder={`Message ${role}...`}
-        className="flex-1 text-[11px] px-2 py-1 rounded bg-muted/30 border border-border/40 text-foreground/80 placeholder:text-muted-foreground/25 focus:outline-none focus:border-primary/40"
+        onKeyDown={handleKeyDown}
+        placeholder={pending ? "Sending..." : `Message ${role}...`}
+        disabled={pending}
+        className="flex-1 text-[11px] px-2 py-1 rounded bg-muted/30 border border-border/40 text-foreground/80 placeholder:text-muted-foreground/25 focus:outline-none focus:border-primary/40 disabled:opacity-50"
       />
       <button
         onClick={handleSend}
-        className="text-[10px] px-2 py-1 rounded bg-primary/20 text-primary/70 hover:bg-primary/30 transition-colors font-mono"
+        disabled={!message.trim() || pending}
+        className="text-[10px] px-2 py-1 rounded bg-primary/20 text-primary/70 hover:bg-primary/30 transition-colors font-mono disabled:opacity-30"
       >
         Send
       </button>

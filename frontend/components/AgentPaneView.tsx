@@ -79,6 +79,7 @@ export function AgentPaneView({ sessionName, role, isVisible, output, wsStatus }
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter") { e.preventDefault(); handleSendMessage(); return; }
     if (e.ctrlKey && e.key === "c") { e.preventDefault(); sendSpecialKey("C-c"); return; }
+    if (e.shiftKey && e.key === "Tab") { e.preventDefault(); return; }
     if (e.key === "ArrowUp" || e.key === "ArrowDown") {
       e.preventDefault(); sendSpecialKey(SPECIAL_KEYS[e.key]); return;
     }
