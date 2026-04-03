@@ -310,7 +310,7 @@ function ProjectPageContent() {
                   const startWidth = agentPanelWidth;
                   const onMove = (ev: MouseEvent) => {
                     const delta = startX - ev.clientX;
-                    setAgentPanelWidth(Math.max(250, Math.min(600, startWidth + delta)));
+                    setAgentPanelWidth(Math.max(250, Math.min(900, startWidth + delta)));
                   };
                   const onUp = () => {
                     document.removeEventListener("mousemove", onMove);
@@ -763,20 +763,24 @@ function ProjectPageContent() {
 }
 
 /* ─── Agent input box ─── */
-function AgentInput({ sessionName, role }: { sessionName: string; role: string }) {
+function AgentInput({ sessionName, role, projectCwd }: { sessionName: string; role: string; projectCwd?: string }) {
   const [message, setMessage] = useState("");
   const [pending, setPending] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const sendText = async (text: string) => {
+    await fetch(`/api/tmux/session/${encodeURIComponent(sessionName)}/send`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ role, text }),
+    });
+  };
 
   const handleSend = async () => {
     if (!message.trim() || pending) return;
     setPending(true);
-    try {
-      await fetch(`/api/tmux/session/${encodeURIComponent(sessionName)}/send`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ role, text: message.trim() }),
-      });
-    } catch {}
+    try { await sendText(message.trim()); } catch {}
     setMessage("");
     setPending(false);
   };
@@ -799,8 +803,44 @@ function AgentInput({ sessionName, role }: { sessionName: string; role: string }
     if (e.ctrlKey && e.key === "c") { e.preventDefault(); sendKey("C-c"); return; }
   };
 
+  const handleUpload = async (file: File) => {
+    if (!file || uploading) return;
+    setUploading(true);
+    try {
+      const uploadDir = projectCwd || "/tmp/ai-teams-uploads";
+      const form = new FormData();
+      form.append("files", file);
+      form.append("relativePaths", file.name);
+      const res = await fetch(
+        `/api/files/upload?dir=${encodeURIComponent(uploadDir)}&root=${encodeURIComponent(uploadDir)}`,
+        { method: "POST", body: form }
+      );
+      if (res.ok) {
+        const savedPath = `${uploadDir}/${file.name}`;
+        await sendText(`[IMAGE] ${savedPath}`);
+      }
+    } catch {}
+    setUploading(false);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
   return (
-    <div className="flex gap-1.5">
+    <div className="flex gap-1.5 items-center">
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={(e) => { const f = e.target.files?.[0]; if (f) handleUpload(f); }}
+      />
+      <button
+        onClick={() => fileInputRef.current?.click()}
+        disabled={uploading}
+        className="text-[11px] px-1.5 py-1 rounded text-muted-foreground/40 hover:text-foreground/60 hover:bg-muted/20 border border-border/30 transition-colors disabled:opacity-30"
+        title="Upload image"
+      >
+        {uploading ? "⏳" : "📷"}
+      </button>
       <input
         value={message}
         onChange={(e) => setMessage(e.target.value)}
