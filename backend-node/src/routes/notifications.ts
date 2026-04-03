@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import prisma from '../lib/prisma';
 import { pushNotificationToProject } from './board-ws';
+import { registerNotificationMessage } from '../telegram-bot';
 
 const router = Router();
 
@@ -13,11 +14,16 @@ async function sendTelegram(urgency: string, fromRole: string | null, sessionNam
   const role = fromRole ? `<b>${fromRole}</b>` : 'Agent';
   const text = `${emoji} ${role} [${sessionName}]\n${message}`;
   try {
-    await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, {
+    const res = await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, text, parse_mode: 'HTML' }),
     });
+    const data = await res.json() as any;
+    // Register message_id → session_name for swipe-reply detection
+    if (data?.ok && data.result?.message_id) {
+      registerNotificationMessage(data.result.message_id, sessionName);
+    }
   } catch {
     // Telegram failure should not break the main response
   }

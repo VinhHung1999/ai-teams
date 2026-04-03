@@ -21,6 +21,21 @@ let offset = 0;
 let running = false;
 let pollTimer: ReturnType<typeof setTimeout> | null = null;
 
+// ── message_id → session_name mapping (for swipe-reply detection) ────────────
+// Keeps last 200 notification message IDs; old ones evicted automatically.
+const MSG_CACHE_MAX = 200;
+const msgToSession = new Map<number, string>(); // message_id → session_name
+const msgOrder: number[] = [];
+
+export function registerNotificationMessage(messageId: number, sessionName: string): void {
+  if (msgOrder.length >= MSG_CACHE_MAX) {
+    const evict = msgOrder.shift()!;
+    msgToSession.delete(evict);
+  }
+  msgToSession.set(messageId, sessionName);
+  msgOrder.push(messageId);
+}
+
 // ── Pending state (command with no message) ──────────────────────────────────
 interface PendingState {
   session: string;   // resolved tmux session name
@@ -104,6 +119,18 @@ async function handleMessage(msg: any): Promise<void> {
 
   // Security: only accept from authorised chat
   if (chatId !== String(ALLOWED_CHAT_ID)) return;
+
+  // ── Swipe-reply to a notification message ──
+  const replyToId: number | undefined = msg.reply_to_message?.message_id;
+  if (replyToId !== undefined && !text.startsWith('/')) {
+    const replySession = msgToSession.get(replyToId);
+    if (replySession) {
+      const resolvedSess = await resolveSession(replySession.replace(/-/g, '_')) ?? replySession;
+      await forwardToAgent(chatId, resolvedSess, text.trim());
+      return;
+    }
+    // No mapping — fall through to normal handling
+  }
 
   // ── Non-command text: check for pending session state ──
   if (!text.startsWith('/')) {
