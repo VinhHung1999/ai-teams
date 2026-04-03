@@ -21,6 +21,24 @@ let offset = 0;
 let running = false;
 let pollTimer: ReturnType<typeof setTimeout> | null = null;
 
+// ── Pending state (command with no message) ──────────────────────────────────
+interface PendingState {
+  session: string;   // resolved tmux session name
+  timer: ReturnType<typeof setTimeout>;
+}
+const pending = new Map<string, PendingState>(); // key = chatId string
+
+function setPending(chatId: string, session: string): void {
+  clearPending(chatId);
+  const timer = setTimeout(() => pending.delete(chatId), 60_000);
+  pending.set(chatId, { session, timer });
+}
+
+function clearPending(chatId: string): void {
+  const p = pending.get(chatId);
+  if (p) { clearTimeout(p.timer); pending.delete(chatId); }
+}
+
 // ── Telegram API helpers ─────────────────────────────────────────────────────
 
 async function tgPost(method: string, body: object): Promise<any> {
@@ -58,14 +76,48 @@ async function syncBotCommands(): Promise<void> {
 
 // ── Message handler ──────────────────────────────────────────────────────────
 
+async function resolveSession(rawSession: string): Promise<string | null> {
+  const session = rawSession.replace(/_/g, '-');
+  try {
+    const { stdout } = await execAsync(`tmux list-sessions -F "#{session_name}" 2>/dev/null`, { timeout: 3000 });
+    const sessions = stdout.trim().split('\n').filter(Boolean);
+    if (sessions.includes(rawSession)) return rawSession;
+    if (sessions.includes(session)) return session;
+  } catch {}
+  return null;
+}
+
+async function forwardToAgent(chatId: string, resolvedSession: string, userMsg: string): Promise<void> {
+  const bossMsg = `BOSS: ${userMsg}`;
+  const safeMsg = bossMsg.replace(/'/g, "'\\''");
+  try {
+    await execAsync(`tm-send -s '${resolvedSession}' PO '${safeMsg}'`, { timeout: 5000 });
+    await sendReply(chatId, `Sent to PO@${resolvedSession} ✓`);
+  } catch (err: any) {
+    await sendReply(chatId, `Failed to send ✗\n<code>${err.message}</code>`);
+  }
+}
+
 async function handleMessage(msg: any): Promise<void> {
-  const chatId = msg.chat?.id;
+  const chatId = String(msg.chat?.id);
   const text: string = msg.text || '';
 
   // Security: only accept from authorised chat
-  if (String(chatId) !== String(ALLOWED_CHAT_ID)) return;
+  if (chatId !== String(ALLOWED_CHAT_ID)) return;
 
-  // Expect: /session_name [message]   (command may include @botname suffix)
+  // ── Non-command text: check for pending session state ──
+  if (!text.startsWith('/')) {
+    const state = pending.get(chatId);
+    if (state) {
+      clearPending(chatId);
+      await forwardToAgent(chatId, state.session, text.trim());
+    } else {
+      await sendReply(chatId, '⚠️ Format: <code>/session_name your message</code>');
+    }
+    return;
+  }
+
+  // ── Command: /session_name [message] ──
   const match = text.match(/^\/([^\s@]+)(?:@\S+)?(?:\s+([\s\S]*))?$/);
   if (!match) {
     await sendReply(chatId, '⚠️ Format: <code>/session_name your message</code>');
@@ -74,37 +126,21 @@ async function handleMessage(msg: any): Promise<void> {
 
   const rawSession = match[1];
   const userMsg = (match[2] || '').trim();
-  const session = rawSession.replace(/_/g, '-'); // restore hyphens if needed
 
-  if (!userMsg) {
-    await sendReply(chatId, `⚠️ Empty message — use: <code>/${rawSession} your message</code>`);
-    return;
-  }
-
-  // Check tmux session exists (try raw name first, then hyphenated)
-  let resolvedSession: string | null = null;
-  try {
-    const { stdout } = await execAsync(`tmux list-sessions -F "#{session_name}" 2>/dev/null`, { timeout: 3000 });
-    const sessions = stdout.trim().split('\n').filter(Boolean);
-    if (sessions.includes(rawSession)) resolvedSession = rawSession;
-    else if (sessions.includes(session)) resolvedSession = session;
-  } catch {}
-
-  if (!resolvedSession) {
+  const resolvedSess = await resolveSession(rawSession);
+  if (!resolvedSess) {
     await sendReply(chatId, `Team not found ✗\n<code>${rawSession}</code> is not an active tmux session.`);
     return;
   }
 
-  // Forward via tm-send
-  const bossMsg = `BOSS: ${userMsg}`;
-  const safeMsg = bossMsg.replace(/'/g, "'\\''"); // escape single quotes for shell
-
-  try {
-    await execAsync(`tm-send -s '${resolvedSession}' PO '${safeMsg}'`, { timeout: 5000 });
-    await sendReply(chatId, `Sent to PO@${resolvedSession} ✓`);
-  } catch (err: any) {
-    await sendReply(chatId, `Failed to send ✗\n<code>${err.message}</code>`);
+  if (!userMsg) {
+    // Prompt for message and store pending state (60s timeout)
+    setPending(chatId, resolvedSess);
+    await sendReply(chatId, `Nhập message cho PO@${resolvedSess}:`);
+    return;
   }
+
+  await forwardToAgent(chatId, resolvedSess, userMsg);
 }
 
 // ── Long-polling loop ────────────────────────────────────────────────────────
