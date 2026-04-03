@@ -222,12 +222,90 @@ async function forwardToAgent(chatId: string, resolvedSession: string, userMsg: 
   }
 }
 
+async function downloadTgFile(fileId: string, destDir: string, fallbackName: string): Promise<string | null> {
+  try {
+    const info = await tgPost('getFile', { file_id: fileId }) as any;
+    if (!info.ok) return null;
+    const filePath: string = info.result.file_path;
+    const ext = path.extname(filePath) || path.extname(fallbackName) || '';
+    const fileName = `tg_${Date.now()}${ext}`;
+    const destPath = path.join(destDir, fileName);
+    const url = `https://api.telegram.org/file/bot${TOKEN}/${filePath}`;
+    const res = await fetch(url);
+    const buf = Buffer.from(await res.arrayBuffer());
+    fs.mkdirSync(destDir, { recursive: true });
+    fs.writeFileSync(destPath, buf);
+    return destPath;
+  } catch {
+    return null;
+  }
+}
+
+async function handleFileMessage(chatId: string, msg: any): Promise<boolean> {
+  // Determine file_id and original name
+  let fileId: string | undefined;
+  let origName = 'file';
+
+  if (msg.photo) {
+    // photo is array of sizes — take largest
+    const largest = msg.photo[msg.photo.length - 1];
+    fileId = largest?.file_id;
+    origName = 'photo.jpg';
+  } else if (msg.document) {
+    fileId = msg.document.file_id;
+    origName = msg.document.file_name || 'document';
+  } else {
+    return false;
+  }
+  if (!fileId) return false;
+
+  // Determine target session: from pending state, swipe-reply, or default first session
+  let targetSession: string | null = null;
+  const state = pending.get(chatId);
+  if (state) {
+    clearPending(chatId);
+    targetSession = state.session;
+  } else {
+    const replyToId: number | undefined = msg.reply_to_message?.message_id;
+    if (replyToId !== undefined) {
+      const meta = msgCache.get(replyToId);
+      if (meta) targetSession = meta.session;
+    }
+  }
+
+  // Find project working dir for storage
+  let destDir = '/tmp/ai-teams-uploads';
+  if (targetSession) {
+    try {
+      const project = await prisma.project.findFirst({ where: { tmux_session_name: targetSession } });
+      if (project?.working_directory) destDir = path.join(project.working_directory, '.boss-uploads');
+    } catch {}
+  }
+
+  const savedPath = await downloadTgFile(fileId, destDir, origName);
+  if (!savedPath) {
+    await sendReply(chatId, `Failed to download file ✗`);
+    return true;
+  }
+
+  if (targetSession) {
+    const caption = msg.caption ? ` — ${msg.caption}` : '';
+    await forwardToAgent(chatId, targetSession, `[FILE] ${savedPath}${caption}`);
+  } else {
+    await sendReply(chatId, `File saved: <code>${savedPath}</code>\nNo target session — use /session_name first to associate.`);
+  }
+  return true;
+}
+
 async function handleMessage(msg: any): Promise<void> {
   const chatId = String(msg.chat?.id);
   const text: string = msg.text || '';
 
   // Security: only accept from authorised chat
   if (chatId !== String(ALLOWED_CHAT_ID)) return;
+
+  // ── Photo / document forward ──
+  if (await handleFileMessage(chatId, msg)) return;
 
   // ── Swipe-reply to a notification message ──
   const replyToId: number | undefined = msg.reply_to_message?.message_id;
@@ -321,6 +399,44 @@ async function poll(): Promise<void> {
 
 // ── Public API ───────────────────────────────────────────────────────────────
 
+async function sendDailySummary(): Promise<void> {
+  if (!ALLOWED_CHAT_ID) return;
+  try {
+    const projects = await prisma.project.findMany();
+    const lines: string[] = [`<b>📊 Daily Summary — ${new Date().toLocaleDateString('vi-VN')}</b>\n`];
+    for (const p of projects) {
+      const sprint = await prisma.sprint.findFirst({
+        where: { project_id: p.id, status: 'active' },
+        include: { items: true },
+      });
+      if (!sprint) continue;
+      const done = sprint.items.filter((i: any) => i.board_status === 'done').length;
+      const total = sprint.items.length;
+      const inProgress = sprint.items.filter((i: any) => i.board_status === 'in_progress').length;
+      lines.push(`<b>${p.name}</b> — Sprint ${sprint.number}`);
+      lines.push(`  ✅ ${done}/${total} done · 🔨 ${inProgress} in progress`);
+      if (sprint.goal) lines.push(`  Goal: ${sprint.goal}`);
+    }
+    if (lines.length === 1) lines.push('No active sprints today.');
+    await tgPost('sendMessage', { chat_id: ALLOWED_CHAT_ID, text: lines.join('\n'), parse_mode: 'HTML' });
+  } catch {}
+}
+
+function scheduleDailySummary(): void {
+  const scheduleNext = () => {
+    const now = new Date();
+    const next = new Date(now);
+    next.setHours(19, 0, 0, 0);
+    if (next <= now) next.setDate(next.getDate() + 1);
+    const delay = next.getTime() - now.getTime();
+    setTimeout(() => {
+      sendDailySummary();
+      setInterval(sendDailySummary, 24 * 60 * 60 * 1000);
+    }, delay);
+  };
+  scheduleNext();
+}
+
 export function startTelegramBot(): void {
   if (!TOKEN || !ALLOWED_CHAT_ID) {
     console.log('[telegram] No token/chat_id — bot disabled');
@@ -334,6 +450,9 @@ export function startTelegramBot(): void {
   // Sync commands on startup + every 5 min
   syncBotCommands();
   setInterval(syncBotCommands, 5 * 60 * 1000);
+
+  // Daily summary at 19:00
+  scheduleDailySummary();
 
   poll();
 }
