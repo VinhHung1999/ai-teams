@@ -103,7 +103,7 @@ async function resolveSession(rawSession: string): Promise<string | null> {
 }
 
 async function forwardToAgent(chatId: string, resolvedSession: string, userMsg: string): Promise<void> {
-  const bossMsg = `BOSS: ${userMsg}`;
+  const bossMsg = `[via Telegram] BOSS: ${userMsg}`;
   const safeMsg = bossMsg.replace(/'/g, "'\\''");
   try {
     await execAsync(`tm-send -s '${resolvedSession}' PO '${safeMsg}'`, { timeout: 5000 });
