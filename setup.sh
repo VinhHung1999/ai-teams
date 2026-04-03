@@ -91,7 +91,27 @@ else
 fi
 
 # Write DATABASE_URL to backend-node .env
-echo "DATABASE_URL=\"${DATABASE_URL}\"" > backend-node/.env
+cat > backend-node/.env <<ENVEOF
+DATABASE_URL="${DATABASE_URL}"
+ENVEOF
+
+# Optional Telegram notifications
+echo ""
+echo -e "${BOLD}Telegram Notifications (optional)${NC}"
+echo "  Sends notify_boss alerts to your Telegram chat."
+echo "  Leave blank to skip."
+read -rp "TELEGRAM_BOT_TOKEN: " TELEGRAM_BOT_TOKEN
+read -rp "TELEGRAM_CHAT_ID: " TELEGRAM_CHAT_ID
+if [ -n "$TELEGRAM_BOT_TOKEN" ] && [ -n "$TELEGRAM_CHAT_ID" ]; then
+  cat >> backend-node/.env <<ENVEOF
+TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
+ENVEOF
+  ok "Telegram config added"
+else
+  warn "Telegram skipped — notifications will only push via WebSocket"
+fi
+
 ok "backend-node/.env written"
 
 # Run Prisma migrations

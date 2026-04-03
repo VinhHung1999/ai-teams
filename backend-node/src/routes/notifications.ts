@@ -4,6 +4,25 @@ import { pushNotificationToProject } from './board-ws';
 
 const router = Router();
 
+const TELEGRAM_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
+const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
+
+async function sendTelegram(urgency: string, fromRole: string | null, sessionName: string, message: string): Promise<void> {
+  if (!TELEGRAM_TOKEN || !TELEGRAM_CHAT_ID) return;
+  const emoji = urgency === 'high' ? '🔴' : '🟡';
+  const role = fromRole ? `<b>${fromRole}</b>` : 'Agent';
+  const text = `${emoji} ${role} [${sessionName}]\n${message}`;
+  try {
+    await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, text, parse_mode: 'HTML' }),
+    });
+  } catch {
+    // Telegram failure should not break the main response
+  }
+}
+
 // POST /api/notifications — create + push via Board WS
 router.post('/api/notifications', async (req: Request, res: Response) => {
   const { session_name, message, from_role, urgency } = req.body;
@@ -41,6 +60,9 @@ router.post('/api/notifications', async (req: Request, res: Response) => {
       read: notification.read,
       created_at: notification.created_at.toISOString(),
     });
+
+    // Fire-and-forget Telegram notification
+    sendTelegram(notification.urgency, notification.from_role, notification.session_name, notification.message);
 
     return res.json({ ok: true, id: notification.id });
   } catch (err: any) {
