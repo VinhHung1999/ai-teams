@@ -21,18 +21,19 @@ let offset = 0;
 let running = false;
 let pollTimer: ReturnType<typeof setTimeout> | null = null;
 
-// ── message_id → session_name mapping (for swipe-reply detection) ────────────
+// ── message_id → {session, role} mapping (for swipe-reply detection) ─────────
 // Keeps last 200 notification message IDs; old ones evicted automatically.
 const MSG_CACHE_MAX = 200;
-const msgToSession = new Map<number, string>(); // message_id → session_name
+interface MsgMeta { session: string; role: string; }
+const msgCache = new Map<number, MsgMeta>(); // message_id → {session, role}
 const msgOrder: number[] = [];
 
-export function registerNotificationMessage(messageId: number, sessionName: string): void {
+export function registerNotificationMessage(messageId: number, sessionName: string, fromRole: string | null): void {
   if (msgOrder.length >= MSG_CACHE_MAX) {
     const evict = msgOrder.shift()!;
-    msgToSession.delete(evict);
+    msgCache.delete(evict);
   }
-  msgToSession.set(messageId, sessionName);
+  msgCache.set(messageId, { session: sessionName, role: fromRole || 'PO' });
   msgOrder.push(messageId);
 }
 
@@ -102,12 +103,12 @@ async function resolveSession(rawSession: string): Promise<string | null> {
   return null;
 }
 
-async function forwardToAgent(chatId: string, resolvedSession: string, userMsg: string): Promise<void> {
+async function forwardToAgent(chatId: string, resolvedSession: string, userMsg: string, role = 'PO'): Promise<void> {
   const bossMsg = `[via Telegram] BOSS: ${userMsg}`;
   const safeMsg = bossMsg.replace(/'/g, "'\\''");
   try {
-    await execAsync(`tm-send -s '${resolvedSession}' PO '${safeMsg}'`, { timeout: 5000 });
-    await sendReply(chatId, `Sent to PO@${resolvedSession} ✓`);
+    await execAsync(`tm-send -s '${resolvedSession}' ${role} '${safeMsg}'`, { timeout: 5000 });
+    await sendReply(chatId, `Sent to ${role}@${resolvedSession} ✓`);
   } catch (err: any) {
     await sendReply(chatId, `Failed to send ✗\n<code>${err.message}</code>`);
   }
@@ -123,10 +124,10 @@ async function handleMessage(msg: any): Promise<void> {
   // ── Swipe-reply to a notification message ──
   const replyToId: number | undefined = msg.reply_to_message?.message_id;
   if (replyToId !== undefined && !text.startsWith('/')) {
-    const replySession = msgToSession.get(replyToId);
-    if (replySession) {
-      const resolvedSess = await resolveSession(replySession.replace(/-/g, '_')) ?? replySession;
-      await forwardToAgent(chatId, resolvedSess, text.trim());
+    const meta = msgCache.get(replyToId);
+    if (meta) {
+      const resolvedSess = await resolveSession(meta.session.replace(/-/g, '_')) ?? meta.session;
+      await forwardToAgent(chatId, resolvedSess, text.trim(), meta.role);
       return;
     }
     // No mapping — fall through to normal handling

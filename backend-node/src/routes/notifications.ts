@@ -22,7 +22,7 @@ async function sendTelegram(urgency: string, fromRole: string | null, sessionNam
     const data = await res.json() as any;
     // Register message_id → session_name for swipe-reply detection
     if (data?.ok && data.result?.message_id) {
-      registerNotificationMessage(data.result.message_id, sessionName);
+      registerNotificationMessage(data.result.message_id, sessionName, fromRole ?? null);
     }
   } catch {
     // Telegram failure should not break the main response
