@@ -80,6 +80,7 @@ import tmuxRouter from './routes/tmux';
 import filesRouter from './routes/files';
 import gitRouter from './routes/git';
 import notificationsRouter from './routes/notifications';
+import { startTelegramBot, stopTelegramBot } from './telegram-bot';
 
 app.use(projectsRouter);
 app.use(backlogRouter);
@@ -104,11 +105,13 @@ registerTerminalWs(server);
 const PORT = 17070;
 server.listen(PORT, '0.0.0.0', () => {
   log(`AI Teams backend running on http://0.0.0.0:${PORT} (PID: ${process.pid})`);
+  startTelegramBot();
 });
 
 // Graceful shutdown - close server so port is freed immediately
 function shutdown(signal: string) {
   log(`Received ${signal}, shutting down...`);
+  stopTelegramBot();
   server.close(() => {
     log('Server closed, exiting.');
     process.exit(0);
