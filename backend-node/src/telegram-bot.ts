@@ -10,6 +10,9 @@
 
 import { exec } from 'child_process';
 import { promisify } from 'util';
+import fs from 'fs';
+import path from 'path';
+import prisma from './lib/prisma';
 
 const execAsync = promisify(exec);
 
@@ -74,23 +77,128 @@ async function sendReply(chatId: number | string, text: string): Promise<void> {
 
 async function syncBotCommands(): Promise<void> {
   try {
-    const { stdout } = await execAsync('tmux list-sessions -F "#{session_name}" 2>/dev/null', { timeout: 3000 });
-    const sessions = stdout.trim().split('\n').filter(Boolean);
+    const builtins = [
+      { command: 'status', description: 'All teams + sprint progress' },
+      { command: 'board', description: 'Sprint board: /board <session>' },
+      { command: 'broadcast', description: 'Send to all teams: /broadcast <msg>' },
+      { command: 'help', description: 'Show available commands' },
+    ];
 
-    if (!sessions.length) return;
+    let sessionCmds: { command: string; description: string }[] = [];
+    try {
+      const { stdout } = await execAsync('tmux list-sessions -F "#{session_name}" 2>/dev/null', { timeout: 3000 });
+      const sessions = stdout.trim().split('\n').filter(Boolean);
+      sessionCmds = sessions.map((s) => ({
+        command: s.replace(/[^a-zA-Z0-9_]/g, '_'),
+        description: `Send to PO@${s}`,
+      }));
+    } catch {}
 
-    const commands = sessions.map((s) => ({
-      command: s.replace(/[^a-zA-Z0-9_]/g, '_'),
-      description: `Send to PO@${s}`,
-    }));
-
-    await tgPost('setMyCommands', { commands });
+    await tgPost('setMyCommands', { commands: [...builtins, ...sessionCmds] });
   } catch {
-    // Non-fatal — commands just won't update
+    // Non-fatal
   }
 }
 
+// ── Built-in commands ────────────────────────────────────────────────────────
+
+const BOARD_COLS = ['todo', 'in_progress', 'in_review', 'testing', 'done'] as const;
+const COL_EMOJI: Record<string, string> = {
+  todo: '📋', in_progress: '🔨', in_review: '👀', testing: '🧪', done: '✅',
+};
+
+async function cmdStatus(chatId: string): Promise<void> {
+  let lines: string[] = ['<b>🖥 Team Status</b>\n'];
+  try {
+    const { stdout } = await execAsync('tmux list-sessions -F "#{session_name}" 2>/dev/null', { timeout: 3000 });
+    const sessions = stdout.trim().split('\n').filter(Boolean);
+    if (!sessions.length) { await sendReply(chatId, 'No active tmux sessions.'); return; }
+
+    for (const s of sessions) {
+      const project = await prisma.project.findFirst({ where: { tmux_session_name: s } });
+      const sprint = project
+        ? await prisma.sprint.findFirst({ where: { project_id: project.id, status: 'active' }, include: { items: true } })
+        : null;
+      const done = sprint?.items.filter((i: any) => i.board_status === 'done').length ?? 0;
+      const total = sprint?.items.length ?? 0;
+      lines.push(`<b>${s}</b>${project ? ` — ${project.name}` : ''}`);
+      if (sprint) lines.push(`  Sprint ${sprint.number}: ${done}/${total} done${sprint.goal ? ` · ${sprint.goal}` : ''}`);
+      else lines.push('  No active sprint');
+    }
+  } catch (e: any) {
+    lines.push(`Error: ${e.message}`);
+  }
+  await sendReply(chatId, lines.join('\n'));
+}
+
+async function cmdBoard(chatId: string, rawSession: string): Promise<void> {
+  const sess = await resolveSessionDirect(rawSession);
+  if (!sess) { await sendReply(chatId, `Team not found ✗\n<code>${rawSession}</code>`); return; }
+
+  const project = await prisma.project.findFirst({ where: { tmux_session_name: sess } });
+  if (!project) { await sendReply(chatId, `No project linked to session <code>${sess}</code>`); return; }
+
+  const sprint = await prisma.sprint.findFirst({
+    where: { project_id: project.id, status: 'active' },
+    include: { items: { include: { backlog_item: true } } },
+  });
+  if (!sprint) { await sendReply(chatId, `No active sprint for <b>${project.name}</b>`); return; }
+
+  const lines: string[] = [`<b>📋 ${project.name} — Sprint ${sprint.number}</b>\n`];
+  for (const col of BOARD_COLS) {
+    const colItems = sprint.items.filter((i: any) => i.board_status === col);
+    if (!colItems.length) continue;
+    lines.push(`${COL_EMOJI[col]} <b>${col.replace('_', ' ')}</b>`);
+    for (const item of colItems) {
+      const assignee = item.assignee_role ? ` [${item.assignee_role}]` : '';
+      lines.push(`  • ${item.backlog_item.title}${assignee}`);
+    }
+  }
+  await sendReply(chatId, lines.join('\n'));
+}
+
+async function cmdBroadcast(chatId: string, message: string): Promise<void> {
+  if (!message) { await sendReply(chatId, '⚠️ Usage: /broadcast your message'); return; }
+  try {
+    const { stdout } = await execAsync('tmux list-sessions -F "#{session_name}" 2>/dev/null', { timeout: 3000 });
+    const sessions = stdout.trim().split('\n').filter(Boolean);
+    if (!sessions.length) { await sendReply(chatId, 'No active sessions to broadcast to.'); return; }
+    const safeMsg = `[via Telegram] BOSS: ${message}`.replace(/'/g, "'\\''");
+    const results: string[] = [];
+    for (const s of sessions) {
+      try {
+        await execAsync(`tm-send -s '${s}' PO '${safeMsg}'`, { timeout: 5000 });
+        results.push(`✓ PO@${s}`);
+      } catch {
+        results.push(`✗ PO@${s}`);
+      }
+    }
+    await sendReply(chatId, `Broadcast sent:\n${results.join('\n')}`);
+  } catch (e: any) {
+    await sendReply(chatId, `Broadcast failed: ${e.message}`);
+  }
+}
+
+async function cmdHelp(chatId: string): Promise<void> {
+  await sendReply(chatId, [
+    '<b>🤖 AI Teams Bot Commands</b>',
+    '',
+    '/status — All teams + sprint progress',
+    '/board &lt;session&gt; — Sprint board for a team',
+    '/broadcast &lt;msg&gt; — Send to PO in all active sessions',
+    '/&lt;session&gt; &lt;msg&gt; — Send message to PO@session',
+    '/&lt;session&gt; — Prompt for message (60s timeout)',
+    '',
+    '<i>Swipe-reply</i> a notification to reply to the sender directly.',
+  ].join('\n'));
+}
+
 // ── Message handler ──────────────────────────────────────────────────────────
+
+// resolveSession without tmux fallback (for builtins that pass session directly)
+async function resolveSessionDirect(raw: string): Promise<string | null> {
+  return resolveSession(raw);
+}
 
 async function resolveSession(rawSession: string): Promise<string | null> {
   const session = rawSession.replace(/_/g, '-');
@@ -145,15 +253,29 @@ async function handleMessage(msg: any): Promise<void> {
     return;
   }
 
-  // ── Command: /session_name [message] ──
+  // ── Command: built-ins first, then session-forward ──
   const match = text.match(/^\/([^\s@]+)(?:@\S+)?(?:\s+([\s\S]*))?$/);
   if (!match) {
     await sendReply(chatId, '⚠️ Format: <code>/session_name your message</code>');
     return;
   }
 
-  const rawSession = match[1];
-  const userMsg = (match[2] || '').trim();
+  const rawCmd = match[1].toLowerCase();
+  const args = (match[2] || '').trim();
+
+  if (rawCmd === 'status') { await cmdStatus(chatId); return; }
+  if (rawCmd === 'help' || rawCmd === 'start') { await cmdHelp(chatId); return; }
+  if (rawCmd === 'board') {
+    const [sessArg, ...rest] = args.split(/\s+/);
+    if (!sessArg) { await sendReply(chatId, '⚠️ Usage: /board &lt;session&gt;'); return; }
+    await cmdBoard(chatId, sessArg);
+    return;
+  }
+  if (rawCmd === 'broadcast') { await cmdBroadcast(chatId, args); return; }
+
+  // ── Session forward ──
+  const rawSession = match[1]; // preserve original case for session name
+  const userMsg = args;
 
   const resolvedSess = await resolveSession(rawSession);
   if (!resolvedSess) {
