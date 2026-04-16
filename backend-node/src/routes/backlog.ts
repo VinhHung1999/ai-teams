@@ -1,64 +1,36 @@
 import { Router, Request, Response } from 'express';
-import prisma from '../lib/prisma';
+import { getStorage } from '../storage/factory';
 
 const router = Router();
-
-function formatBacklogItem(item: any) {
-  return {
-    id: item.id,
-    project_id: item.project_id,
-    title: item.title,
-    description: item.description,
-    priority: item.priority,
-    story_points: item.story_points,
-    acceptance_criteria: item.acceptance_criteria,
-    status: item.status,
-    order: item.order,
-    created_at: item.created_at.toISOString(),
-    updated_at: item.updated_at.toISOString(),
-  };
-}
 
 // List backlog items
 router.get('/api/projects/:projectId/backlog', async (req: Request, res: Response) => {
   const projectId = parseInt(req.params.projectId as string);
-  const items = await prisma.backlogItem.findMany({
-    where: { project_id: projectId },
-    orderBy: { order: 'asc' },
-  });
-  res.json(items.map(formatBacklogItem));
+  const storage = await getStorage();
+  const items = await storage.listBacklog(projectId);
+  res.json(items);
 });
 
 // Create backlog item
 router.post('/api/projects/:projectId/backlog', async (req: Request, res: Response) => {
   const projectId = parseInt(req.params.projectId as string);
   const { title, description, priority, story_points, acceptance_criteria } = req.body;
-
-  const maxOrderResult = await prisma.backlogItem.findFirst({
-    where: { project_id: projectId },
-    orderBy: { order: 'desc' },
-    select: { order: true },
+  const storage = await getStorage();
+  const item = await storage.createBacklogItem(projectId, {
+    title,
+    description,
+    priority,
+    story_points,
+    acceptance_criteria,
   });
-  const maxOrder = maxOrderResult?.order ?? 0;
-
-  const item = await prisma.backlogItem.create({
-    data: {
-      project_id: projectId,
-      title,
-      description: description || null,
-      priority: priority || 'P2',
-      story_points: story_points || null,
-      acceptance_criteria: acceptance_criteria || null,
-      order: maxOrder + 1,
-    },
-  });
-  res.json(formatBacklogItem(item));
+  res.json(item);
 });
 
 // Update backlog item
 router.put('/api/backlog/:id', async (req: Request, res: Response) => {
   const id = parseInt(req.params.id as string);
-  const existing = await prisma.backlogItem.findUnique({ where: { id } });
+  const storage = await getStorage();
+  const existing = await storage.getBacklogItem(id);
   if (!existing) {
     return res.status(404).json({ detail: 'Backlog item not found' });
   }
@@ -71,21 +43,19 @@ router.put('/api/backlog/:id', async (req: Request, res: Response) => {
     }
   }
 
-  const item = await prisma.backlogItem.update({
-    where: { id },
-    data: updateData,
-  });
-  res.json(formatBacklogItem(item));
+  const item = await storage.updateBacklogItem(id, updateData);
+  res.json(item);
 });
 
 // Delete backlog item
 router.delete('/api/backlog/:id', async (req: Request, res: Response) => {
   const id = parseInt(req.params.id as string);
-  const existing = await prisma.backlogItem.findUnique({ where: { id } });
+  const storage = await getStorage();
+  const existing = await storage.getBacklogItem(id);
   if (!existing) {
     return res.status(404).json({ detail: 'Backlog item not found' });
   }
-  await prisma.backlogItem.delete({ where: { id } });
+  await storage.deleteBacklogItem(id);
   res.json({ ok: true });
 });
 
@@ -93,14 +63,9 @@ router.delete('/api/backlog/:id', async (req: Request, res: Response) => {
 router.put('/api/projects/:projectId/backlog/reorder', async (req: Request, res: Response) => {
   const projectId = parseInt(req.params.projectId as string);
   const { item_ids } = req.body;
-
+  const storage = await getStorage();
   if (item_ids && Array.isArray(item_ids)) {
-    for (let idx = 0; idx < item_ids.length; idx++) {
-      await prisma.backlogItem.updateMany({
-        where: { id: item_ids[idx], project_id: projectId },
-        data: { order: idx },
-      });
-    }
+    await storage.reorderBacklog(projectId, item_ids);
   }
   res.json({ ok: true });
 });

@@ -1,0 +1,98 @@
+{
+  "projects": [
+    {
+      "id": 7,
+      "name": "habit-tracker",
+      "tmux_session_name": "habit_tracker",
+      "working_directory": "/Users/hungphu/Documents/AI_Projects/habit-tracker",
+      "pinned": true,
+      "created_at": "2026-04-16T15:53:11.636Z"
+    },
+    {
+      "id": 10,
+      "name": "voice-everywhere-phone",
+      "tmux_session_name": "voice-everywhere-phone",
+      "working_directory": "/Users/hungphu/Documents/AI_Projects/voice-everywhere-phone",
+      "pinned": false,
+      "created_at": "2026-04-16T15:53:11.637Z"
+    },
+    {
+      "id": 11,
+      "name": "App store",
+      "tmux_session_name": "app-store",
+      "working_directory": "/Users/hungphu/Documents/AI_Projects/app-store",
+      "pinned": false,
+      "created_at": "2026-04-16T15:53:11.635Z"
+    },
+    {
+      "id": 12,
+      "name": "love-scrum",
+      "tmux_session_name": "love_scrum",
+      "working_directory": "/Users/hungphu/Documents/AI_Projects/love-scrum",
+      "pinned": true,
+      "created_at": "2026-04-16T15:53:11.637Z"
+    },
+    {
+      "id": 13,
+      "name": "assistant",
+      "tmux_session_name": "assistant",
+      "working_directory": "/Users/hungphu/Documents/AI_Projects/assistant",
+      "pinned": false,
+      "created_at": "2026-04-16T15:53:11.636Z"
+    },
+    {
+      "id": 14,
+      "name": "ai-teams",
+      "tmux_session_name": "ai_teams",
+      "working_directory": "/Users/hungphu/Documents/AI_Projects/ai-teams",
+      "pinned": true,
+      "created_at": "2026-04-16T15:53:11.635Z"
+    },
+    {
+      "id": 15,
+      "name": "ai-news",
+      "tmux_session_name": "ai-news",
+      "working_directory": "/Users/hungphu/Documents/AI_Projects/ai-news",
+      "pinned": false,
+      "created_at": "2026-04-16T15:53:11.634Z"
+    },
+    {
+      "id": 18,
+      "name": "murmur-team",
+      "tmux_session_name": "murmur-team",
+      "working_directory": "/Users/hungphu/Documents/AI_Projects/journaling-app",
+      "pinned": true,
+      "created_at": "2026-04-16T15:53:11.637Z"
+    },
+    {
+      "id": 22,
+      "name": "hexarian",
+      "tmux_session_name": "hexarian",
+      "working_directory": "/Users/hungphu/Documents/AI_Projects/hexarian",
+      "pinned": true,
+      "created_at": "2026-04-16T15:53:11.636Z"
+    },
+    {
+      "id": 23,
+      "name": "tuvi-team",
+      "tmux_session_name": "tuvi-team",
+      "working_directory": "/Users/hungphu/Documents/AI_Projects/horoscope",
+      "pinned": true,
+      "created_at": "2026-04-16T15:53:11.636Z"
+    }
+  ],
+  "nextProjectId": 24,
+  "nextNotificationId": 2,
+  "notifications": [
+    {
+      "id": 1,
+      "project_id": 14,
+      "session_name": "ai_teams",
+      "from_role": "DEV",
+      "message": "Phase 2 test notification",
+      "urgency": "normal",
+      "read": false,
+      "created_at": "2026-04-16T15:55:30.982Z"
+    }
+  ]
+}

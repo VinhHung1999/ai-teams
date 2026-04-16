@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import prisma from '../lib/prisma';
+import { getStorage } from '../storage/factory';
 import { pushNotificationToProject } from './board-ws';
 import { registerNotificationMessage } from '../telegram-bot';
 
@@ -20,7 +20,6 @@ async function sendTelegram(urgency: string, fromRole: string | null, sessionNam
       body: JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, text, parse_mode: 'HTML' }),
     });
     const data = await res.json() as any;
-    // Register message_id → session_name for swipe-reply detection
     if (data?.ok && data.result?.message_id) {
       registerNotificationMessage(data.result.message_id, sessionName, fromRole ?? null);
     }
@@ -37,37 +36,21 @@ router.post('/api/notifications', async (req: Request, res: Response) => {
   }
 
   try {
-    // Resolve session → project
-    const project = await prisma.project.findFirst({
-      where: { tmux_session_name: session_name },
-    });
+    const storage = await getStorage();
+    const project = await storage.findProjectBySession(session_name);
     if (!project) {
       return res.status(404).json({ error: `No project for session '${session_name}'` });
     }
 
-    const notification = await prisma.notification.create({
-      data: {
-        project_id: project.id,
-        session_name,
-        from_role: from_role || null,
-        message,
-        urgency: urgency || 'normal',
-      },
+    const notification = await storage.createNotification({
+      project_id: project.id,
+      session_name,
+      from_role: from_role ?? null,
+      message,
+      urgency: urgency ?? 'normal',
     });
 
-    // Push to all Board WS clients for this project
-    pushNotificationToProject(project.id, {
-      id: notification.id,
-      project_id: notification.project_id,
-      session_name: notification.session_name,
-      from_role: notification.from_role,
-      message: notification.message,
-      urgency: notification.urgency,
-      read: notification.read,
-      created_at: notification.created_at.toISOString(),
-    });
-
-    // Fire-and-forget Telegram notification
+    pushNotificationToProject(project.id, notification);
     sendTelegram(notification.urgency, notification.from_role, notification.session_name, notification.message);
 
     return res.json({ ok: true, id: notification.id });
@@ -82,25 +65,9 @@ router.get('/api/notifications', async (req: Request, res: Response) => {
   if (isNaN(projectId)) return res.status(400).json({ error: 'projectId required' });
 
   try {
-    const where: any = { project_id: projectId };
-    if (req.query.unread === 'true') where.read = false;
-
-    const notifications = await prisma.notification.findMany({
-      where,
-      orderBy: { created_at: 'desc' },
-      take: 50,
-    });
-
-    return res.json(notifications.map(n => ({
-      id: n.id,
-      project_id: n.project_id,
-      session_name: n.session_name,
-      from_role: n.from_role,
-      message: n.message,
-      urgency: n.urgency,
-      read: n.read,
-      created_at: n.created_at.toISOString(),
-    })));
+    const storage = await getStorage();
+    const notifications = await storage.listNotifications(projectId, req.query.unread === 'true');
+    return res.json(notifications);
   } catch (err: any) {
     return res.status(500).json({ error: err.message });
   }
@@ -112,10 +79,8 @@ router.patch('/api/notifications/read', async (req: Request, res: Response) => {
   if (!projectId) return res.status(400).json({ error: 'projectId required' });
 
   try {
-    await prisma.notification.updateMany({
-      where: { project_id: projectId, read: false },
-      data: { read: true },
-    });
+    const storage = await getStorage();
+    await storage.markAllNotificationsRead(projectId);
     return res.json({ ok: true });
   } catch (err: any) {
     return res.status(500).json({ error: err.message });
