@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
+import { Pin } from "lucide-react";
 import {
   Sheet,
   SheetTrigger,
@@ -114,7 +115,14 @@ function SidebarContent({
       </div>
 
       {/* Global nav links */}
-      <div className="px-3 pb-2">
+      <div className="px-3 pb-2 flex flex-col gap-0.5">
+        <a
+          href="/assistant"
+          className="flex items-center gap-2 px-2.5 py-1.5 rounded-sm text-[11px] font-mono text-muted-foreground/50 hover:bg-[#161616] hover:text-[#10b981] transition-colors w-full"
+        >
+          <span className="text-[#10b981]/60">⬛</span>
+          Assistant
+        </a>
         <Link
           href="/files"
           className="flex items-center gap-2 px-2.5 py-1.5 rounded-sm text-[11px] font-mono text-muted-foreground/50 hover:bg-[#161616] hover:text-[#10b981] transition-colors w-full"
@@ -151,20 +159,26 @@ function SidebarContent({
                 }`}
                 onClick={() => onSelectProject(project.id)}
               >
-                <div
-                  className={`w-7 h-7 rounded-sm flex items-center justify-center shrink-0 text-[9px] font-mono font-semibold ${
-                    isActive
-                      ? "bg-primary/15 text-primary border border-primary/25"
-                      : "bg-[#161616] text-muted-foreground/50 border border-border/30"
-                  }`}
-                >
-                  {project.name.slice(0, 2).toUpperCase()}
+                <div className="relative shrink-0">
+                  <div
+                    className={`w-7 h-7 rounded-sm flex items-center justify-center text-[9px] font-mono font-semibold ${
+                      isActive
+                        ? "bg-primary/15 text-primary border border-primary/25"
+                        : "bg-[#161616] text-muted-foreground/50 border border-border/30"
+                    }`}
+                  >
+                    {project.name.slice(0, 2).toUpperCase()}
+                  </div>
+                  {/* live status dot */}
+                  <span
+                    title={project.tmux_active ? "Running" : "Stopped"}
+                    className={`absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full border border-[#0a0a0a] ${
+                      project.tmux_active ? "bg-[#10b981]" : "bg-[#333]"
+                    }`}
+                  />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-[12px] font-medium truncate flex items-center gap-1">
-                    {project.pinned && (
-                      <span className="text-[#10b981] text-[9px] leading-none" title="Pinned">📌</span>
-                    )}
+                  <p className="text-[12px] font-medium truncate">
                     {project.name}
                   </p>
                   {project.tmux_session_name && (
@@ -175,14 +189,14 @@ function SidebarContent({
                 </div>
                 <button
                   onClick={(e) => { e.stopPropagation(); onPinProject(project.id); }}
-                  className={`opacity-0 group-hover:opacity-100 text-[10px] px-1 py-0.5 rounded transition-all shrink-0 ${
+                  className={`text-[10px] px-1 py-0.5 rounded transition-all shrink-0 ${
                     project.pinned
                       ? "text-[#10b981] opacity-100"
-                      : "text-muted-foreground/30 hover:text-[#10b981]"
+                      : "opacity-0 group-hover:opacity-100 text-muted-foreground/30 hover:text-[#10b981]"
                   }`}
                   title={project.pinned ? "Unpin" : "Pin to top"}
                 >
-                  📌
+                  <Pin className="h-3 w-3" />
                 </button>
                 <button
                   onClick={(e) => {
