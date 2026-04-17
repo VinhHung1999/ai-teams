@@ -28,7 +28,12 @@ function ProjectPageContent() {
 
   // Panels collapse state
   const [agentPanelOpen, setAgentPanelOpen] = useState(true);
-  const [agentPanelWidth, setAgentPanelWidth] = useState(320);
+  const [agentPanelWidth, setAgentPanelWidth] = useState<number>(() => {
+    if (typeof window === "undefined") return 600;
+    const stored = parseInt(localStorage.getItem("team-panel-width-px") || "0", 10);
+    const half = Math.floor(window.innerWidth / 2);
+    return stored > 0 ? Math.min(stored, half) : half;
+  });
   const [teamFocusMode, setTeamFocusMode] = useState(false);
   const [mobileTeamOpen, setMobileTeamOpen] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
@@ -181,10 +186,9 @@ function ProjectPageContent() {
 
       {/* Main area: Agent panes LEFT (primary) + Dashboard RIGHT (secondary) */}
       <div className="flex-1 flex flex-row min-w-0 min-h-0">
-        {/* Center: Dashboard + Terminal — RIGHT SECONDARY (order-last on desktop) */}
+        {/* Center: Dashboard — RIGHT SECONDARY (order-last, flex-1) */}
         <div
-          className={`flex flex-col min-h-0 lg:order-last ${teamFocusMode ? "hidden" : ""} ${agentPanelOpen ? "shrink-0 border-l border-border/40" : "flex-1 min-w-0"}`}
-          style={agentPanelOpen && !teamFocusMode ? { width: `${agentPanelWidth}px` } : undefined}
+          className={`flex flex-col min-h-0 flex-1 min-w-0 lg:order-last ${teamFocusMode ? "hidden" : ""} ${agentPanelOpen ? "border-l border-border/40" : ""}`}
         >
           {/* Center tabs + content */}
           {selectedProjectId && (
@@ -255,91 +259,15 @@ function ProjectPageContent() {
             )}
           </div>
 
-          {/* Boss Terminal (bottom) */}
-          <div className="hidden lg:flex flex-col">
-            {terminalOpen ? (
-              <div className="border-t border-border/40 bg-[#1a1b26] flex flex-col" style={{ height: `${terminalHeight}px` }}>
-                {/* Drag handle — ns-resize */}
-                <div
-                  className="group h-[5px] shrink-0 cursor-ns-resize flex items-center justify-center hover:bg-primary/20 active:bg-primary/30 transition-colors"
-                  onMouseDown={(e) => {
-                    e.preventDefault();
-                    const startY = e.clientY;
-                    const startH = terminalHeight;
-                    const onMove = (ev: MouseEvent) => {
-                      const next = Math.max(80, Math.min(600, startH - (ev.clientY - startY)));
-                      setTerminalHeight(next);
-                      localStorage.setItem("boss-terminal-height", String(next));
-                    };
-                    const onUp = () => {
-                      document.removeEventListener("mousemove", onMove);
-                      document.removeEventListener("mouseup", onUp);
-                      document.body.style.cursor = "";
-                      document.body.style.userSelect = "";
-                    };
-                    document.body.style.cursor = "ns-resize";
-                    document.body.style.userSelect = "none";
-                    document.addEventListener("mousemove", onMove);
-                    document.addEventListener("mouseup", onUp);
-                  }}
-                >
-                  <div className="flex gap-[3px] opacity-0 group-hover:opacity-60 transition-opacity">
-                    <span className="w-[3px] h-[3px] rounded-full bg-muted-foreground" />
-                    <span className="w-[3px] h-[3px] rounded-full bg-muted-foreground" />
-                    <span className="w-[3px] h-[3px] rounded-full bg-muted-foreground" />
-                    <span className="w-[3px] h-[3px] rounded-full bg-muted-foreground" />
-                    <span className="w-[3px] h-[3px] rounded-full bg-muted-foreground" />
-                  </div>
-                </div>
-                <div className="px-3 py-1.5 border-b border-border/40 flex items-center justify-between shrink-0 bg-background">
-                  <span className="text-[11px] font-semibold text-muted-foreground/50">
-                    Terminal
-                  </span>
-                  <button
-                    onClick={() => setTerminalOpen(false)}
-                    className="text-[10px] text-muted-foreground/30 hover:text-muted-foreground/60 transition-colors px-1.5 py-0.5 rounded hover:bg-muted/20"
-                  >
-                    &#x25BC;
-                  </button>
-                </div>
-                <div className="flex-1 min-h-0">
-                  {selectedProjectId && projectCwd ? (
-                    <WebTerminal
-                      key={`boss-${selectedProjectId}-${bossTerminalKey}-${projectCwd}`}
-                      wsUrl={getTerminalWsUrl(projectCwd)}
-                      sessionName={`boss-${selectedProjectId}-${bossTerminalKey}-${btoa(projectCwd || "").slice(0, 8)}`}
-                      initialCommand={pendingTerminalCommand}
-                      onConnected={() => {
-                        if (pendingTerminalCommand) {
-                          setPendingTerminalCommand(undefined);
-                        }
-                      }}
-                    />
-                  ) : (
-                    <div className="flex items-center justify-center h-full">
-                      <p className="text-xs text-muted-foreground/30">Select a project</p>
-                    </div>
-                  )}
-                </div>
-              </div>
-            ) : (
-              <div className="border-t border-border/40 bg-background">
-                <button
-                  onClick={() => setTerminalOpen(true)}
-                  className="w-full px-3 py-1.5 flex items-center gap-2 text-[10px] text-muted-foreground/30 hover:text-muted-foreground/60 hover:bg-muted/10 transition-colors"
-                >
-                  <span>&#x25B2;</span>
-                  <span className="text-[11px] font-semibold text-muted-foreground/50">Terminal</span>
-                </button>
-              </div>
-            )}
-          </div>
         </div>
 
-        {/* Agent Panel — LEFT PRIMARY (order-first, flex-1 when open) */}
-        <div className={`hidden lg:flex lg:order-first flex-col ${agentPanelOpen ? "flex-1 min-w-0" : ""}`}>
+        {/* Agent Panel — LEFT PRIMARY (fixed width = agentPanelWidth, max 50vw) */}
+        <div className={`hidden lg:flex lg:order-first flex-col ${teamFocusMode ? "flex-1 min-w-0" : ""}`}>
           {agentPanelOpen ? (
-            <div className={`bg-background flex flex-col h-full relative ${teamFocusMode ? "flex-1 w-full" : "flex-1 border-r border-border/40"}`}>
+            <div
+              className={`bg-background flex flex-col h-full relative ${teamFocusMode ? "flex-1 w-full" : "border-r border-border/40"}`}
+              style={teamFocusMode ? undefined : { width: `${agentPanelWidth}px` }}
+            >
               {/* Resize handle (hidden in focus mode) */}
               <div
                 className={`absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-primary/30 active:bg-primary/50 z-10 ${teamFocusMode ? "hidden" : ""}`}
@@ -348,9 +276,10 @@ function ProjectPageContent() {
                   const startX = e.clientX;
                   const startWidth = agentPanelWidth;
                   const onMove = (ev: MouseEvent) => {
-                    // Resize handle on right edge of agent panel: drag right → dashboard narrower
-                    const delta = startX - ev.clientX;
-                    setAgentPanelWidth(Math.max(200, Math.min(600, startWidth + delta)));
+                    const half = Math.floor(window.innerWidth / 2);
+                    const next = Math.max(300, Math.min(half, startWidth + (ev.clientX - startX)));
+                    localStorage.setItem("team-panel-width-px", String(next));
+                    setAgentPanelWidth(next);
                   };
                   const onUp = () => {
                     document.removeEventListener("mousemove", onMove);
@@ -571,6 +500,84 @@ function ProjectPageContent() {
                   <p className="text-xs text-muted-foreground/30">Select a project</p>
                 </div>
               )}
+
+              {/* Boss Terminal — lives inside team panel, below AgentPaneView */}
+              <div className="shrink-0">
+                {terminalOpen ? (
+                  <div className="border-t border-border/40 bg-[#1a1b26] flex flex-col" style={{ height: `${terminalHeight}px` }}>
+                    {/* Drag handle — ns-resize */}
+                    <div
+                      className="group h-[5px] shrink-0 cursor-ns-resize flex items-center justify-center hover:bg-primary/20 active:bg-primary/30 transition-colors"
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        const startY = e.clientY;
+                        const startH = terminalHeight;
+                        const onMove = (ev: MouseEvent) => {
+                          const next = Math.max(80, Math.min(600, startH - (ev.clientY - startY)));
+                          setTerminalHeight(next);
+                          localStorage.setItem("boss-terminal-height", String(next));
+                        };
+                        const onUp = () => {
+                          document.removeEventListener("mousemove", onMove);
+                          document.removeEventListener("mouseup", onUp);
+                          document.body.style.cursor = "";
+                          document.body.style.userSelect = "";
+                        };
+                        document.body.style.cursor = "ns-resize";
+                        document.body.style.userSelect = "none";
+                        document.addEventListener("mousemove", onMove);
+                        document.addEventListener("mouseup", onUp);
+                      }}
+                    >
+                      <div className="flex gap-[3px] opacity-0 group-hover:opacity-60 transition-opacity">
+                        <span className="w-[3px] h-[3px] rounded-full bg-muted-foreground" />
+                        <span className="w-[3px] h-[3px] rounded-full bg-muted-foreground" />
+                        <span className="w-[3px] h-[3px] rounded-full bg-muted-foreground" />
+                        <span className="w-[3px] h-[3px] rounded-full bg-muted-foreground" />
+                        <span className="w-[3px] h-[3px] rounded-full bg-muted-foreground" />
+                      </div>
+                    </div>
+                    <div className="px-3 py-1.5 border-b border-border/40 flex items-center justify-between shrink-0 bg-background">
+                      <span className="text-[11px] font-semibold text-muted-foreground/50">Terminal</span>
+                      <button
+                        onClick={() => setTerminalOpen(false)}
+                        className="text-[10px] text-muted-foreground/30 hover:text-muted-foreground/60 transition-colors px-1.5 py-0.5 rounded hover:bg-muted/20"
+                      >
+                        &#x25BC;
+                      </button>
+                    </div>
+                    <div className="flex-1 min-h-0">
+                      {selectedProjectId && projectCwd ? (
+                        <WebTerminal
+                          key={`boss-${selectedProjectId}-${bossTerminalKey}-${projectCwd}`}
+                          wsUrl={getTerminalWsUrl(projectCwd)}
+                          sessionName={`boss-${selectedProjectId}-${bossTerminalKey}-${btoa(projectCwd || "").slice(0, 8)}`}
+                          initialCommand={pendingTerminalCommand}
+                          onConnected={() => {
+                            if (pendingTerminalCommand) {
+                              setPendingTerminalCommand(undefined);
+                            }
+                          }}
+                        />
+                      ) : (
+                        <div className="flex items-center justify-center h-full">
+                          <p className="text-xs text-muted-foreground/30">Select a project</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="border-t border-border/40 bg-background">
+                    <button
+                      onClick={() => setTerminalOpen(true)}
+                      className="w-full px-3 py-1.5 flex items-center gap-2 text-[10px] text-muted-foreground/30 hover:text-muted-foreground/60 hover:bg-muted/10 transition-colors"
+                    >
+                      <span>&#x25B2;</span>
+                      <span className="text-[11px] font-semibold text-muted-foreground/50">Terminal</span>
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
           ) : (
             <div className="border-r border-border/40 bg-background h-full">
