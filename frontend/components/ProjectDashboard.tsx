@@ -906,14 +906,16 @@ export function ProjectDashboard({ projectId, wsData }: { projectId: number; wsD
           {/* Page header */}
           <div className="flex items-center justify-between">
             <h1 className="text-sm font-semibold text-foreground/70">{project?.name}</h1>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setShowCreateSprint(true)}
-              className="text-[11px] h-7 px-3 font-mono"
-            >
-              + New Sprint
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowCreateSprint(true)}
+                className="text-[11px] h-7 px-3 font-mono"
+              >
+                + New Sprint
+              </Button>
+            </div>
           </div>
 
           {/* ════════════════════════════════════════════
