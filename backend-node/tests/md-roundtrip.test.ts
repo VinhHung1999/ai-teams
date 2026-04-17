@@ -12,8 +12,8 @@ import * as path from 'path';
 // We re-implement the minimal parse/serialize cycle here to keep things self-contained.
 
 const SPRINT_FILE = path.join(
-  __dirname,
-  '../../docs/board/sprints/archive/sprint-26.md'
+  '/Users/hungphu/Documents/Note/HungVault/brain2/wiki/projects/ai-teams/docs/board/sprints/archive',
+  'sprint-26.md'
 );
 
 const BOARD_COLUMNS = ['todo', 'in_progress', 'in_review', 'testing', 'done'];

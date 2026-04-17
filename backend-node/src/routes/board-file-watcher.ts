@@ -1,6 +1,7 @@
 import chokidar, { FSWatcher } from 'chokidar';
 import path from 'path';
 import { getStorage } from '../storage/factory';
+import { resolveBoardDir } from '../storage/MarkdownStorage';
 import { onBoardChange } from './board-ws';
 
 let watcherInstance: FSWatcher | null = null;
@@ -23,8 +24,8 @@ export async function startBoardFileWatcher(): Promise<void> {
   const watchPaths: string[] = [];
 
   for (const p of projects) {
-    if (!p.working_directory) continue;
-    const boardDir = path.normalize(path.join(p.working_directory, 'docs', 'board'));
+    if (!p.working_directory && !p.board_directory) continue;
+    const boardDir = path.normalize(resolveBoardDir(p));
     boardDirToProjectId.set(boardDir, p.id);
     watchPaths.push(boardDir);
   }

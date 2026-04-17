@@ -496,6 +496,17 @@ interface ProjectData {
   dirty: boolean;
 }
 
+// ── Board directory resolver ───────────────────────────────────────────────────
+
+const VAULT = process.env.SECOND_BRAIN_VAULT ?? '/Users/hungphu/Documents/Note/HungVault/brain2';
+
+export function resolveBoardDir(p: Project): string {
+  if (p.board_directory) return p.board_directory;
+  const vaultPath = path.join(VAULT, 'wiki', 'projects', p.name, 'docs', 'board');
+  if (fs.existsSync(vaultPath)) return vaultPath;
+  return path.join(p.working_directory!, 'docs', 'board');
+}
+
 // ── MarkdownStorage ───────────────────────────────────────────────────────────
 
 export class MarkdownStorage implements IStorage {
@@ -535,7 +546,7 @@ export class MarkdownStorage implements IStorage {
   // ── Project board dir helpers ──────────────────────────────
 
   private boardDir(p: Project): string {
-    return path.join(p.working_directory!, 'docs', 'board');
+    return resolveBoardDir(p);
   }
 
   private activeDir(p: Project): string {

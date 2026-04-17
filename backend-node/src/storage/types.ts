@@ -3,6 +3,7 @@ export interface Project {
   name: string;
   tmux_session_name: string | null;
   working_directory: string | null;
+  board_directory?: string;
   pinned: boolean;
   created_at: string; // ISO string
 }

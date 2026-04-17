@@ -5,7 +5,7 @@
       "name": "habit-tracker",
       "tmux_session_name": "habit_tracker",
       "working_directory": "/Users/hungphu/Documents/AI_Projects/habit-tracker",
-      "pinned": true,
+      "pinned": false,
       "created_at": "2026-04-16T15:53:11.636Z"
     },
     {
@@ -21,6 +21,7 @@
       "name": "App store",
       "tmux_session_name": "app-store",
       "working_directory": "/Users/hungphu/Documents/AI_Projects/app-store",
+      "board_directory": "/Users/hungphu/Documents/Note/HungVault/brain2/wiki/projects/app-store/docs/board",
       "pinned": false,
       "created_at": "2026-04-16T15:53:11.635Z"
     },
@@ -29,7 +30,7 @@
       "name": "love-scrum",
       "tmux_session_name": "love_scrum",
       "working_directory": "/Users/hungphu/Documents/AI_Projects/love-scrum",
-      "pinned": true,
+      "pinned": false,
       "created_at": "2026-04-16T15:53:11.637Z"
     },
     {
@@ -61,7 +62,8 @@
       "name": "murmur-team",
       "tmux_session_name": "murmur-team",
       "working_directory": "/Users/hungphu/Documents/AI_Projects/journaling-app",
-      "pinned": true,
+      "board_directory": "/Users/hungphu/Documents/Note/HungVault/brain2/wiki/projects/murmur/docs/board",
+      "pinned": false,
       "created_at": "2026-04-16T15:53:11.637Z"
     },
     {
@@ -69,7 +71,7 @@
       "name": "hexarian",
       "tmux_session_name": "hexarian",
       "working_directory": "/Users/hungphu/Documents/AI_Projects/hexarian",
-      "pinned": true,
+      "pinned": false,
       "created_at": "2026-04-16T15:53:11.636Z"
     },
     {
@@ -77,13 +79,101 @@
       "name": "tuvi-team",
       "tmux_session_name": "tuvi-team",
       "working_directory": "/Users/hungphu/Documents/AI_Projects/horoscope",
+      "board_directory": "/Users/hungphu/Documents/Note/HungVault/brain2/wiki/projects/menh-viet/docs/board",
       "pinned": true,
       "created_at": "2026-04-16T15:53:11.636Z"
+    },
+    {
+      "id": 25,
+      "name": "hexarian-team",
+      "tmux_session_name": "hexarian_team",
+      "working_directory": "/Users/hungphu/Documents/AI_Projects/hexarian",
+      "board_directory": "/Users/hungphu/Documents/Note/HungVault/brain2/wiki/projects/hexarian/docs/board",
+      "pinned": false,
+      "created_at": "2026-04-17T05:12:47.143Z"
+    },
+    {
+      "id": 27,
+      "name": "files",
+      "tmux_session_name": "files",
+      "working_directory": "/Users/hungphu/Documents/AI_Projects/ai-teams/backend-node",
+      "pinned": false,
+      "created_at": "2026-04-17T09:50:23.598Z"
     }
   ],
-  "nextProjectId": 24,
-  "nextNotificationId": 2,
+  "nextProjectId": 28,
+  "nextNotificationId": 9,
   "notifications": [
+    {
+      "id": 8,
+      "project_id": 18,
+      "session_name": "murmur-team",
+      "from_role": "CMO",
+      "message": "🔒 CMO initialized. X/Twitter session expired — browser shows login page (auth cookies from Apr 3 invalidated server-side). All 3 crons created but BLOCKED until re-auth. Need Boss to: (1) open headed browser, (2) login to @speakmurmur, (3) I'll save new session. Status: 15 posts published, posts 16-30 queued, engagement running well before session expired.",
+      "urgency": "high",
+      "read": false,
+      "created_at": "2026-04-17T06:05:26.182Z"
+    },
+    {
+      "id": 7,
+      "project_id": 18,
+      "session_name": "murmur-team",
+      "from_role": "CMO",
+      "message": "🔒 X/Twitter session expired — browser shows login page. Auth cookies from Apr 3 were invalidated server-side. Need fresh login: (1) I'll open headed browser, (2) Boss logs in manually to @speakmurmur, (3) I save new session. All 3 crons (replies/engage/post) are blocked until re-auth. Ready to open browser when you are.",
+      "urgency": "high",
+      "read": false,
+      "created_at": "2026-04-17T06:04:22.918Z"
+    },
+    {
+      "id": 6,
+      "project_id": 14,
+      "session_name": "ai_teams",
+      "from_role": "DEV",
+      "message": "Sprint 30 DONE ✅\n\n[283] Project list from tmux + local registry:\n- GET /api/projects merges registry data + live tmux status (single shell call)\n- Auto-registers new AI team sessions (detects @role_name pane options)\n- Frontend: green/gray status dot per project — running vs stopped\n- Storage mode toggle fully removed (frontend + backend)\n- All builds clean, PM2 running",
+      "urgency": "high",
+      "read": false,
+      "created_at": "2026-04-17T05:14:43.387Z"
+    },
+    {
+      "id": 5,
+      "project_id": 18,
+      "session_name": "murmur-team",
+      "from_role": "CMO",
+      "message": "Hiểu rồi anh! Đúng là dùng ảnh thật sẽ authentic hơn nhiều. \n\nHiện tại tôi chưa có real screenshots của app — đang chờ DEV chụp từ simulator (screenshot-captions.md status = \"waiting for DEV raw screenshots\").\n\nAnh có thể:\n1. Chụp vài screenshot từ TestFlight trên iPhone thật rồi drop vào folder docs/marketing/assets/real-screenshots/\n2. Hoặc tôi nhờ DEV chụp từ iOS Simulator\n\nCần screenshots các màn hình: Home, Recording (waveform), AI Result, Journal list, Mood Timeline, Prompts.\n\nCó ảnh thật rồi thì các post tiếp theo (16-30) tôi sẽ dùng real screenshots thay vì AI-generated mood images.",
+      "urgency": "normal",
+      "read": false,
+      "created_at": "2026-04-17T04:07:30.156Z"
+    },
+    {
+      "id": 4,
+      "project_id": 14,
+      "session_name": "ai_teams",
+      "from_role": "DEV",
+      "message": "Sprint 29 DONE ✅\n\n[282] Migrated all 9 teams from MCP board tools → Markdown files:\n- 32 files updated across 8 repos\n- All get_board/update_task_status/create_sprint etc. replaced with Read/Edit on docs/board/ MD files\n- notify_boss kept intact in all teams\n- grep confirms zero remaining MCP board refs in prompt/workflow files",
+      "urgency": "high",
+      "read": false,
+      "created_at": "2026-04-17T03:54:57.568Z"
+    },
+    {
+      "id": 3,
+      "project_id": 18,
+      "session_name": "murmur-team",
+      "from_role": "CMO",
+      "message": "✅ Đã đăng post #14 + #15 (bài đầu tiên nhắc Murmur!) — cả hai verified trên profile với ảnh.\n\nĐã tạo cron đăng bài tự động: mỗi ngày 8PM VN (8AM EST — peak US morning). Từ nay sẽ không bị gap nữa.\n\n3 cron đang chạy: reply check (hourly), engage (2h), post daily (8PM VN).",
+      "urgency": "normal",
+      "read": false,
+      "created_at": "2026-04-17T03:36:33.233Z"
+    },
+    {
+      "id": 2,
+      "project_id": 14,
+      "session_name": "ai_teams",
+      "from_role": "DEV",
+      "message": "Sprint 28 DONE ✅\n\n[280] Realtime board updates via file watcher — chokidar watches all 10 project docs/board/ dirs, pushes WS update within ~450ms of any MD file edit.\n\n[281] Download file/folder button — file streams directly, folder zips via archiver and downloads as .zip. Toast shown while preparing zip.",
+      "urgency": "high",
+      "read": false,
+      "created_at": "2026-04-17T03:23:02.887Z"
+    },
     {
       "id": 1,
       "project_id": 14,
