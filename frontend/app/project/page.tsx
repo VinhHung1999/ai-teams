@@ -28,7 +28,7 @@ function ProjectPageContent() {
 
   // Panels collapse state
   const [agentPanelOpen, setAgentPanelOpen] = useState(true);
-  const [agentPanelWidth, setAgentPanelWidth] = useState(600);
+  const [agentPanelWidth, setAgentPanelWidth] = useState(320);
   const [teamFocusMode, setTeamFocusMode] = useState(false);
   const [mobileTeamOpen, setMobileTeamOpen] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
@@ -179,10 +179,13 @@ function ProjectPageContent() {
         onMobileOpenChange={setMobileSidebarOpen}
       />
 
-      {/* Main area (dashboard + terminal) + Agent panel */}
+      {/* Main area: Agent panes LEFT (primary) + Dashboard RIGHT (secondary) */}
       <div className="flex-1 flex flex-row min-w-0 min-h-0">
-        {/* Center: Dashboard + Terminal (hidden in focus mode) */}
-        <div className={`flex-1 flex flex-col min-w-0 min-h-0 ${teamFocusMode ? "hidden" : ""}`}>
+        {/* Center: Dashboard + Terminal — RIGHT SECONDARY (order-last on desktop) */}
+        <div
+          className={`flex flex-col min-h-0 lg:order-last ${teamFocusMode ? "hidden" : ""} ${agentPanelOpen ? "shrink-0 border-l border-border/40" : "flex-1 min-w-0"}`}
+          style={agentPanelOpen && !teamFocusMode ? { width: `${agentPanelWidth}px` } : undefined}
+        >
           {/* Center tabs + content */}
           {selectedProjectId && (
             <div className="flex gap-0.5 px-2 h-9 items-center border-b border-border/40 bg-muted/20 shrink-0">
@@ -333,20 +336,21 @@ function ProjectPageContent() {
           </div>
         </div>
 
-        {/* Agent Panel (right) - resizable */}
-        <div className={`hidden lg:flex flex-col ${teamFocusMode ? "flex-1 min-w-0" : ""}`}>
+        {/* Agent Panel — LEFT PRIMARY (order-first, flex-1 when open) */}
+        <div className={`hidden lg:flex lg:order-first flex-col ${agentPanelOpen ? "flex-1 min-w-0" : ""}`}>
           {agentPanelOpen ? (
-            <div className={`bg-background flex flex-col h-full relative ${teamFocusMode ? "flex-1 w-full" : "border-l border-border/40"}`} style={teamFocusMode ? undefined : { width: `${agentPanelWidth}px` }}>
+            <div className={`bg-background flex flex-col h-full relative ${teamFocusMode ? "flex-1 w-full" : "flex-1 border-r border-border/40"}`}>
               {/* Resize handle (hidden in focus mode) */}
               <div
-                className={`absolute left-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-primary/30 active:bg-primary/50 z-10 ${teamFocusMode ? "hidden" : ""}`}
+                className={`absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-primary/30 active:bg-primary/50 z-10 ${teamFocusMode ? "hidden" : ""}`}
                 onMouseDown={(e) => {
                   e.preventDefault();
                   const startX = e.clientX;
                   const startWidth = agentPanelWidth;
                   const onMove = (ev: MouseEvent) => {
+                    // Resize handle on right edge of agent panel: drag right → dashboard narrower
                     const delta = startX - ev.clientX;
-                    setAgentPanelWidth(Math.max(250, Math.min(900, startWidth + delta)));
+                    setAgentPanelWidth(Math.max(200, Math.min(600, startWidth + delta)));
                   };
                   const onUp = () => {
                     document.removeEventListener("mousemove", onMove);
@@ -569,12 +573,12 @@ function ProjectPageContent() {
               )}
             </div>
           ) : (
-            <div className="border-l border-border/40 bg-background h-full">
+            <div className="border-r border-border/40 bg-background h-full">
               <button
                 onClick={() => setAgentPanelOpen(true)}
                 className="h-full px-1.5 flex flex-col items-center justify-start pt-3 gap-2 text-muted-foreground/30 hover:text-muted-foreground/60 hover:bg-muted/10 transition-colors"
               >
-                <span className="text-[10px]">&#x25C0;</span>
+                <span className="text-[10px]">&#x25B6;</span>
                 <span className="text-[10px] font-semibold text-muted-foreground/50 [writing-mode:vertical-lr]">
                   Team
                 </span>
