@@ -8,7 +8,7 @@ import {
   File, FileCode, FileJson, FileText, FileType,
   Image, Settings, Database, FileArchive, Lock,
   Folder, FolderOpen, Upload, Download,
-  Trash2, Pencil, FolderPlus, FilePlus, Save, ExternalLink,
+  Trash2, Pencil, FolderPlus, FilePlus, Save, ExternalLink, RotateCcw,
 } from "lucide-react";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -709,6 +709,7 @@ export function FileManager({ rootPath, readOnly = false }: FileManagerProps) {
   const [error, setError] = useState<string | null>(null);
   const [treeLoading, setTreeLoading] = useState(true);
   const [treeVisible, setTreeVisible] = useState(true);
+  const [reloading, setReloading] = useState(false);
 
   // Edit mode
   const [editMode, setEditMode] = useState(false);
@@ -745,6 +746,24 @@ export function FileManager({ rootPath, readOnly = false }: FileManagerProps) {
       .catch(() => setTree([]))
       .finally(() => setTreeLoading(false));
   }, [rootPath]);
+
+  const reloadTree = useCallback(async () => {
+    if (!rootPath || reloading) return;
+    setReloading(true);
+    try {
+      const entries = await fetchTree(rootPath, rootPath);
+      setTree(entries.map((e) => ({
+        ...e,
+        children: e.type === "dir" ? [] : undefined,
+        loaded: false,
+        expanded: false,
+      })));
+    } catch {
+      // silently fail
+    } finally {
+      setReloading(false);
+    }
+  }, [rootPath, reloading]);
 
   // Deep-update a node in the tree by path
   const updateNode = useCallback(
@@ -1035,6 +1054,14 @@ export function FileManager({ rootPath, readOnly = false }: FileManagerProps) {
           <span className="text-[10px] font-semibold text-[#555555] uppercase tracking-wider">
             Explorer
           </span>
+          <button
+            title="Reload file tree"
+            onClick={reloadTree}
+            disabled={reloading}
+            className={`p-0.5 transition-colors ${reloading ? "text-[#10b981] animate-spin" : "text-[#555555] hover:text-[#10b981]"}`}
+          >
+            <RotateCcw className="h-3 w-3" />
+          </button>
           {!readOnly && (
             <div className="flex items-center gap-1 ml-auto mr-1">
               <button
