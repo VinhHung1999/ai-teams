@@ -33,6 +33,10 @@ function ProjectPageContent() {
   const [mobileTeamOpen, setMobileTeamOpen] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [terminalOpen, setTerminalOpen] = useState(true);
+  const [terminalHeight, setTerminalHeight] = useState<number>(() => {
+    if (typeof window === "undefined") return 200;
+    return parseInt(localStorage.getItem("boss-terminal-height") || "200", 10);
+  });
   const [activeAgentTab, setActiveAgentTab] = useState<string>(ROLES[0]);
   const [pendingTerminalCommand, setPendingTerminalCommand] = useState<string | undefined>();
   const [bossTerminalKey, setBossTerminalKey] = useState(0);
@@ -251,7 +255,39 @@ function ProjectPageContent() {
           {/* Boss Terminal (bottom) */}
           <div className="hidden lg:flex flex-col">
             {terminalOpen ? (
-              <div className="h-[200px] border-t border-border/40 bg-[#1a1b26] flex flex-col">
+              <div className="border-t border-border/40 bg-[#1a1b26] flex flex-col" style={{ height: `${terminalHeight}px` }}>
+                {/* Drag handle — ns-resize */}
+                <div
+                  className="group h-[5px] shrink-0 cursor-ns-resize flex items-center justify-center hover:bg-primary/20 active:bg-primary/30 transition-colors"
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    const startY = e.clientY;
+                    const startH = terminalHeight;
+                    const onMove = (ev: MouseEvent) => {
+                      const next = Math.max(80, Math.min(600, startH - (ev.clientY - startY)));
+                      setTerminalHeight(next);
+                      localStorage.setItem("boss-terminal-height", String(next));
+                    };
+                    const onUp = () => {
+                      document.removeEventListener("mousemove", onMove);
+                      document.removeEventListener("mouseup", onUp);
+                      document.body.style.cursor = "";
+                      document.body.style.userSelect = "";
+                    };
+                    document.body.style.cursor = "ns-resize";
+                    document.body.style.userSelect = "none";
+                    document.addEventListener("mousemove", onMove);
+                    document.addEventListener("mouseup", onUp);
+                  }}
+                >
+                  <div className="flex gap-[3px] opacity-0 group-hover:opacity-60 transition-opacity">
+                    <span className="w-[3px] h-[3px] rounded-full bg-muted-foreground" />
+                    <span className="w-[3px] h-[3px] rounded-full bg-muted-foreground" />
+                    <span className="w-[3px] h-[3px] rounded-full bg-muted-foreground" />
+                    <span className="w-[3px] h-[3px] rounded-full bg-muted-foreground" />
+                    <span className="w-[3px] h-[3px] rounded-full bg-muted-foreground" />
+                  </div>
+                </div>
                 <div className="px-3 py-1.5 border-b border-border/40 flex items-center justify-between shrink-0 bg-background">
                   <span className="text-[11px] font-semibold text-muted-foreground/50">
                     Terminal
@@ -450,6 +486,7 @@ function ProjectPageContent() {
                           isVisible={activeAgentTab === role}
                           output={paneOutputs[role] ?? ""}
                           wsStatus={activeAgentTab === role ? tmuxWsStatus : undefined}
+                          projectCwd={projectCwd}
                         />
                       </div>
                     ))}
@@ -516,7 +553,7 @@ function ProjectPageContent() {
                       onClick={() => {
                         setTerminalOpen(true);
                         const dir = projectCwd || "~";
-                        setPendingTerminalCommand(`cd "${dir}" && claude -p "/tmux-team-creator-mcp scrum-team for project ${project?.name}, session: ${sessionName || project?.name?.toLowerCase().replace(/\\s+/g, '-')}"`);
+                        setPendingTerminalCommand(`cd "${dir}" && claude -p "/tmux-team-creator-md scrum-team for project ${project?.name}, session: ${sessionName || project?.name?.toLowerCase().replace(/\\s+/g, '-')}"`);
                       }}
                       className="text-xs font-mono"
                     >
@@ -676,6 +713,7 @@ function ProjectPageContent() {
                       role={role}
                       isVisible={mobileTeamOpen && activeAgentTab === role}
                       output={paneOutputs[role] ?? ""}
+                      projectCwd={projectCwd}
                     />
                   </div>
                 ))}
@@ -743,7 +781,7 @@ function ProjectPageContent() {
                     setMobileTeamOpen(false);
                     setTerminalOpen(true);
                     const dir = projectCwd || "~";
-                    setPendingTerminalCommand(`cd "${dir}" && claude -p "/tmux-team-creator-mcp scrum-team for project ${project?.name}, session: ${sessionName || project?.name?.toLowerCase().replace(/\\s+/g, '-')}"`);
+                    setPendingTerminalCommand(`cd "${dir}" && claude -p "/tmux-team-creator-md scrum-team for project ${project?.name}, session: ${sessionName || project?.name?.toLowerCase().replace(/\\s+/g, '-')}"`);
                   }}
                   className="text-xs font-mono"
                 >

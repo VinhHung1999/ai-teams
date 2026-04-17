@@ -77,7 +77,7 @@ export function CreateProjectDialog({ open, onClose, onCreated }: CreateProjectD
 
       // Build the claude command to create team
       const descPart = description.trim() ? `, description: ${description.trim()}` : "";
-      const teamCommand = `claude -p "/tmux-team-creator-mcp ${template} for project ${name.trim()}${descPart}, roles: ${roles.join(",")}, working dir: ${workDir.trim()}, session: ${sessionName}"`;
+      const teamCommand = `claude -p "/tmux-team-creator-md ${template} for project ${name.trim()}${descPart}, roles: ${roles.join(",")}, working dir: ${workDir.trim()}, session: ${sessionName}"`;
 
       setName("");
       setDescription("");
