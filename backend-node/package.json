@@ -13,7 +13,9 @@
   },
   "dependencies": {
     "@homebridge/node-pty-prebuilt-multiarch": "^0.13.1",
+    "@types/archiver": "^7.0.0",
     "@types/pg": "^8.20.0",
+    "archiver": "^7.0.1",
     "chokidar": "^5.0.0",
     "cors": "^2.8.5",
     "dotenv": "^17.4.2",

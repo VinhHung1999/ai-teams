@@ -435,7 +435,7 @@ function TreeItem({
   onConfirmRename: (oldPath: string, newName: string) => void;
   onCancelRename: () => void;
   onDelete: (path: string, type: "dir" | "file") => void;
-  onDownload: (path: string, name: string) => void;
+  onDownload: (path: string, name: string, isDir?: boolean) => void;
   onNewFile: (dirPath: string) => void;
   onNewFolder: (dirPath: string) => void;
   onUpload: (dirPath: string) => void;
@@ -499,6 +499,13 @@ function TreeItem({
                 className="p-0.5 hover:text-[#10b981] text-[#555555] transition-colors"
               >
                 <Upload className="h-3 w-3" />
+              </button>
+              <button
+                title="Download as zip"
+                onClick={(e) => { e.stopPropagation(); onDownload(node.path, node.name, true); }}
+                className="p-0.5 hover:text-[#10b981] text-[#555555] transition-colors"
+              >
+                <Download className="h-3 w-3" />
               </button>
               <button
                 title="Rename"
@@ -956,12 +963,15 @@ export function FileManager({ rootPath, readOnly = false }: FileManagerProps) {
     [newItemDialog, refreshDir, handleSelectFile]
   );
 
-  const handleDownload = useCallback((filePath: string, fileName: string) => {
+  const handleDownload = useCallback((filePath: string, fileName: string, isDir?: boolean) => {
+    if (isDir) {
+      showToast(`Preparing zip for "${fileName}"…`);
+    }
     const a = document.createElement("a");
     a.href = `/api/files/download?path=${encodeURIComponent(filePath)}`;
-    a.download = fileName;
+    a.download = isDir ? `${fileName}.zip` : fileName;
     a.click();
-  }, []);
+  }, [showToast]);
 
   const handleUploadClick = useCallback((dirPath: string) => {
     setUploadModalDir(dirPath);

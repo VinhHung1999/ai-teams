@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import fs from 'fs';
 import path from 'path';
 import multer from 'multer';
+import archiver from 'archiver';
 
 const router = Router();
 
@@ -324,33 +325,53 @@ router.put('/api/files/save', (req: Request, res: Response) => {
 });
 
 // ─── GET /api/files/download ──────────────────────────────────────────────────
+// Files: stream directly. Folders: stream as zip archive.
 
 router.get('/api/files/download', (req: Request, res: Response) => {
   const rawPath = req.query.path as string;
   const rawRoot = req.query.root as string | undefined;
 
-  let filePath: string;
+  let targetPath: string;
   try {
-    filePath = validatePath(rawPath, rawRoot);
+    targetPath = validatePath(rawPath, rawRoot);
   } catch (e) {
     return pathError(res, e);
   }
 
   try {
-    const stat = fs.statSync(filePath);
-    if (!stat.isFile()) return res.status(400).json({ error: 'Not a file' });
+    const stat = fs.statSync(targetPath);
 
-    const filename = path.basename(filePath);
-    res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(filename)}"`);
-    res.setHeader('Content-Length', stat.size);
-    res.setHeader('Content-Type', 'application/octet-stream');
+    if (stat.isDirectory()) {
+      // Stream folder as zip
+      const folderName = path.basename(targetPath);
+      const zipName = `${folderName}.zip`;
+      res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(zipName)}"`);
+      res.setHeader('Content-Type', 'application/zip');
 
-    const stream = fs.createReadStream(filePath);
-    stream.pipe(res);
-    stream.on('error', (err) => { if (!res.headersSent) res.status(500).json({ error: err.message }); });
+      const archive = archiver('zip', { zlib: { level: 6 } });
+      archive.on('error', (err) => {
+        if (!res.headersSent) res.status(500).json({ error: err.message });
+      });
+      archive.pipe(res);
+      archive.directory(targetPath, folderName);
+      archive.finalize();
+      logFileOp('DOWNLOAD_FOLDER', targetPath, zipName);
+    } else if (stat.isFile()) {
+      const filename = path.basename(targetPath);
+      res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(filename)}"`);
+      res.setHeader('Content-Length', stat.size);
+      res.setHeader('Content-Type', 'application/octet-stream');
+
+      const stream = fs.createReadStream(targetPath);
+      stream.pipe(res);
+      stream.on('error', (err) => { if (!res.headersSent) res.status(500).json({ error: err.message }); });
+      logFileOp('DOWNLOAD_FILE', targetPath);
+    } else {
+      return res.status(400).json({ error: 'Not a file or directory' });
+    }
   } catch (err: any) {
-    if (err.code === 'ENOENT') return res.status(404).json({ error: 'File not found' });
-    return res.status(500).json({ error: err.message || 'Failed to download file' });
+    if (err.code === 'ENOENT') return res.status(404).json({ error: 'Path not found' });
+    return res.status(500).json({ error: err.message || 'Failed to download' });
   }
 });
 
