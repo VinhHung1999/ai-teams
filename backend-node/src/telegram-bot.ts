@@ -12,7 +12,7 @@ import { exec } from 'child_process';
 import { promisify } from 'util';
 import fs from 'fs';
 import path from 'path';
-import prisma from './lib/prisma';
+import { getStorage } from './storage/factory';
 
 const execAsync = promisify(exec);
 
@@ -114,13 +114,16 @@ async function cmdStatus(chatId: string): Promise<void> {
     const sessions = stdout.trim().split('\n').filter(Boolean);
     if (!sessions.length) { await sendReply(chatId, 'No active tmux sessions.'); return; }
 
+    const storage = await getStorage();
     for (const s of sessions) {
-      const project = await prisma.project.findFirst({ where: { tmux_session_name: s } });
-      const sprint = project
-        ? await prisma.sprint.findFirst({ where: { project_id: project.id, status: 'active' }, include: { items: true } })
-        : null;
-      const done = sprint?.items.filter((i: any) => i.board_status === 'done').length ?? 0;
-      const total = sprint?.items.length ?? 0;
+      const project = await storage.findProjectBySession(s);
+      const sprint = project ? await storage.findActiveSprint(project.id) : null;
+      let done = 0, total = 0;
+      if (sprint) {
+        const items = await storage.listSprintItemsRaw(sprint.id);
+        done = items.filter(i => i.board_status === 'done').length;
+        total = items.length;
+      }
       lines.push(`<b>${s}</b>${project ? ` — ${project.name}` : ''}`);
       if (sprint) lines.push(`  Sprint ${sprint.number}: ${done}/${total} done${sprint.goal ? ` · ${sprint.goal}` : ''}`);
       else lines.push('  No active sprint');
@@ -135,18 +138,17 @@ async function cmdBoard(chatId: string, rawSession: string): Promise<void> {
   const sess = await resolveSessionDirect(rawSession);
   if (!sess) { await sendReply(chatId, `Team not found ✗\n<code>${rawSession}</code>`); return; }
 
-  const project = await prisma.project.findFirst({ where: { tmux_session_name: sess } });
+  const storage = await getStorage();
+  const project = await storage.findProjectBySession(sess);
   if (!project) { await sendReply(chatId, `No project linked to session <code>${sess}</code>`); return; }
 
-  const sprint = await prisma.sprint.findFirst({
-    where: { project_id: project.id, status: 'active' },
-    include: { items: { include: { backlog_item: true } } },
-  });
+  const sprint = await storage.findActiveSprint(project.id);
   if (!sprint) { await sendReply(chatId, `No active sprint for <b>${project.name}</b>`); return; }
 
+  const items = await storage.listSprintItems(sprint.id);
   const lines: string[] = [`<b>📋 ${project.name} — Sprint ${sprint.number}</b>\n`];
   for (const col of BOARD_COLS) {
-    const colItems = sprint.items.filter((i: any) => i.board_status === col);
+    const colItems = items.filter(i => i.board_status === col);
     if (!colItems.length) continue;
     lines.push(`${COL_EMOJI[col]} <b>${col.replace('_', ' ')}</b>`);
     for (const item of colItems) {
@@ -242,12 +244,10 @@ async function downloadTgFile(fileId: string, destDir: string, fallbackName: str
 }
 
 async function handleFileMessage(chatId: string, msg: any): Promise<boolean> {
-  // Determine file_id and original name
   let fileId: string | undefined;
   let origName = 'file';
 
   if (msg.photo) {
-    // photo is array of sizes — take largest
     const largest = msg.photo[msg.photo.length - 1];
     fileId = largest?.file_id;
     origName = 'photo.jpg';
@@ -259,7 +259,6 @@ async function handleFileMessage(chatId: string, msg: any): Promise<boolean> {
   }
   if (!fileId) return false;
 
-  // Determine target session: from pending state, swipe-reply, or default first session
   let targetSession: string | null = null;
   const state = pending.get(chatId);
   if (state) {
@@ -277,7 +276,8 @@ async function handleFileMessage(chatId: string, msg: any): Promise<boolean> {
   let destDir = '/tmp/ai-teams-uploads';
   if (targetSession) {
     try {
-      const project = await prisma.project.findFirst({ where: { tmux_session_name: targetSession } });
+      const storage = await getStorage();
+      const project = await storage.findProjectBySession(targetSession);
       if (project?.working_directory) destDir = path.join(project.working_directory, '.boss-uploads');
     } catch {}
   }
@@ -301,13 +301,10 @@ async function handleMessage(msg: any): Promise<void> {
   const chatId = String(msg.chat?.id);
   const text: string = msg.text || '';
 
-  // Security: only accept from authorised chat
   if (chatId !== String(ALLOWED_CHAT_ID)) return;
 
-  // ── Photo / document forward ──
   if (await handleFileMessage(chatId, msg)) return;
 
-  // ── Swipe-reply to a notification message ──
   const replyToId: number | undefined = msg.reply_to_message?.message_id;
   if (replyToId !== undefined && !text.startsWith('/')) {
     const meta = msgCache.get(replyToId);
@@ -316,10 +313,8 @@ async function handleMessage(msg: any): Promise<void> {
       await forwardToAgent(chatId, resolvedSess, text.trim(), meta.role);
       return;
     }
-    // No mapping — fall through to normal handling
   }
 
-  // ── Non-command text: check for pending session state ──
   if (!text.startsWith('/')) {
     const state = pending.get(chatId);
     if (state) {
@@ -331,7 +326,6 @@ async function handleMessage(msg: any): Promise<void> {
     return;
   }
 
-  // ── Command: built-ins first, then session-forward ──
   const match = text.match(/^\/([^\s@]+)(?:@\S+)?(?:\s+([\s\S]*))?$/);
   if (!match) {
     await sendReply(chatId, '⚠️ Format: <code>/session_name your message</code>');
@@ -344,15 +338,14 @@ async function handleMessage(msg: any): Promise<void> {
   if (rawCmd === 'status') { await cmdStatus(chatId); return; }
   if (rawCmd === 'help' || rawCmd === 'start') { await cmdHelp(chatId); return; }
   if (rawCmd === 'board') {
-    const [sessArg, ...rest] = args.split(/\s+/);
+    const [sessArg] = args.split(/\s+/);
     if (!sessArg) { await sendReply(chatId, '⚠️ Usage: /board &lt;session&gt;'); return; }
     await cmdBoard(chatId, sessArg);
     return;
   }
   if (rawCmd === 'broadcast') { await cmdBroadcast(chatId, args); return; }
 
-  // ── Session forward ──
-  const rawSession = match[1]; // preserve original case for session name
+  const rawSession = match[1];
   const userMsg = args;
 
   const resolvedSess = await resolveSession(rawSession);
@@ -362,7 +355,6 @@ async function handleMessage(msg: any): Promise<void> {
   }
 
   if (!userMsg) {
-    // Prompt for message and store pending state (60s timeout)
     setPending(chatId, resolvedSess);
     await sendReply(chatId, `Nhập message cho PO@${resolvedSess}:`);
     return;
@@ -388,7 +380,6 @@ async function poll(): Promise<void> {
       }
     }
   } catch {
-    // Network error — retry after delay
     await new Promise((r) => setTimeout(r, 5000));
   }
 
@@ -402,17 +393,16 @@ async function poll(): Promise<void> {
 async function sendDailySummary(): Promise<void> {
   if (!ALLOWED_CHAT_ID) return;
   try {
-    const projects = await prisma.project.findMany();
+    const storage = await getStorage();
+    const projects = await storage.listProjects();
     const lines: string[] = [`<b>📊 Daily Summary — ${new Date().toLocaleDateString('vi-VN')}</b>\n`];
     for (const p of projects) {
-      const sprint = await prisma.sprint.findFirst({
-        where: { project_id: p.id, status: 'active' },
-        include: { items: true },
-      });
+      const sprint = await storage.findActiveSprint(p.id);
       if (!sprint) continue;
-      const done = sprint.items.filter((i: any) => i.board_status === 'done').length;
-      const total = sprint.items.length;
-      const inProgress = sprint.items.filter((i: any) => i.board_status === 'in_progress').length;
+      const items = await storage.listSprintItemsRaw(sprint.id);
+      const done = items.filter(i => i.board_status === 'done').length;
+      const total = items.length;
+      const inProgress = items.filter(i => i.board_status === 'in_progress').length;
       lines.push(`<b>${p.name}</b> — Sprint ${sprint.number}`);
       lines.push(`  ✅ ${done}/${total} done · 🔨 ${inProgress} in progress`);
       if (sprint.goal) lines.push(`  Goal: ${sprint.goal}`);
@@ -447,11 +437,9 @@ export function startTelegramBot(): void {
   running = true;
   console.log('[telegram] Bot started, polling for updates...');
 
-  // Sync commands on startup + every 5 min
   syncBotCommands();
   setInterval(syncBotCommands, 5 * 60 * 1000);
 
-  // Daily summary at 19:00
   scheduleDailySummary();
 
   poll();

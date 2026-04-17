@@ -1,8 +1,8 @@
 import { WebSocketServer, WebSocket } from 'ws';
-import { Client } from 'pg';
 import { getStorage } from '../storage/factory';
+import { flattenDashboardBoards } from './board';
 
-// ── Subscription management ──
+// ── Subscription management ──────────────────────────────────────────────────
 const subscriptions = new Map<number, Set<WebSocket>>();
 const pendingNotifies = new Map<number, ReturnType<typeof setTimeout>>();
 const DEBOUNCE_MS = 300;
@@ -39,11 +39,9 @@ async function pushToProject(projectId: number) {
     const storage = await getStorage();
     const data = await storage.getDashboard(projectId);
     if (!data) return;
-    const msg = JSON.stringify({ type: 'dashboard', ...data });
+    const msg = JSON.stringify({ type: 'dashboard', ...data, boards: flattenDashboardBoards(data.boards as any) });
     for (const ws of clients) {
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(msg);
-      }
+      if (ws.readyState === WebSocket.OPEN) ws.send(msg);
     }
   } catch (e: any) {
     console.error(`[board-ws] Push failed for project ${projectId}:`, e.message);
@@ -59,46 +57,9 @@ export function onBoardChange(projectId: number) {
   }, DEBOUNCE_MS));
 }
 
-// ── PG LISTEN (only in postgres mode) ──
-let pgClient: Client | null = null;
-
-async function startPgListener() {
-  if ((process.env.STORAGE ?? 'postgres').toLowerCase() !== 'postgres') {
-    console.log('[board-ws] Skipping PG LISTEN (STORAGE=markdown)');
-    return;
-  }
-
-  const connStr = 'postgresql://hungphu@localhost:5432/ai_teams';
-  pgClient = new Client({ connectionString: connStr });
-
-  pgClient.on('error', (err) => {
-    console.error('[board-ws] PG error:', err.message);
-    pgClient = null;
-    setTimeout(startPgListener, 3000);
-  });
-
-  pgClient.on('notification', (msg) => {
-    if (msg.channel === 'board_change' && msg.payload) {
-      const projectId = parseInt(msg.payload);
-      if (!isNaN(projectId)) onBoardChange(projectId);
-    }
-  });
-
-  try {
-    await pgClient.connect();
-    await pgClient.query('LISTEN board_change');
-    console.log('[board-ws] PG LISTEN active');
-  } catch (err: any) {
-    console.error('[board-ws] PG connect failed:', err.message);
-    pgClient = null;
-    setTimeout(startPgListener, 3000);
-  }
-}
-
-// ── WebSocket server ──
+// ── WebSocket server ──────────────────────────────────────────────────────────
 export function createBoardWss(): WebSocketServer {
   const wss = new WebSocketServer({ noServer: true });
-  startPgListener();
 
   wss.on('connection', (ws: WebSocket) => {
     let currentProjectId: number | null = null;
@@ -114,7 +75,7 @@ export function createBoardWss(): WebSocketServer {
           const storage = await getStorage();
           const data = await storage.getDashboard(currentProjectId);
           if (data && ws.readyState === WebSocket.OPEN) {
-            ws.send(JSON.stringify({ type: 'dashboard', ...data }));
+            ws.send(JSON.stringify({ type: 'dashboard', ...data, boards: flattenDashboardBoards(data.boards as any) }));
           }
         }
       } catch {}
@@ -133,10 +94,7 @@ export function createBoardWss(): WebSocketServer {
 }
 
 export function cleanupBoardWs() {
-  if (pgClient) {
-    pgClient.end().catch(() => {});
-    pgClient = null;
-  }
+  // no-op: no PG listener to clean up
 }
 
 /** Push a notification to all clients subscribed to a project. */
