@@ -2,7 +2,7 @@
 
 ![AI Teams](docs/images/hero-banner.png)
 
-A Kanban board for managing **tmux-based AI agent teams**. Assignees are tmux pane roles (PO, DEV, BE, FE, QA, TL) — not humans. AI agents (Claude Code instances) interact with the board via MCP.
+A Kanban board for managing **tmux-based AI agent teams**. Assignees are tmux pane roles (PO, DEV, BE, FE, QA, TL) — not humans. AI agents (Claude Code instances) read and edit Markdown board files directly.
 
 ---
 
@@ -12,8 +12,8 @@ A Kanban board for managing **tmux-based AI agent teams**. Assignees are tmux pa
 - **Sprint management** — create, start, complete; incomplete items auto-return to backlog
 - **File Manager** — browse, upload (drag & drop + folder), create, rename, delete, edit, preview
 - **Terminal** — embedded tmux terminal per project
-- **MCP server** — agents manage the board via native MCP tools
-- **Google OAuth** — whitelist-based access control
+- **Markdown board** — agents manage the board by editing Markdown files in `docs/board/`
+- **notify_boss** — agents notify the human operator via MCP tool
 
 ---
 
@@ -26,7 +26,7 @@ chmod +x setup.sh
 ./setup.sh
 ```
 
-The script handles everything: prerequisites check, DB creation, migrations, `.env` prompts (Google OAuth), install, build, PM2 start, and MCP config injection.
+The script handles everything: prerequisites check, `.env` prompts (Google OAuth), install, build, PM2 start.
 
 ---
 
@@ -35,30 +35,13 @@ The script handles everything: prerequisites check, DB creation, migrations, `.e
 | Requirement | Version | Install |
 |-------------|---------|---------|
 | Node.js | ≥ 18 | https://nodejs.org |
-| PostgreSQL | ≥ 14 | `brew install postgresql` |
 | PM2 | any | `npm install -g pm2` |
-| Python 3 + uv | ≥ 3.11 | *(optional, for MCP server)* |
 
 ---
 
 ## Manual Setup
 
-### 1. Database
-
-```bash
-createdb ai_teams
-```
-
-Create `backend-node/.env`:
-```env
-DATABASE_URL="postgresql://<user>@localhost:5432/ai_teams"
-```
-
-```bash
-cd backend-node && npx prisma migrate deploy
-```
-
-### 2. Frontend environment
+### 1. Frontend environment
 
 Create `frontend/.env.local`:
 ```env
@@ -71,7 +54,7 @@ ALLOWED_EMAILS=you@gmail.com,teammate@gmail.com
 
 Generate `AUTH_SECRET`: `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`
 
-### 3. Install, build & start
+### 2. Install, build & start
 
 ```bash
 cd backend-node && npm install && npm run build && cd ..
@@ -101,43 +84,20 @@ Frontend proxies `/api/*` and `/ws/*` to the backend — no separate backend tun
 
 ---
 
-## MCP Server
+## notify_boss MCP Tool
 
-Agents connect via MCP and manage the board natively. Run `./setup.sh` to auto-configure, or add manually to `~/.claude/settings.json`:
+Agents can notify the human operator via `notify_boss`. Configure in `~/.claude/settings.json`:
 
 ```json
 {
   "mcpServers": {
-    "ai-teams-board": {
-      "command": "uv",
-      "args": ["run", "python", "-m", "app.mcp_server"],
-      "cwd": "/path/to/ai-teams/backend",
-      "env": { "AI_TEAMS_DATABASE_URL": "postgresql+asyncpg://<user>@localhost:5432/ai_teams" }
+    "ai-teams": {
+      "command": "...",
+      "args": ["..."]
     }
   }
 }
 ```
-
-### MCP Tools
-
-| Tool | Description |
-|------|-------------|
-| `get_board` | View sprint board (all columns) |
-| `get_my_tasks` | Tasks assigned to a role |
-| `update_task_status` | Move task between columns |
-| `add_task_note` | Add note to a task |
-| `create_backlog_item` | Create backlog item |
-| `update_backlog_item` | Update item fields |
-| `delete_backlog_item` | Delete item |
-| `list_backlog` | List backlog |
-| `list_sprints` | List all sprints |
-| `create_sprint` | Create sprint |
-| `start_sprint` | Start sprint |
-| `complete_sprint` | Complete sprint |
-| `delete_sprint` | Delete sprint |
-| `add_item_to_sprint` | Add item to sprint |
-| `remove_item_from_sprint` | Remove item from sprint |
-| `notify_boss` | Notify human operator |
 
 ---
 
@@ -146,10 +106,10 @@ Agents connect via MCP and manage the board natively. Run `./setup.sh` to auto-c
 Spin up a 2-agent Scrum team (PO + DEV) with the included skill:
 
 ```bash
-# See skills/tmux-team-creator-mcp/ for full docs
+# See skills/tmux-team-creator-md/ for full docs
 ```
 
-Agents communicate via `tm-send` and manage the board via MCP tools automatically.
+Agents communicate via `tm-send` and manage the board by editing Markdown files directly.
 
 ---
 
@@ -157,11 +117,10 @@ Agents communicate via `tm-send` and manage the board via MCP tools automaticall
 
 ```
 ai-teams/
-├── backend-node/     # Express + Prisma + PostgreSQL
-├── backend/          # Python MCP server
+├── backend-node/     # Express + TypeScript API
 ├── frontend/         # Next.js 15 + React 19
-├── skills/           # tmux-team-creator-mcp
-├── docs/             # Workflow docs + images
+├── skills/           # tmux-team-creator-md
+├── docs/             # Workflow docs + board files
 ├── ecosystem.config.js
 └── setup.sh
 ```

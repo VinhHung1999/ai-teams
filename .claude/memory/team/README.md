@@ -2,7 +2,7 @@
 
 Team structure and workflow documentation.
 
-**Full details:** See `~/.claude/skills/tmux-team-creator-mcp/` for team templates and prompts.
+**Full details:** See `~/.claude/skills/tmux-team-creator-md/` for team templates and prompts.
 
 ## Team Templates Available
 
@@ -21,18 +21,21 @@ Team structure and workflow documentation.
 ## How Teams Work
 
 1. Project created with tmux_session_name
-2. `claude -p "/tmux-team-creator-mcp ..."` generates prompts + setup-team.sh
+2. `claude -p "/tmux-team-creator-md ..."` generates prompts + setup-team.sh
 3. `bash setup-team.sh` creates tmux session with panes per role
 4. Each pane runs Claude Code with role-specific prompt
-5. Agents communicate via tm-send, manage board via MCP tools
+5. Agents communicate via tm-send, manage board by editing docs/board/ Markdown files directly
 
-## MCP Tools (15 total)
+## Board Management (Markdown-based)
 
-Agents use session_name (= tmux session name) to identify project:
-- Backlog: list, create, update, delete
-- Sprints: list, create, start, complete, delete
-- Board: get_board, get_my_tasks, update_task_status, add_task_note
-- Items: add_item_to_sprint, remove_item_from_sprint
+Agents read/edit Markdown files in `docs/board/` directly:
+- Backlog: `docs/board/backlog.md`
+- Active sprint: `docs/board/sprints/active/sprint-*.md`
+- Archive: `docs/board/sprints/archive/`
+
+## notify_boss
+
+Agents use the `notify_boss` MCP tool to notify the human operator. This is the only MCP tool retained — all board operations are now via Markdown files.
 
 ## Communication Pattern
 - All communication through SM (Scrum Master)
