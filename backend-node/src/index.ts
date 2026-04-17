@@ -81,6 +81,7 @@ import filesRouter from './routes/files';
 import gitRouter from './routes/git';
 import notificationsRouter from './routes/notifications';
 import { startTelegramBot, stopTelegramBot } from './telegram-bot';
+import { startBoardFileWatcher, stopBoardFileWatcher } from './routes/board-file-watcher';
 
 app.use(projectsRouter);
 app.use(backlogRouter);
@@ -106,12 +107,14 @@ const PORT = 17070;
 server.listen(PORT, '0.0.0.0', () => {
   log(`AI Teams backend running on http://0.0.0.0:${PORT} (PID: ${process.pid})`);
   startTelegramBot();
+  startBoardFileWatcher().catch(err => logErr('Board file watcher failed to start', err));
 });
 
 // Graceful shutdown - close server so port is freed immediately
 function shutdown(signal: string) {
   log(`Received ${signal}, shutting down...`);
   stopTelegramBot();
+  stopBoardFileWatcher();
   server.close(() => {
     log('Server closed, exiting.');
     process.exit(0);
