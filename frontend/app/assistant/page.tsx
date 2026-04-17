@@ -29,7 +29,15 @@ export default function AssistantPage() {
 
   return (
     <div className="h-screen flex flex-col lg:flex-row overflow-hidden">
-      {/* Chat — PRIMARY, left, fills remaining space */}
+      {/* Sidebar — LEFT, fixed width (~220px expanded / 48px collapsed) */}
+      <div className="border-r border-[#1f1f1f]">
+        <AppSidebar
+          selectedProjectId={null}
+          onSelectProject={(id) => router.push(`/project?id=${id}`)}
+        />
+      </div>
+
+      {/* Chat — PRIMARY, right, fills remaining space */}
       <div className="flex-1 flex flex-col min-w-0 min-h-0">
         {/* Header bar */}
         <div className="h-9 flex items-center gap-3 px-4 border-b border-border/40 shrink-0 bg-muted/10">
@@ -73,13 +81,6 @@ export default function AssistantPage() {
         </div>
       </div>
 
-      {/* Sidebar — SECONDARY, right, fixed width (~220px expanded / 48px collapsed) */}
-      <div className="border-l border-[#1f1f1f]">
-        <AppSidebar
-          selectedProjectId={null}
-          onSelectProject={(id) => router.push(`/project?id=${id}`)}
-        />
-      </div>
     </div>
   );
 }
