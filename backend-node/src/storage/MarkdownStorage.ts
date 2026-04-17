@@ -577,8 +577,7 @@ export class MarkdownStorage implements IStorage {
       const raw = await fsp.readFile(this.metaFile(p), 'utf-8');
       return JSON.parse(raw);
     } catch {
-      // Initialize from existing files
-      return this.inferProjectMeta(p);
+      return { nextBacklogItemId: 1, nextSprintItemId: 1, nextSprintId: 1 };
     }
   }
 
