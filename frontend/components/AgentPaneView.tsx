@@ -8,6 +8,7 @@ interface AgentPaneViewProps {
   isVisible: boolean;
   output: string; // provided by parent via useTmuxWs — no WS managed here
   wsStatus?: "connecting" | "connected" | "disconnected";
+  projectCwd?: string;
 }
 
 const SPECIAL_KEYS: Record<string, string> = {
@@ -16,13 +17,15 @@ const SPECIAL_KEYS: Record<string, string> = {
   Delete: "DC", Home: "Home", End: "End", PageUp: "PPage", PageDown: "NPage",
 };
 
-export function AgentPaneView({ sessionName, role, isVisible, output, wsStatus }: AgentPaneViewProps) {
+export function AgentPaneView({ sessionName, role, isVisible, output, wsStatus, projectCwd }: AgentPaneViewProps) {
   const outputRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const prevOutputLen = useRef(0);
   const [autoScroll, setAutoScroll] = useState(true);
   const [inputValue, setInputValue] = useState("");
   const [isPending, setIsPending] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const [speechTranscript, setSpeechTranscript] = useState("");
   const [speechInterim, setSpeechInterim] = useState("");
@@ -71,7 +74,9 @@ export function AgentPaneView({ sessionName, role, isVisible, output, wsStatus }
   const handleSendMessage = async () => {
     if (!inputValue.trim() || isPending) return;
     setIsPending(true);
-    await sendText(inputValue);
+    const oneLine = inputValue.replace(/\n+/g, ' ').trim();
+    if (!oneLine) { setIsPending(false); return; }
+    await sendText(oneLine);
     setInputValue("");
     setTimeout(() => setIsPending(false), 500);
   };
@@ -82,6 +87,12 @@ export function AgentPaneView({ sessionName, role, isVisible, output, wsStatus }
     if (e.shiftKey && e.key === "Tab") { e.preventDefault(); sendSpecialKey("BTab"); return; }
     if (e.key === "ArrowUp" || e.key === "ArrowDown") {
       e.preventDefault(); sendSpecialKey(SPECIAL_KEYS[e.key]); return;
+    }
+    if ((e.key === "ArrowLeft" || e.key === "ArrowRight") && !inputValue) {
+      e.preventDefault(); sendSpecialKey(SPECIAL_KEYS[e.key]); return;
+    }
+    if (e.key === "Escape") {
+      e.preventDefault(); sendSpecialKey("Escape"); return;
     }
   };
 
@@ -123,6 +134,26 @@ export function AgentPaneView({ sessionName, role, isVisible, output, wsStatus }
     recognitionRef.current?.stop();
     setIsListening(false);
     setSpeechTranscript(""); setSpeechInterim("");
+  };
+
+  const handleUpload = async (file: File) => {
+    if (!file || uploading) return;
+    setUploading(true);
+    try {
+      const uploadDir = (projectCwd || "/tmp/ai-teams-uploads") + "/.uploads";
+      const form = new FormData();
+      form.append("files", file);
+      form.append("relativePaths", file.name);
+      const res = await fetch(
+        `/api/files/upload?dir=${encodeURIComponent(uploadDir)}&root=${encodeURIComponent(uploadDir)}`,
+        { method: "POST", body: form }
+      );
+      if (res.ok) {
+        await sendText(`[IMAGE] ${uploadDir}/${file.name}`);
+      }
+    } catch {}
+    setUploading(false);
+    if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
   const outputHtml = ansiToHtml(cleanOutput(output));
@@ -187,13 +218,33 @@ export function AgentPaneView({ sessionName, role, isVisible, output, wsStatus }
       {/* Input area */}
       <div className="border-t border-border/40 bg-card px-3 py-2 shrink-0" style={{ paddingBottom: "max(0.5rem, env(safe-area-inset-bottom))" }}>
         <div className="flex gap-2 items-end">
+          {/* Hidden file input */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={(e) => { const f = e.target.files?.[0]; if (f) handleUpload(f); }}
+          />
+          {/* Upload image button */}
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            disabled={uploading}
+            className="h-9 w-9 rounded-sm flex items-center justify-center shrink-0 text-muted-foreground/50 hover:text-foreground/70 hover:bg-muted/20 border border-border/30 disabled:opacity-30"
+            title="Upload image"
+          >
+            {uploading
+              ? <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="animate-spin"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+              : <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+            }
+          </button>
           <textarea
             ref={inputRef}
             value={inputValue}
             onChange={(e) => {
               setInputValue(e.target.value);
               e.target.style.height = "auto";
-              e.target.style.height = Math.min(e.target.scrollHeight, 120) + "px";
+              e.target.style.height = Math.min(e.target.scrollHeight, 240) + "px";
             }}
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey) {
@@ -210,8 +261,8 @@ export function AgentPaneView({ sessionName, role, isVisible, output, wsStatus }
             }}
             placeholder={isPending ? "Sending..." : `Message ${role}...`}
             disabled={isPending}
-            className="flex-1 font-mono px-3 py-2 rounded-md bg-muted/30 border border-border/40 text-foreground placeholder:text-muted-foreground/30 focus:outline-none focus:border-primary/40 disabled:opacity-50 resize-none overflow-hidden"
-            style={{ fontSize: "16px", height: "36px", maxHeight: "120px" }}
+            className="flex-1 font-mono px-3 py-2 rounded-md bg-muted/30 border border-border/40 text-foreground placeholder:text-muted-foreground/30 focus:outline-none focus:border-primary/40 disabled:opacity-50 resize-none overflow-y-auto"
+            style={{ fontSize: "16px", height: "36px", maxHeight: "240px" }}
             autoComplete="off"
             rows={1}
           />
