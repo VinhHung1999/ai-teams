@@ -1,15 +1,19 @@
 import { Router, Request, Response } from 'express';
 import { getStorage } from '../storage/factory';
 import { pushNotificationToProject } from './board-ws';
-import { registerNotificationMessage, sendToGroupChat } from '../telegram-bot';
+import { registerNotificationMessage } from '../telegram-bot';
+import type { Project } from '../storage/types';
 
 const router = Router();
 
 const TELEGRAM_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 
-async function sendTelegram(urgency: string, fromRole: string | null, sessionName: string, message: string): Promise<void> {
-  if (!TELEGRAM_TOKEN || !TELEGRAM_CHAT_ID) return;
+async function sendTelegram(urgency: string, fromRole: string | null, sessionName: string, message: string, project: Project): Promise<void> {
+  if (!TELEGRAM_TOKEN) return;
+  // Smart-route: registered group wins over DM fallback
+  const chatId = project.telegram_chat_id ?? (TELEGRAM_CHAT_ID ? Number(TELEGRAM_CHAT_ID) : null);
+  if (!chatId) return;
   const emoji = urgency === 'high' ? '🔴' : '🟡';
   const role = fromRole ? `<b>${fromRole}</b>` : 'Agent';
   const text = `${emoji} ${role} [${sessionName}]\n${message}`;
@@ -17,7 +21,7 @@ async function sendTelegram(urgency: string, fromRole: string | null, sessionNam
     const res = await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, text, parse_mode: 'HTML' }),
+      body: JSON.stringify({ chat_id: chatId, text, parse_mode: 'HTML' }),
     });
     const data = await res.json() as any;
     if (data?.ok && data.result?.message_id) {
@@ -51,7 +55,7 @@ router.post('/api/notifications', async (req: Request, res: Response) => {
     });
 
     pushNotificationToProject(project.id, notification);
-    sendTelegram(notification.urgency, notification.from_role, notification.session_name, notification.message);
+    sendTelegram(notification.urgency, notification.from_role, notification.session_name, notification.message, project);
 
     return res.json({ ok: true, id: notification.id });
   } catch (err: any) {
@@ -85,17 +89,6 @@ router.patch('/api/notifications/read', async (req: Request, res: Response) => {
   } catch (err: any) {
     return res.status(500).json({ error: err.message });
   }
-});
-
-// POST /api/telegram/send — PO posts to team Telegram group ([299] send_to_team_chat)
-router.post('/api/telegram/send', async (req: Request, res: Response) => {
-  const { team, message, reply_to_message_id } = req.body;
-  if (!team || !message) {
-    return res.status(400).json({ error: 'team and message are required' });
-  }
-  const result = await sendToGroupChat(team, message, reply_to_message_id);
-  if (!result.ok) return res.status(400).json({ error: result.error });
-  return res.json({ ok: true });
 });
 
 export default router;

@@ -40,20 +40,6 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
         required: ['session_name', 'message'],
       },
     },
-    {
-      name: 'send_to_team_chat',
-      description:
-        'Post a message to the team\'s Telegram group chat. Use this to reply conversationally when a message came from the group (prefix "[via Telegram]"). Keep notify_boss for urgent DM push to Boss.',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          team: { type: 'string', description: 'Tmux session_name of the team — use underscore form (e.g. "ai_teams", "love_scrum"), NOT project name with hyphens' },
-          message: { type: 'string', description: 'Message text to post in the group' },
-          reply_to_message_id: { type: 'integer', description: 'Optional Telegram message_id to quote/reply to' },
-        },
-        required: ['team', 'message'],
-      },
-    },
   ],
 }));
 
@@ -75,24 +61,6 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
       return { content: [{ type: 'text', text: `Failed to notify Boss: ${data.error ?? res.statusText}` }] };
     } catch (e: any) {
       return { content: [{ type: 'text', text: `Notification error: ${e.message}` }] };
-    }
-  }
-
-  if (name === 'send_to_team_chat') {
-    const { team, message, reply_to_message_id } = args as any;
-    try {
-      const res = await fetch(`${API_BASE}/api/telegram/send`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ team, message, reply_to_message_id }),
-      });
-      const data = await res.json() as any;
-      if (res.ok) {
-        return { content: [{ type: 'text', text: `Message sent to team '${team}' Telegram group.` }] };
-      }
-      return { content: [{ type: 'text', text: `Failed: ${data.error ?? res.statusText}` }] };
-    } catch (e: any) {
-      return { content: [{ type: 'text', text: `send_to_team_chat error: ${e.message}` }] };
     }
   }
 
