@@ -1,7 +1,7 @@
 /**
  * Node MCP server — ai-teams
  * Replaces broken Python MCP server (postgres dependency removed).
- * Exposes: notify_boss, send_to_team_chat
+ * Exposes: notify_boss (with optional image_path for outbound photos)
  * Communicates via stdio; proxies to localhost:17070 HTTP API.
  */
 
@@ -36,6 +36,10 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
             enum: ['low', 'normal', 'high'],
             description: 'Urgency level (default: normal). Use "high" for blockers.',
           },
+          image_path: {
+            type: 'string',
+            description: 'Optional absolute local path to an image file to send along with the message. If provided, image is sent via Telegram sendPhoto with message as caption.',
+          },
         },
         required: ['session_name', 'message'],
       },
@@ -47,16 +51,17 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
   const { name, arguments: args } = req.params;
 
   if (name === 'notify_boss') {
-    const { session_name, message, from_role, urgency } = args as any;
+    const { session_name, message, from_role, urgency, image_path } = args as any;
     try {
       const res = await fetch(`${API_BASE}/api/notifications`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ session_name, message, from_role, urgency: urgency ?? 'normal' }),
+        body: JSON.stringify({ session_name, message, from_role, urgency: urgency ?? 'normal', image_path }),
       });
       const data = await res.json() as any;
       if (res.ok) {
-        return { content: [{ type: 'text', text: `Notification sent to Boss: '${message}' [${urgency ?? 'normal'}]` }] };
+        const suffix = image_path ? ' (with image)' : '';
+        return { content: [{ type: 'text', text: `Notification sent to Boss: '${message}' [${urgency ?? 'normal'}]${suffix}` }] };
       }
       return { content: [{ type: 'text', text: `Failed to notify Boss: ${data.error ?? res.statusText}` }] };
     } catch (e: any) {
