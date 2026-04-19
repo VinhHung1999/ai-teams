@@ -297,10 +297,96 @@ async function handleFileMessage(chatId: string, msg: any): Promise<boolean> {
   return true;
 }
 
+// ── Group message handler ([296] [297] [298] [300]) ─────────────────────────
+
+function getSenderName(msg: any): string {
+  return msg.from?.first_name ?? msg.from?.username ?? `user_${msg.from?.id ?? 'unknown'}`;
+}
+
+async function handleGroupMessage(msg: any): Promise<void> {
+  const chatId = String(msg.chat?.id);
+  const text: string = msg.text || '';
+
+  // [300] /register <team-name>
+  const registerMatch = text.match(/^\/register(?:@\S+)?\s+(\S+)/i);
+  if (registerMatch) {
+    const teamName = registerMatch[1];
+    try {
+      const storage = await getStorage();
+      const projects = await storage.listProjects();
+      const project = projects.find(
+        p => p.name === teamName || p.tmux_session_name === teamName
+      );
+      if (!project) {
+        await sendReply(chatId, `Team <code>${teamName}</code> không tồn tại ✗`);
+        return;
+      }
+      await storage.updateProjectTelegramChatId(project.id, msg.chat.id);
+      await sendReply(chatId, `✅ Group bound to team <b>${project.name}</b>. PO sẽ nhận message từ đây.`);
+    } catch (e: any) {
+      await sendReply(chatId, `Register failed: ${e.message}`);
+    }
+    return;
+  }
+
+  // Route by chat_id → project
+  const storage = await getStorage();
+  const project = await storage.findProjectByChatId(msg.chat.id);
+  if (!project) {
+    // Unbound group — ignore silently (or send one-time hint if /register-like intent)
+    return;
+  }
+
+  const session = project.tmux_session_name;
+  if (!session) return;
+
+  // [297] Photos / documents from group
+  if (msg.photo || msg.document) {
+    const sender = getSenderName(msg);
+    let fileId: string | undefined;
+    let origName = 'file';
+    if (msg.photo) {
+      fileId = msg.photo[msg.photo.length - 1]?.file_id;
+      origName = 'photo.jpg';
+    } else if (msg.document) {
+      fileId = msg.document.file_id;
+      origName = msg.document.file_name || 'document';
+    }
+    if (!fileId) return;
+    const destDir = path.join(
+      project.working_directory || '/tmp/ai-teams-uploads',
+      'uploads', 'telegram', String(msg.chat.id)
+    );
+    const savedPath = await downloadTgFile(fileId, destDir, origName);
+    if (!savedPath) { await sendReply(chatId, 'Failed to download file ✗'); return; }
+    const caption = msg.caption ? ` — ${msg.caption}` : '';
+    const formatted = `[via Telegram] ${sender} [image]: ${savedPath}${caption}`;
+    const safeMsg = formatted.replace(/'/g, "'\\''");
+    try { await execAsync(`tm-send -s '${session}' PO '${safeMsg}'`, { timeout: 5000 }); } catch {}
+    return;
+  }
+
+  if (!text || text.startsWith('/')) return; // ignore other commands in group
+
+  // [296] + [298] Forward text with sender attribution
+  const sender = getSenderName(msg);
+  const formatted = `[via Telegram] ${sender}: ${text.trim()}`;
+  const safeMsg = formatted.replace(/'/g, "'\\''");
+  try { await execAsync(`tm-send -s '${session}' PO '${safeMsg}'`, { timeout: 5000 }); } catch {}
+}
+
 async function handleMessage(msg: any): Promise<void> {
   const chatId = String(msg.chat?.id);
   const text: string = msg.text || '';
 
+  // Group chats → dedicated handler (not restricted to ALLOWED_CHAT_ID)
+  const chatType = msg.chat?.type;
+  if (chatType === 'group' || chatType === 'supergroup') {
+    await handleGroupMessage(msg);
+    return;
+  }
+
+  // Private DMs — restrict to ALLOWED_CHAT_ID
   if (chatId !== String(ALLOWED_CHAT_ID)) return;
 
   if (await handleFileMessage(chatId, msg)) return;
@@ -361,6 +447,29 @@ async function handleMessage(msg: any): Promise<void> {
   }
 
   await forwardToAgent(chatId, resolvedSess, userMsg);
+}
+
+// ── [299] send_to_team_chat — PO post lại group ──────────────────────────────
+
+export async function sendToGroupChat(
+  teamSession: string,
+  message: string,
+  replyToMessageId?: number,
+): Promise<{ ok: boolean; error?: string }> {
+  if (!TOKEN) return { ok: false, error: 'Bot token not configured' };
+  try {
+    const storage = await getStorage();
+    const project = await storage.findProjectBySession(teamSession);
+    if (!project) return { ok: false, error: `Team '${teamSession}' not found` };
+    if (!project.telegram_chat_id) return { ok: false, error: `Team '${project.name}' has no Telegram group bound — run /register first` };
+    const body: Record<string, unknown> = { chat_id: project.telegram_chat_id, text: message, parse_mode: 'HTML' };
+    if (replyToMessageId) body.reply_to_message_id = replyToMessageId;
+    const res = await tgPost('sendMessage', body);
+    if (!res.ok) return { ok: false, error: res.description ?? 'Telegram API error' };
+    return { ok: true };
+  } catch (e: any) {
+    return { ok: false, error: e.message };
+  }
 }
 
 // ── Long-polling loop ────────────────────────────────────────────────────────

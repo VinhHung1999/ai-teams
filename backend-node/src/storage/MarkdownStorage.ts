@@ -718,6 +718,17 @@ export class MarkdownStorage implements IStorage {
     return this.registry.projects.find(p => p.tmux_session_name === sessionName) ?? null;
   }
 
+  async findProjectByChatId(chatId: number): Promise<Project | null> {
+    return this.registry.projects.find(p => p.telegram_chat_id === chatId) ?? null;
+  }
+
+  async updateProjectTelegramChatId(projectId: number, chatId: number): Promise<void> {
+    const p = this.registry.projects.find(p => p.id === projectId);
+    if (!p) throw new Error(`Project ${projectId} not found`);
+    p.telegram_chat_id = chatId;
+    await this.saveRegistry();
+  }
+
   async createProject(data: {
     name: string;
     tmux_session_name?: string | null;

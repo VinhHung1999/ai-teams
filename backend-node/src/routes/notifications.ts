@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { getStorage } from '../storage/factory';
 import { pushNotificationToProject } from './board-ws';
-import { registerNotificationMessage } from '../telegram-bot';
+import { registerNotificationMessage, sendToGroupChat } from '../telegram-bot';
 
 const router = Router();
 
@@ -85,6 +85,17 @@ router.patch('/api/notifications/read', async (req: Request, res: Response) => {
   } catch (err: any) {
     return res.status(500).json({ error: err.message });
   }
+});
+
+// POST /api/telegram/send — PO posts to team Telegram group ([299] send_to_team_chat)
+router.post('/api/telegram/send', async (req: Request, res: Response) => {
+  const { team, message, reply_to_message_id } = req.body;
+  if (!team || !message) {
+    return res.status(400).json({ error: 'team and message are required' });
+  }
+  const result = await sendToGroupChat(team, message, reply_to_message_id);
+  if (!result.ok) return res.status(400).json({ error: result.error });
+  return res.json({ ok: true });
 });
 
 export default router;

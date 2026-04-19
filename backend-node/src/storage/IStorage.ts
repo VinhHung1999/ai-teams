@@ -8,6 +8,8 @@ export interface IStorage {
   listProjects(): Promise<Project[]>;
   getProject(id: number): Promise<Project | null>;
   findProjectBySession(sessionName: string): Promise<Project | null>;
+  findProjectByChatId(chatId: number): Promise<Project | null>;
+  updateProjectTelegramChatId(projectId: number, chatId: number): Promise<void>;
   createProject(data: {
     name: string;
     tmux_session_name?: string | null;

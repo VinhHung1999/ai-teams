@@ -260,6 +260,19 @@ async def list_tools() -> list[Tool]:
                 "required": ["session_name", "message"],
             },
         ),
+        Tool(
+            name="send_to_team_chat",
+            description="Post a message to the team's Telegram group chat. Use this to reply conversationally when a message came from the group (prefix '[via Telegram]'). Keep notify_boss for urgent DM push to Boss.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "team": {"type": "string", "description": "Tmux session name of the team (e.g. 'ai_teams', 'tuvi-team')"},
+                    "message": {"type": "string", "description": "Message text to post in the group"},
+                    "reply_to_message_id": {"type": "integer", "description": "Optional Telegram message_id to quote/reply to"},
+                },
+                "required": ["team", "message"],
+            },
+        ),
     ]
 
 
@@ -318,6 +331,11 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             return await _notify_boss(
                 arguments["session_name"], arguments["message"],
                 arguments.get("from_role"), arguments.get("urgency", "normal"),
+            )
+        elif name == "send_to_team_chat":
+            return await _send_to_team_chat(
+                arguments["team"], arguments["message"],
+                arguments.get("reply_to_message_id"),
             )
         else:
             return [TextContent(type="text", text=f"Unknown tool: {name}")]
@@ -675,6 +693,27 @@ async def _notify_boss(session_name: str, message: str, from_role: str | None, u
                 return [TextContent(type="text", text=f"Failed to notify Boss: {text}")]
     except Exception as e:
         return [TextContent(type="text", text=f"Notification error: {str(e)}")]
+
+
+async def _send_to_team_chat(team: str, message: str, reply_to_message_id: int | None) -> list[TextContent]:
+    """POST to Node.js backend which calls sendToGroupChat."""
+    try:
+        payload: dict = {"team": team, "message": message}
+        if reply_to_message_id is not None:
+            payload["reply_to_message_id"] = reply_to_message_id
+        async with aiohttp.ClientSession() as http:
+            resp = await http.post(
+                "http://localhost:17070/api/telegram/send",
+                json=payload,
+                timeout=aiohttp.ClientTimeout(total=5),
+            )
+            if resp.status == 200:
+                return [TextContent(type="text", text=f"Message sent to team '{team}' Telegram group.")]
+            else:
+                text = await resp.text()
+                return [TextContent(type="text", text=f"Failed: {text}")]
+    except Exception as e:
+        return [TextContent(type="text", text=f"send_to_team_chat error: {str(e)}")]
 
 
 async def main():

@@ -4,6 +4,7 @@ export interface Project {
   tmux_session_name: string | null;
   working_directory: string | null;
   board_directory?: string;
+  telegram_chat_id?: number;
   pinned: boolean;
   created_at: string; // ISO string
 }
