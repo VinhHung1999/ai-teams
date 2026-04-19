@@ -47,7 +47,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
       inputSchema: {
         type: 'object',
         properties: {
-          team: { type: 'string', description: 'Tmux session name of the team (e.g. "ai_teams", "tuvi-team")' },
+          team: { type: 'string', description: 'Tmux session_name of the team — use underscore form (e.g. "ai_teams", "love_scrum"), NOT project name with hyphens' },
           message: { type: 'string', description: 'Message text to post in the group' },
           reply_to_message_id: { type: 'integer', description: 'Optional Telegram message_id to quote/reply to' },
         },
