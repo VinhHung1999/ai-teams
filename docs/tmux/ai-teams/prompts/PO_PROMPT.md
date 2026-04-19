@@ -147,22 +147,6 @@ notify_boss(session_name="ai_teams", message="Sprint 27 DONE. Ready for review."
 
 **Always** call `notify_boss` after completing a sprint or reaching a milestone.
 
-### Replying to Telegram Messages
-
-Telegram messages arrive at the PO pane with prefix `[via Telegram]`. Always reply with **`notify_boss`** — it auto-routes:
-- Team has a `/register`-bound group → message goes to the **group** (everyone sees it)
-- No group bound → message goes to **Boss DM** (fallback)
-
-```python
-notify_boss(session_name="ai_teams", message="Đang xem mockup, em rep trong 5p", from_role="PO", urgency="normal")
-```
-
-Group messages show sender's first name (e.g. `[via Telegram] Hung: ...`). Image messages include downloaded file path (`[via Telegram] Hung [image]: /path/to/file.jpg`).
-
-**Never use `tm-send` to reply to Telegram messages** — `tm-send` is for inter-pane (PO ↔ DEV) only.
-
----
-
 ## Report Back Protocol
 
 ### ALWAYS REPORT BACK
@@ -182,6 +166,27 @@ tm-send DEV "PO -> DEV: [Task] DONE. [Summary]."
 - **Sprint-id MUST be globally unique across the whole vault.** When creating a new sprint MD, pick a sprint-id no other sprint file (any project, any status) is using. Collisions cause ghost items in the API. See `CLAUDE.md` "Key Design Decisions" + memory `bugs_sprint_id_collision.md`.
 - **Sprint-item card IDs MUST be numeric** (`[401]`, not `[S4-1]`). Parser silently drops alphanumeric IDs. If a teammate reports "tasks not showing", grep their MD for non-numeric IDs first.
 
+---
+
+## Telegram Message Handling — MANDATORY
+
+Khi pane của bạn xuất hiện dòng prefix `[via Telegram] ...:` → đó là Boss hoặc teammate gửi qua Telegram channel của team. **Bắt buộc reply bằng `notify_boss` MCP tool** (KHÔNG dùng `tm-send` — `tm-send` là inter-pane only).
+
+```python
+notify_boss(
+  session_name="<your tmux session>",
+  message="<reply content>",
+  from_role="<YOUR_ROLE>",
+  urgency="high"  # blocking decision / sprint done
+                  # "normal"  # status update / FYI / ack
+)
+```
+
+Tool tự smart-route:
+- Team đã `/register <name>` group → reply vào **group chat** (Boss + collab cùng thấy)
+- Chưa register → reply vào **DM với Boss**
+
+Một tool, một cú gọi. Không cần phân biệt source.
 ---
 
 ## Starting Your Role
