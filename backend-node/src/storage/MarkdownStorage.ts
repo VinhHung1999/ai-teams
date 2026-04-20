@@ -37,6 +37,15 @@ const COLUMN_TITLES: Record<string, string> = {
   done: '✅ Done',
 };
 
+// Plain-text aliases for sprint files that omit emoji prefixes
+const COLUMN_PLAIN: Record<string, string> = {
+  todo: 'Todo',
+  in_progress: 'In Progress',
+  in_review: 'In Review',
+  testing: 'Testing',
+  done: 'Done',
+};
+
 // ── Registry ────────────────────────────────────────────────────────────────
 
 interface Registry {
@@ -157,11 +166,13 @@ function parseMetaLine(line: string): Record<string, string> {
 function parseCard(lines: string[]): ParsedCard | null {
   if (lines.length === 0) return null;
   const firstLine = lines[0];
-  const firstMatch = firstLine.match(/^- \[([ x])\] \*\*\[(\d+)\]\*\* (.*)$/);
+  const firstMatch = firstLine.match(/^- \[([ x])\] \*\*\[([A-Za-z0-9_-]+)\]\*\* (.*)$/);
   if (!firstMatch) return null;
 
   const done = firstMatch[1] === 'x';
-  const siId = parseInt(firstMatch[2], 10);
+  const rawId = firstMatch[2];
+  const trailingDigits = rawId.match(/(\d+)$/);
+  const siId = trailingDigits ? parseInt(trailingDigits[1], 10) : Math.abs(rawId.split('').reduce((h, c) => (h * 31 + c.charCodeAt(0)) | 0, 0));
   const title = firstMatch[3].trim();
 
   let priority = 'P2';
@@ -244,7 +255,7 @@ function extractCardGroups(content: string): string[][] {
   let current: string[] | null = null;
 
   for (const line of lines) {
-    if (/^- \[[ x]\] \*\*\[\d+\]\*\*/.test(line)) {
+    if (/^- \[[ x]\] \*\*\[[A-Za-z0-9_-]+\]\*\*/.test(line)) {
       if (current) groups.push(current);
       current = [line];
     } else if (current) {
@@ -403,7 +414,11 @@ function parseSprintFile(content: string, projectId: number, projectName: string
         sprint_id: sprint.id,
         backlog_item_id: card.backlogId,
         assignee_role: card.assignee,
-        board_status: card.boardStatus ?? currentColumn,
+        board_status: (() => {
+          if (card.boardStatus && BOARD_COLUMNS.includes(card.boardStatus)) return card.boardStatus;
+          if (card.boardStatus) console.warn(`[parser] Unknown Status "${card.boardStatus}" in sprint ${sprint.id} card [${card.siId}], falling back to ${currentColumn}`);
+          return currentColumn;
+        })(),
         order: order++,
         notes: card.notes,
         updated_at: now,
@@ -431,10 +446,10 @@ function parseSprintFile(content: string, projectId: number, projectName: string
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
 
-    // Detect column header
-    const colMatch = Object.entries(COLUMN_TITLES).find(([, title]) =>
-      line === `## ${title}`
-    );
+    // Detect column header (emoji or plain)
+    const colMatch =
+      Object.entries(COLUMN_TITLES).find(([, title]) => line === `## ${title}`) ??
+      Object.entries(COLUMN_PLAIN).find(([, title]) => line === `## ${title}`);
     if (colMatch) {
       flushCard();
       currentColumn = colMatch[0];
@@ -446,7 +461,7 @@ function parseSprintFile(content: string, projectId: number, projectName: string
     if (line.startsWith('%% kanban:settings') || line.startsWith('```') || line === '%%') continue;
 
     if (currentColumn) {
-      if (/^- \[[ x]\] \*\*\[\d+\]\*\*/.test(line)) {
+      if (/^- \[[ x]\] \*\*\[[A-Za-z0-9_-]+\]\*\*/.test(line)) {
         flushCard();
         cardLinesList = [line];
       } else if (cardLinesList.length > 0) {
@@ -1259,7 +1274,8 @@ export class MarkdownStorage implements IStorage {
 
       const items = pData.sprintItemsBySprintId.get(sprint.id) ?? [];
       for (const { si, bi } of items) {
-        boards[sid][si.board_status].push({ ...si, backlog_item: bi });
+        const col = BOARD_COLUMNS.includes(si.board_status) ? si.board_status : 'todo';
+        boards[sid][col].push({ ...si, backlog_item: bi });
         allBiIds.add(bi.id);
       }
     }

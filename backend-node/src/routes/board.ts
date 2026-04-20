@@ -3,6 +3,28 @@ import { getStorage } from '../storage/factory';
 
 const router = Router();
 
+export function flattenDashboardBoards(boards: Record<string, Record<string, any[]>>): Record<string, Record<string, any[]>> {
+  const flat: Record<string, Record<string, any[]>> = {};
+  for (const [sid, board] of Object.entries(boards)) {
+    flat[sid] = {};
+    for (const [col, items] of Object.entries(board as Record<string, any[]>)) {
+      flat[sid][col] = items.map((si: any) => ({
+        id: si.id,
+        sprint_id: si.sprint_id,
+        backlog_item_id: si.backlog_item_id,
+        title: si.backlog_item?.title ?? si.title ?? '',
+        description: si.backlog_item?.description ?? si.description ?? null,
+        priority: si.backlog_item?.priority ?? si.priority ?? 'P2',
+        story_points: si.backlog_item?.story_points ?? si.story_points ?? null,
+        assignee_role: si.assignee_role,
+        board_status: si.board_status,
+        order: si.order,
+      }));
+    }
+  }
+  return flat;
+}
+
 const BOARD_COLUMNS = ['todo', 'in_progress', 'in_review', 'testing', 'done'];
 
 // Get board
@@ -52,12 +74,17 @@ router.put('/api/board/items/:itemId/move', async (req: Request, res: Response) 
 // Dashboard
 router.get('/api/projects/:projectId/dashboard', async (req: Request, res: Response) => {
   const projectId = parseInt(req.params.projectId as string);
-  const storage = await getStorage();
-  const data = await storage.getDashboard(projectId);
-  if (!data) {
-    return res.status(404).json({ detail: 'Project not found' });
+  try {
+    const storage = await getStorage();
+    const data = await storage.getDashboard(projectId);
+    if (!data) {
+      return res.status(404).json({ detail: 'Project not found' });
+    }
+    res.json({ ...data, boards: flattenDashboardBoards(data.boards as any) });
+  } catch (e: any) {
+    console.error(`[board] dashboard error for project ${projectId}:`, e);
+    res.status(500).json({ error: e.message });
   }
-  res.json(data);
 });
 
 export default router;
