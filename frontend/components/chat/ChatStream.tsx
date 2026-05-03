@@ -111,6 +111,7 @@ function PromptCard({ event, projectId }: { event: ChatEvent; projectId?: number
   const [answered, setAnswered] = useState<string | null>(null);
   const [custom, setCustom] = useState("");
   const [showCustom, setShowCustom] = useState(false);
+  const [selected, setSelected] = useState<string[]>([]); // multi-select
   const q = event.question;
   if (!q) return null;
 
@@ -126,20 +127,48 @@ function PromptCard({ event, projectId }: { event: ChatEvent; projectId?: number
     } catch {}
   };
 
+  const toggleOpt = (opt: string) => {
+    setSelected((prev) => prev.includes(opt) ? prev.filter((o) => o !== opt) : [...prev, opt]);
+  };
+
   const btnBase: React.CSSProperties = { textAlign: "left", padding: "7px 12px", borderRadius: 10, border: "none", cursor: answered ? "default" : "pointer", fontSize: 13 };
 
   return (
     <div style={{ margin: "8px 0 8px auto", maxWidth: 340, background: "rgba(255,255,255,0.96)", borderRadius: 16, padding: "12px 14px", boxShadow: "0 1px 4px rgba(0,0,0,0.10)", borderLeft: "3px solid var(--c-accent)" }}>
       <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 8, color: "var(--c-fg-0)" }}>{q.text}</div>
+
       {q.options.length > 0 && !showCustom && (
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-          {q.options.map((opt, idx) => (
-            <button key={idx} onClick={() => respond(String(idx + 1))} disabled={!!answered}
-              style={{ ...btnBase, background: answered === String(idx + 1) ? "var(--c-accent)" : "rgba(0,0,0,0.05)", color: answered === String(idx + 1) ? "white" : "var(--c-fg-0)" }}>
-              <span style={{ fontWeight: 600, marginRight: 6 }}>{idx + 1}.</span>{opt}
-            </button>
-          ))}
-          {/* [410] Other… toggle */}
+          {q.multiSelect ? (
+            // [410] Multi-select: checkboxes + Submit
+            <>
+              {q.options.map((opt) => {
+                const checked = selected.includes(opt);
+                return (
+                  <label key={opt} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", borderRadius: 10, background: checked ? "var(--c-accent-soft)" : "rgba(0,0,0,0.04)", cursor: answered ? "default" : "pointer", fontSize: 13 }}>
+                    <input type="checkbox" checked={checked} disabled={!!answered} onChange={() => toggleOpt(opt)} style={{ accentColor: "var(--c-accent)", width: 15, height: 15, flexShrink: 0 }} />
+                    {opt}
+                  </label>
+                );
+              })}
+              {!answered && (
+                <button onClick={() => respond(selected.join(", "))} disabled={selected.length === 0}
+                  style={{ marginTop: 4, padding: "7px 14px", borderRadius: 10, background: "var(--c-accent)", color: "white", border: "none", fontSize: 13, cursor: selected.length ? "pointer" : "default", opacity: selected.length ? 1 : 0.4 }}>
+                  Submit ({selected.length} selected)
+                </button>
+              )}
+            </>
+          ) : (
+            // Single-select: buttons
+            <>
+              {q.options.map((opt, idx) => (
+                <button key={idx} onClick={() => respond(String(idx + 1))} disabled={!!answered}
+                  style={{ ...btnBase, background: answered === String(idx + 1) ? "var(--c-accent)" : "rgba(0,0,0,0.05)", color: answered === String(idx + 1) ? "white" : "var(--c-fg-0)" }}>
+                  <span style={{ fontWeight: 600, marginRight: 6 }}>{idx + 1}.</span>{opt}
+                </button>
+              ))}
+            </>
+          )}
           {!answered && (
             <button onClick={() => setShowCustom(true)} style={{ ...btnBase, background: "transparent", color: "var(--c-fg-2)", fontStyle: "italic" }}>
               Other…
@@ -147,7 +176,7 @@ function PromptCard({ event, projectId }: { event: ChatEvent; projectId?: number
           )}
         </div>
       )}
-      {/* [410] Free-text input — shown when no options OR Other… selected */}
+
       {(q.options.length === 0 || showCustom) && (
         <div style={{ display: "flex", gap: 6, marginTop: showCustom ? 6 : 0 }}>
           <input

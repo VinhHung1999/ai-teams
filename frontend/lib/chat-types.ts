@@ -11,7 +11,7 @@ export interface ChatEvent {
   text?: string;
   pending?: boolean; // [367] queued but not yet processed by agent
   attachment?: { filename: string; url: string; isImage: boolean }; // [408]
-  question?: { text: string; options: string[]; toolUseId: string }; // [409]
+  question?: { text: string; options: string[]; toolUseId: string; multiSelect?: boolean }; // [409-410]
   tool?: {
     name: string;
     input?: any;

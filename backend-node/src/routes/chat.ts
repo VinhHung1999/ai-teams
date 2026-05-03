@@ -26,7 +26,7 @@ export type ChatEvent = {
   text?: string;
   pending?: boolean; // [367] queued_command attachment, agent hasn't processed yet
   attachment?: { filename: string; url: string; isImage: boolean }; // [408]
-  question?: { text: string; options: string[]; toolUseId: string }; // [409]
+  question?: { text: string; options: string[]; toolUseId: string; multiSelect?: boolean }; // [409-410]
   tool?: {
     name: string;
     input?: any;
@@ -197,6 +197,7 @@ function parseJsonlLine(
               text: questionText,
               options: optionLabels,
               toolUseId: c.id as string,
+              multiSelect: !!(q0?.multiSelect),
             },
           });
         } else {
