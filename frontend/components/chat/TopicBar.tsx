@@ -6,24 +6,22 @@ import type { Project } from "@/lib/types";
 // ── Circular context-usage ring ───────────────────────────────────────────────
 function ContextRing({ pct }: { pct: number }) {
   const r = 7;
-  const circ = 2 * Math.PI * r; // ≈ 44
-  const filled = (pct / 100) * circ;
+  const circ = 2 * Math.PI * r;
+  const offset = circ - (pct / 100) * circ; // 0 = full, circ = empty
   const color = pct >= 80 ? "#ef4444" : pct >= 50 ? "#f59e0b" : "#22c55e";
   return (
     <svg width="18" height="18" viewBox="0 0 18 18" style={{ flexShrink: 0 }}>
-      {/* Track */}
       <circle cx="9" cy="9" r={r} fill="none" stroke="rgba(255,255,255,0.1)" strokeWidth="2" />
-      {/* Fill */}
       <circle
         cx="9" cy="9" r={r} fill="none"
         stroke={color} strokeWidth="2"
-        strokeDasharray={`${filled} ${circ}`}
+        strokeDasharray={circ}
+        strokeDashoffset={offset}
         strokeLinecap="round"
         transform="rotate(-90 9 9)"
       />
-      {/* Pct label for high usage */}
       {pct >= 70 && (
-        <text x="9" y="12" textAnchor="middle" fontSize="5.5" fontWeight="600" fill={color}>{pct}</text>
+        <text x="9" y="9" textAnchor="middle" dominantBaseline="central" fontSize="5.5" fontWeight="700" fill={color}>{pct}</text>
       )}
     </svg>
   );
