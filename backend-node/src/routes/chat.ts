@@ -302,16 +302,25 @@ async function aggregateEvents(projectId: number): Promise<ChatEvent[]> {
   // Sort ascending by timestamp
   allEvents.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
 
-  // [367] Dedup: remove pending events where a confirmed BOSS message with same text exists
+  // [367] Remove pending events where a confirmed BOSS message with same text exists
   const confirmedBossTexts = new Set(
     allEvents
       .filter(e => e.role === 'BOSS' && e.kind === 'message' && !e.pending)
       .map(e => e.text?.trim() ?? '')
       .filter(Boolean),
   );
-  return confirmedBossTexts.size > 0
+  const deconfirmed = confirmedBossTexts.size > 0
     ? allEvents.filter(e => !(e.pending && confirmedBossTexts.has(e.text?.trim() ?? '')))
     : allEvents;
+
+  // [378] Full id-based dedup — queue-operation + attachment in same JSONL both produce
+  // pending:<hash> id; without this both survive into history and cause React duplicate-key warning
+  const idSeen = new Set<string>();
+  return deconfirmed.filter(e => {
+    if (idSeen.has(e.id)) return false;
+    idSeen.add(e.id);
+    return true;
+  });
 }
 
 // ── Helpers for last-events [350] ──
