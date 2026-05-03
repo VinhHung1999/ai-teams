@@ -520,6 +520,7 @@ router.post('/api/chat/:projectId/respond', async (req: Request, res: Response) 
 
     // Send the value then Enter — answers the interactive prompt
     await execAsync(`tmux send-keys -t ${sessionName}:0.${paneIdx} ${JSON.stringify(String(value))} Enter`);
+    lastPromptHash.delete(projectId); // [412] allow re-detection after answer
     res.json({ ok: true });
   } catch (e: any) {
     res.status(500).json({ error: e.message });
@@ -564,6 +565,101 @@ function pushEvents(projectId: number, dedupedEvents: ChatEvent[], firstRole?: s
     pushNotify(projectId, project?.name ?? String(projectId), lastMsg.text ?? '', lastMsg.role).catch(() => {});
   }
   lastEventsCache.delete(projectId);
+}
+
+// ── [412] Pane prompt detection ───────────────────────────────────────────────
+const promptDetectors = new Map<number, ReturnType<typeof setInterval>>();
+const lastPromptHash = new Map<number, string>();
+
+const ANSI_RE = /\x1b\[[0-9;?]*[A-Za-z]/g;
+function stripAnsi(s: string) { return s.replace(ANSI_RE, '').replace(/\r/g, ''); }
+
+function detectPromptInPane(raw: string): { question: string; options: string[] } | null {
+  const lines = raw.split('\n').map(stripAnsi);
+  for (let i = 0; i < lines.length; i++) {
+    const qm = lines[i].trimStart().match(/^\?\s+(.+)$/);
+    if (!qm || !qm[1].trim()) continue;
+    const options: string[] = [];
+    for (let j = i + 1; j < Math.min(i + 16, lines.length); j++) {
+      const ol = lines[j];
+      // ❯ / > / ◎ / ○ prefix OR 2+ space indented non-empty option text
+      const m = ol.match(/^\s*[❯>◎○●]\s*(.+)$/) ?? ol.match(/^\s{2,6}([^?\s].{1,80})$/);
+      if (m && m[1]?.trim() && !m[1].startsWith('─')) {
+        options.push(m[1].trim());
+      } else if (options.length > 0 && ol.trim() === '') { break; }
+    }
+    if (qm[1].trim().length > 3) return { question: qm[1].trim(), options };
+  }
+  return null;
+}
+
+async function startPromptDetection(
+  projectId: number,
+  sessionName: string,
+  roleInfos: RoleInfo[],
+) {
+  if (promptDetectors.has(projectId)) return;
+
+  // Cache pane indices — refreshed every 10s
+  let paneMap: Map<string, string> = new Map();
+  let paneMapExpiry = 0;
+
+  const tick = async () => {
+    if (!chatSubscribers.get(projectId)?.size) return; // skip when no subscribers
+
+    // Refresh pane map if stale
+    const now = Date.now();
+    if (now > paneMapExpiry) {
+      try {
+        const { stdout } = await execAsync(
+          `tmux list-panes -t ${sessionName} -F "#{pane_index} #{@role_name}"`,
+          { timeout: 2000, encoding: 'utf-8' },
+        );
+        paneMap = new Map();
+        for (const line of stdout.trim().split('\n')) {
+          const parts = line.trim().split(' ', 2);
+          if (parts.length === 2 && parts[1]) paneMap.set(parts[1], parts[0]);
+        }
+        paneMapExpiry = now + 10_000;
+      } catch { return; }
+    }
+
+    for (const ri of roleInfos) {
+      const paneIdx = paneMap.get(ri.role);
+      if (!paneIdx) continue;
+      try {
+        const { stdout: paneOut } = await execAsync(
+          `tmux capture-pane -p -t ${sessionName}:0.${paneIdx} -S -30`,
+          { timeout: 2000, encoding: 'utf-8' },
+        );
+        const detected = detectPromptInPane(paneOut);
+        if (!detected) continue;
+
+        const hash = `${ri.role}:${detected.question}:${detected.options.join('|')}`;
+        if (lastPromptHash.get(projectId) === hash) continue;
+        lastPromptHash.set(projectId, hash);
+
+        const synthEvent: ChatEvent = {
+          id: `synth-ask:${projectId}:${Buffer.from(hash).toString('base64').slice(0, 20)}`,
+          role: ri.role,
+          sessionId: ri.sessionId,
+          timestamp: new Date().toISOString(),
+          kind: 'ask_question' as any,
+          question: {
+            text: detected.question,
+            options: detected.options,
+            toolUseId: `synth:${Date.now()}`,
+          },
+        };
+        console.error(`[chat-ws] synth-ask project=${projectId} role=${ri.role} q="${detected.question.slice(0, 40)}"`);
+        pushEvents(projectId, [synthEvent], undefined);
+      } catch {}
+    }
+  };
+
+  const interval = setInterval(tick, 1500);
+  promptDetectors.set(projectId, interval);
+  tick(); // immediate first check
 }
 
 function watchProject(projectId: number) {
@@ -618,6 +714,10 @@ function watchProject(projectId: number) {
   }
 
   chatTails.set(projectId, tails);
+
+  // [412] Start pane prompt detection alongside tail -F
+  const sessionName = storage.getProject(projectId)?.tmux_session_name;
+  if (sessionName) startPromptDetection(projectId, sessionName, roleInfos).catch(() => {});
 }
 
 function unwatchProject(projectId: number) {
@@ -626,6 +726,9 @@ function unwatchProject(projectId: number) {
     for (const { proc } of tails) { try { proc.kill(); } catch {} }
     chatTails.delete(projectId);
   }
+  const det = promptDetectors.get(projectId);
+  if (det) { clearInterval(det); promptDetectors.delete(projectId); }
+  lastPromptHash.delete(projectId);
 }
 
 export function createChatWss(): WebSocketServer {
