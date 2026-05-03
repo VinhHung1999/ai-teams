@@ -3,6 +3,7 @@
 import { useRef, useEffect, useState, useCallback } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { ToolCard } from "./ToolCard";
 import type { ChatEvent } from "@/lib/chat-types";
 
 // ── Role colors ───────────────────────────────────────────────────────────────
@@ -328,13 +329,23 @@ function EventRow({
             marginTop: isConsecutiveTool ? 0 : 8,
           }}
         >
-          <CompactToolCard
-            event={event}
-            result={toolResultMap.get(event.tool?.toolUseId ?? "")}
-          />
+          {(() => {
+            const result = toolResultMap.get(event.tool?.toolUseId ?? "");
+            const status = result
+              ? result.tool?.isError ? "error" : "success"
+              : "pending";
+            return (
+              <ToolCard
+                name={event.tool?.name ?? "unknown"}
+                input={event.tool?.input}
+                output={result?.tool?.output != null ? String(result.tool.output) : undefined}
+                status={status}
+              />
+            );
+          })()}
         </div>
       )}
-      {/* tool_result events are rendered inline via CompactToolCard — skip separate rendering */}
+      {/* tool_result events are rendered inline via ToolCard — skip separate rendering */}
     </>
   );
 }

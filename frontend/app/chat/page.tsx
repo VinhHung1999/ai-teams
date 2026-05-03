@@ -136,20 +136,50 @@ export default function ChatPage() {
     }
   }, [selectedId, loadingHistory, hasMore]);
 
-  // WS: append new events, deduplicate by id
+  // [343] WS dedup: for BOSS message events, replace matching optimistic (5s window) to avoid dup.
+  // Backend now strips '[via UI] BOSS: ' prefix; this also handles legacy events that still have it.
+  const BOSS_PREFIX_RE = /^\[via UI\]\s*BOSS:\s*/;
+  const DEDUP_WINDOW_MS = 5000;
+
   const handleWsEvents = useCallback((newEvts: ChatEvent[]) => {
     setEvents((prev) => {
       const existingIds = new Set(prev.map((e) => e.id));
-      const fresh = newEvts.filter((e) => !existingIds.has(e.id));
-      return fresh.length === 0 ? prev : [...prev, ...fresh];
+      const result = [...prev];
+
+      for (const evt of newEvts) {
+        if (existingIds.has(evt.id)) continue;
+
+        if (evt.role === "BOSS" && evt.kind === "message") {
+          // Strip legacy prefix if backend hasn't stripped it yet
+          const cleanText = evt.text?.replace(BOSS_PREFIX_RE, "") ?? "";
+          const evtTime = new Date(evt.timestamp).getTime();
+          const optIdx = result.findIndex(
+            (e) =>
+              e.id.startsWith("optimistic-") &&
+              e.role === "BOSS" &&
+              e.text === cleanText &&
+              Math.abs(new Date(e.timestamp).getTime() - evtTime) < DEDUP_WINDOW_MS,
+          );
+          if (optIdx !== -1) {
+            result[optIdx] = { ...evt, text: cleanText };
+          } else {
+            result.push({ ...evt, text: cleanText });
+          }
+          existingIds.add(evt.id);
+          continue;
+        }
+
+        result.push(evt);
+        existingIds.add(evt.id);
+      }
+      return result;
     });
+
     // Update preview + lastEventAt outside the updater
     const last = newEvts[newEvts.length - 1];
     if (last && selectedId) {
-      setLastEvents((p) => ({
-        ...p,
-        [selectedId]: last.text?.slice(0, 60) ?? last.tool?.name ?? "",
-      }));
+      const cleanText = last.text?.replace(BOSS_PREFIX_RE, "") ?? last.tool?.name ?? "";
+      setLastEvents((p) => ({ ...p, [selectedId]: cleanText.slice(0, 60) }));
       setLastEventAt((p) => ({ ...p, [selectedId]: last.timestamp }));
     }
   }, [selectedId]);

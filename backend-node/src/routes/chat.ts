@@ -68,6 +68,10 @@ function parseJsonlLine(
 
   const events: ChatEvent[] = [];
 
+  // Strip '[via UI] BOSS:' prefix from any user text — legacy prefix used by UI send route
+  const BOSS_PREFIX_RE = /^\[via UI\]\s*BOSS:\s*/;
+  const stripBossPrefix = (t: string) => t.replace(BOSS_PREFIX_RE, '');
+
   if (d.type === 'user') {
     const content = d.message?.content;
 
@@ -78,7 +82,7 @@ function parseJsonlLine(
         sessionId,
         timestamp: ts,
         kind: 'message',
-        text: content,
+        text: stripBossPrefix(content),
       });
     } else if (Array.isArray(content)) {
       const textParts = content
@@ -92,7 +96,7 @@ function parseJsonlLine(
           sessionId,
           timestamp: ts,
           kind: 'message',
-          text: textParts,
+          text: stripBossPrefix(textParts),
         });
       }
       for (const c of content) {
