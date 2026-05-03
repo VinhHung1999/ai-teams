@@ -51,36 +51,6 @@ function dayKey(iso: string): string {
   return iso.slice(0, 10);
 }
 
-function fileBasename(p: string): string {
-  return p.split(/[/\\]/).pop() ?? p;
-}
-
-function toolIcon(name: string): string {
-  if (name === "Read") return "📖";
-  if (name === "Edit" || name === "Write") return "✏️";
-  if (name === "Bash") return "💻";
-  if (name.includes("Grep") || name === "Glob") return "🔍";
-  if (name === "WebFetch" || name === "WebSearch") return "🌐";
-  if (name === "Agent" || name === "Task") return "🤖";
-  return "⚡";
-}
-
-function toolSummary(name: string, input: any): string {
-  if (!input) return "";
-  if ((name === "Read" || name === "Edit" || name === "Write") && input.file_path) {
-    return fileBasename(String(input.file_path));
-  }
-  if (name === "Bash" && input.command) {
-    const cmd = String(input.command);
-    return cmd.length > 60 ? cmd.slice(0, 60) + "…" : cmd;
-  }
-  if ((name.includes("Grep") || name === "Glob") && (input.pattern || input.glob)) {
-    const p = String(input.pattern || input.glob);
-    return p.length > 60 ? p.slice(0, 60) + "…" : p;
-  }
-  return "";
-}
-
 // ── Markdown components ───────────────────────────────────────────────────────
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -132,73 +102,6 @@ const mdComponents: Record<string, any> = {
     </pre>
   ),
 };
-
-// ── Compact tool card (tool_use + paired tool_result merged) ──────────────────
-
-function CompactToolCard({ event, result }: { event: ChatEvent; result?: ChatEvent }) {
-  const [expanded, setExpanded] = useState(false);
-  const tool = event.tool!;
-  const icon = toolIcon(tool.name);
-  const summary = toolSummary(tool.name, tool.input);
-  const hasResult = !!result;
-  const isError = result?.tool?.isError ?? false;
-
-  return (
-    <div style={{ borderLeft: `2px solid ${isError ? "rgba(239,68,68,0.35)" : "var(--c-accent-soft)"}`, marginBottom: 1 }}>
-      <button
-        onClick={() => setExpanded((x) => !x)}
-        className="w-full flex items-center gap-1.5 text-left"
-        style={{
-          padding: "3px 8px", fontSize: 12, lineHeight: 1.5,
-          background: isError ? "rgba(239,68,68,0.03)" : "rgba(0,0,0,0.025)",
-          color: "var(--c-fg-2)",
-        }}
-        onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(0,0,0,0.05)")}
-        onMouseLeave={(e) => (e.currentTarget.style.background = isError ? "rgba(239,68,68,0.03)" : "rgba(0,0,0,0.025)")}
-      >
-        <span style={{ flexShrink: 0, fontSize: 11 }}>{icon}</span>
-        <span style={{ fontFamily: "var(--font-geist-mono, monospace)", color: "var(--c-fg-1)", fontWeight: 600, flexShrink: 0 }}>
-          {tool.name}
-        </span>
-        {summary && (
-          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, color: "var(--c-fg-2)", marginLeft: 4 }}>
-            {summary}
-          </span>
-        )}
-        <span style={{ marginLeft: "auto", flexShrink: 0, paddingLeft: 6 }}>
-          {!hasResult && <span style={{ color: "var(--c-fg-3)", fontSize: 10 }}>…</span>}
-          {hasResult && <span style={{ color: isError ? "#ef4444" : "#10b981", fontWeight: 700 }}>{isError ? "✗" : "✓"}</span>}
-        </span>
-        <span style={{ flexShrink: 0, color: "var(--c-fg-3)", fontSize: 9, marginLeft: 4 }}>{expanded ? "▲" : "▼"}</span>
-      </button>
-      {expanded && (
-        <div style={{ padding: "4px 8px 6px", borderTop: "1px solid var(--c-line-soft)", background: "rgba(0,0,0,0.015)" }}>
-          {tool.input && (
-            <pre style={{
-              fontFamily: "var(--font-geist-mono, monospace)", fontSize: 11, color: "var(--c-fg-2)",
-              overflowX: "auto", maxHeight: 150, overflowY: "auto",
-              whiteSpace: "pre-wrap", wordBreak: "break-all", margin: "0 0 4px",
-            }}>
-              {JSON.stringify(tool.input, null, 2)}
-            </pre>
-          )}
-          {result?.tool?.output != null && (
-            <pre style={{
-              fontFamily: "var(--font-geist-mono, monospace)", fontSize: 11,
-              color: isError ? "#ef4444" : "var(--c-fg-2)",
-              overflowX: "auto", maxHeight: 150, overflowY: "auto",
-              whiteSpace: "pre-wrap", wordBreak: "break-all", margin: 0,
-              borderTop: tool.input ? "1px solid var(--c-line-soft)" : "none",
-              paddingTop: tool.input ? 4 : 0,
-            }}>
-              {String(result.tool.output)}
-            </pre>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
 
 // ── Message bubble ────────────────────────────────────────────────────────────
 

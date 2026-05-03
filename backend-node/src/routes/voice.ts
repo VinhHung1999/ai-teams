@@ -96,10 +96,10 @@ async function transcribeWithSoniox(audioFilePath: string, apiKey: string): Prom
       });
 
       ff.stdout.on('end', () => {
-        // Wait 1s for Soniox to process remaining buffer, then close
+        // 2.5s flush window — gives Soniox time to process remaining PCM buffer
         setTimeout(() => {
           if (ws.readyState === WebSocket.OPEN) ws.close();
-        }, 1000);
+        }, 2500);
       });
 
       ff.on('error', (e) => finish(new Error(`ffmpeg: ${e.message}`)));
@@ -113,15 +113,9 @@ async function transcribeWithSoniox(audioFilePath: string, apiKey: string): Prom
         };
         if (msg.error_message) { finish(new Error(`Soniox: ${msg.error_message}`)); return; }
         if (msg.tokens && msg.tokens.length > 0) {
-          // Prefer is_final tokens; fall back to all tokens in the last message
-          // (Soniox sends the full accumulated token list each time, so last msg = best transcript)
-          const finals = msg.tokens.filter((t) => t.is_final).map((t) => t.text).join('');
-          if (finals) {
-            finalText = finals;
-          } else {
-            // Keep all tokens as fallback (interim); last message wins
-            finalText = msg.tokens.map((t) => t.text).join('');
-          }
+          // Soniox sends the FULL accumulated token list in each message (not deltas).
+          // The last non-empty message has the most complete transcript — use all tokens.
+          finalText = msg.tokens.map((t) => t.text).join('');
         }
       } catch {}
     });
