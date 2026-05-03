@@ -1,18 +1,11 @@
 "use client";
 
 import { useRef, useEffect, useState, useCallback } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import type { ChatEvent } from "@/lib/chat-types";
 
-interface ChatStreamProps {
-  events: ChatEvent[];
-  loading?: boolean;
-  hasMore?: boolean;
-  onLoadMore?: () => void;
-  filterRole?: string;
-  className?: string;
-}
-
-// ── Role colors (matches design CSS) ──────────────────────────────────────────
+// ── Role colors ───────────────────────────────────────────────────────────────
 
 const ROLE_COLOR: Record<string, string> = {
   PO:   "#8b5cf6",
@@ -57,162 +50,150 @@ function dayKey(iso: string): string {
   return iso.slice(0, 10);
 }
 
-// ── Markdown renderer ─────────────────────────────────────────────────────────
+function fileBasename(p: string): string {
+  return p.split(/[/\\]/).pop() ?? p;
+}
 
-function SimpleMarkdown({ text }: { text: string }) {
-  const parts = text.split(/(```[\s\S]*?```)/g);
+function toolIcon(name: string): string {
+  if (name === "Read") return "📖";
+  if (name === "Edit" || name === "Write") return "✏️";
+  if (name === "Bash") return "💻";
+  if (name.includes("Grep") || name === "Glob") return "🔍";
+  if (name === "WebFetch" || name === "WebSearch") return "🌐";
+  if (name === "Agent" || name === "Task") return "🤖";
+  return "⚡";
+}
+
+function toolSummary(name: string, input: any): string {
+  if (!input) return "";
+  if ((name === "Read" || name === "Edit" || name === "Write") && input.file_path) {
+    return fileBasename(String(input.file_path));
+  }
+  if (name === "Bash" && input.command) {
+    const cmd = String(input.command);
+    return cmd.length > 60 ? cmd.slice(0, 60) + "…" : cmd;
+  }
+  if ((name.includes("Grep") || name === "Glob") && (input.pattern || input.glob)) {
+    const p = String(input.pattern || input.glob);
+    return p.length > 60 ? p.slice(0, 60) + "…" : p;
+  }
+  return "";
+}
+
+// ── Markdown components ───────────────────────────────────────────────────────
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const mdComponents: Record<string, any> = {
+  p: ({ children }: any) => <p style={{ margin: "2px 0", lineHeight: 1.45 }}>{children}</p>,
+  h1: ({ children }: any) => <p style={{ fontSize: 16, fontWeight: 700, margin: "6px 0 2px" }}>{children}</p>,
+  h2: ({ children }: any) => <p style={{ fontSize: 15, fontWeight: 600, margin: "5px 0 2px" }}>{children}</p>,
+  h3: ({ children }: any) => <p style={{ fontSize: 14, fontWeight: 600, margin: "4px 0 2px" }}>{children}</p>,
+  a: ({ href, children }: any) => (
+    <a href={href} target="_blank" rel="noopener noreferrer" style={{ color: "var(--c-accent)", textDecoration: "underline" }}>{children}</a>
+  ),
+  ul: ({ children }: any) => <ul style={{ paddingLeft: 18, margin: "3px 0" }}>{children}</ul>,
+  ol: ({ children }: any) => <ol style={{ paddingLeft: 18, margin: "3px 0" }}>{children}</ol>,
+  li: ({ children }: any) => <li style={{ marginBottom: 1 }}>{children}</li>,
+  blockquote: ({ children }: any) => (
+    <blockquote style={{ borderLeft: "3px solid var(--c-accent-soft)", paddingLeft: 10, margin: "4px 0", color: "var(--c-fg-1)" }}>
+      {children}
+    </blockquote>
+  ),
+  table: ({ children }: any) => (
+    <div style={{ overflowX: "auto", margin: "4px 0" }}>
+      <table style={{ borderCollapse: "collapse", fontSize: 13, width: "100%" }}>{children}</table>
+    </div>
+  ),
+  th: ({ children }: any) => (
+    <th style={{ padding: "4px 8px", borderBottom: "1px solid var(--c-line)", textAlign: "left", fontWeight: 600 }}>{children}</th>
+  ),
+  td: ({ children }: any) => (
+    <td style={{ padding: "3px 8px", borderBottom: "1px solid var(--c-line-soft)" }}>{children}</td>
+  ),
+  code: ({ className, children }: any) => {
+    if (!className) {
+      return (
+        <code style={{ padding: "1px 5px", borderRadius: 4, background: "rgba(0,0,0,0.06)", fontFamily: "var(--font-geist-mono, monospace)", fontSize: 13, color: "var(--c-fg-0)" }}>
+          {children}
+        </code>
+      );
+    }
+    return <code className={className}>{children}</code>;
+  },
+  pre: ({ children }: any) => (
+    <pre style={{
+      margin: "6px 0 4px", padding: "10px 12px", borderRadius: 8,
+      background: "rgba(0,0,0,0.06)", fontFamily: "var(--font-geist-mono, monospace)",
+      fontSize: 12.5, lineHeight: 1.55, overflowX: "auto", whiteSpace: "pre",
+      color: "var(--c-fg-0)",
+    }}>
+      {children}
+    </pre>
+  ),
+};
+
+// ── Compact tool card (tool_use + paired tool_result merged) ──────────────────
+
+function CompactToolCard({ event, result }: { event: ChatEvent; result?: ChatEvent }) {
+  const [expanded, setExpanded] = useState(false);
+  const tool = event.tool!;
+  const icon = toolIcon(tool.name);
+  const summary = toolSummary(tool.name, tool.input);
+  const hasResult = !!result;
+  const isError = result?.tool?.isError ?? false;
+
   return (
-    <div style={{ fontSize: 14, lineHeight: 1.45, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
-      {parts.map((part, i) => {
-        if (part.startsWith("```")) {
-          const lines = part.split("\n");
-          const lang = lines[0].replace("```", "").trim();
-          const code = lines.slice(1, -1).join("\n");
-          return (
-            <pre
-              key={i}
-              style={{
-                margin: "6px 0 4px",
-                padding: "10px 12px",
-                borderRadius: 8,
-                background: "rgba(0,0,0,0.06)",
-                fontFamily: "var(--font-geist-mono, monospace)",
-                fontSize: 12.5,
-                lineHeight: 1.55,
-                overflowX: "auto",
-                whiteSpace: "pre",
-                color: "var(--c-fg-0)",
-              }}
-            >
-              {lang && (
-                <span style={{ display: "block", fontSize: 10, fontWeight: 600, color: "var(--c-fg-2)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4, fontFamily: "inherit" }}>
-                  {lang}
-                </span>
-              )}
-              {code}
-            </pre>
-          );
-        }
-        const inlineParts = part.split(/(`[^`]+`)/g);
-        return (
-          <span key={i}>
-            {inlineParts.map((p, j) =>
-              p.startsWith("`") ? (
-                <code key={j} style={{ padding: "1px 5px", borderRadius: 4, background: "rgba(0,0,0,0.06)", fontFamily: "var(--font-geist-mono, monospace)", fontSize: 13, color: "var(--c-fg-0)" }}>
-                  {p.slice(1, -1)}
-                </code>
-              ) : <span key={j}>{p}</span>
-            )}
+    <div style={{ borderLeft: `2px solid ${isError ? "rgba(239,68,68,0.35)" : "var(--c-accent-soft)"}`, marginBottom: 1 }}>
+      <button
+        onClick={() => setExpanded((x) => !x)}
+        className="w-full flex items-center gap-1.5 text-left"
+        style={{
+          padding: "3px 8px", fontSize: 12, lineHeight: 1.5,
+          background: isError ? "rgba(239,68,68,0.03)" : "rgba(0,0,0,0.025)",
+          color: "var(--c-fg-2)",
+        }}
+        onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(0,0,0,0.05)")}
+        onMouseLeave={(e) => (e.currentTarget.style.background = isError ? "rgba(239,68,68,0.03)" : "rgba(0,0,0,0.025)")}
+      >
+        <span style={{ flexShrink: 0, fontSize: 11 }}>{icon}</span>
+        <span style={{ fontFamily: "var(--font-geist-mono, monospace)", color: "var(--c-fg-1)", fontWeight: 600, flexShrink: 0 }}>
+          {tool.name}
+        </span>
+        {summary && (
+          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, color: "var(--c-fg-2)", marginLeft: 4 }}>
+            {summary}
           </span>
-        );
-      })}
-    </div>
-  );
-}
-
-// ── Tool cards (glass style) ─────────────────────────────────────────────────
-
-function ToolUseCard({ event }: { event: ChatEvent }) {
-  const [expanded, setExpanded] = useState(false);
-  const tool = event.tool!;
-
-  const inputSummary = (() => {
-    const inp = tool.input;
-    if (!inp) return "";
-    if (inp.file_path) return inp.file_path as string;
-    if (inp.command) return (inp.command as string).slice(0, 80);
-    if (inp.path) return inp.path as string;
-    return "";
-  })();
-
-  return (
-    <div
-      style={{
-        borderRadius: 8,
-        border: "1px solid var(--c-line)",
-        background: "rgba(0,0,0,0.04)",
-        overflow: "hidden",
-        fontSize: 12,
-        marginTop: 4,
-      }}
-    >
-      <button
-        onClick={() => setExpanded((x) => !x)}
-        className="w-full flex items-center gap-2 text-left"
-        style={{ padding: "8px 12px", background: "transparent", color: "var(--c-fg-1)" }}
-        onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(0,0,0,0.04)")}
-        onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
-      >
-        <span>🔧</span>
-        <span style={{ fontFamily: "var(--font-geist-mono, monospace)", fontWeight: 600, color: "var(--c-fg-0)" }}>{tool.name}</span>
-        {inputSummary && <span style={{ color: "var(--c-fg-2)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{inputSummary}</span>}
-        <span style={{ marginLeft: "auto", flexShrink: 0, color: "var(--c-fg-3)" }}>{expanded ? "▲" : "▼"}</span>
-      </button>
-      {expanded && tool.input && (
-        <pre
-          style={{
-            padding: "0 12px 8px",
-            fontFamily: "var(--font-geist-mono, monospace)",
-            fontSize: 11.5,
-            color: "var(--c-fg-1)",
-            overflowX: "auto",
-            maxHeight: 192,
-            overflowY: "auto",
-            borderTop: "1px solid var(--c-line)",
-          }}
-        >
-          {JSON.stringify(tool.input, null, 2)}
-        </pre>
-      )}
-    </div>
-  );
-}
-
-function ToolResultCard({ event }: { event: ChatEvent }) {
-  const [expanded, setExpanded] = useState(false);
-  const tool = event.tool!;
-  const output = String(tool.output ?? "");
-  const truncated = output.length > 1000;
-  const displayOutput = truncated && !expanded ? output.slice(0, 1000) + "…" : output;
-
-  return (
-    <div
-      style={{
-        borderRadius: 8,
-        border: `1px solid ${tool.isError ? "rgba(239,68,68,0.3)" : "var(--c-line)"}`,
-        background: tool.isError ? "rgba(239,68,68,0.06)" : "rgba(0,0,0,0.03)",
-        overflow: "hidden",
-        fontSize: 12,
-        marginTop: 4,
-      }}
-    >
-      <button
-        onClick={() => setExpanded((x) => !x)}
-        className="w-full flex items-center gap-2 text-left"
-        style={{ padding: "6px 12px", background: "transparent", color: "var(--c-fg-2)" }}
-        onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(0,0,0,0.03)")}
-        onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
-      >
-        <span>{tool.isError ? "❌" : "✓"}</span>
-        <span style={{ fontFamily: "var(--font-geist-mono, monospace)", color: "var(--c-fg-2)" }}>{tool.name}</span>
-        <span style={{ marginLeft: "auto", flexShrink: 0, color: "var(--c-fg-3)" }}>{expanded ? "▲" : "▼"}</span>
+        )}
+        <span style={{ marginLeft: "auto", flexShrink: 0, paddingLeft: 6 }}>
+          {!hasResult && <span style={{ color: "var(--c-fg-3)", fontSize: 10 }}>…</span>}
+          {hasResult && <span style={{ color: isError ? "#ef4444" : "#10b981", fontWeight: 700 }}>{isError ? "✗" : "✓"}</span>}
+        </span>
+        <span style={{ flexShrink: 0, color: "var(--c-fg-3)", fontSize: 9, marginLeft: 4 }}>{expanded ? "▲" : "▼"}</span>
       </button>
       {expanded && (
-        <pre
-          style={{
-            padding: "0 12px 8px",
-            fontFamily: "var(--font-geist-mono, monospace)",
-            fontSize: 11.5,
-            color: "var(--c-fg-2)",
-            overflowX: "auto",
-            maxHeight: 192,
-            overflowY: "auto",
-            borderTop: "1px solid var(--c-line)",
-            whiteSpace: "pre-wrap",
-          }}
-        >
-          {displayOutput}
-        </pre>
+        <div style={{ padding: "4px 8px 6px", borderTop: "1px solid var(--c-line-soft)", background: "rgba(0,0,0,0.015)" }}>
+          {tool.input && (
+            <pre style={{
+              fontFamily: "var(--font-geist-mono, monospace)", fontSize: 11, color: "var(--c-fg-2)",
+              overflowX: "auto", maxHeight: 150, overflowY: "auto",
+              whiteSpace: "pre-wrap", wordBreak: "break-all", margin: "0 0 4px",
+            }}>
+              {JSON.stringify(tool.input, null, 2)}
+            </pre>
+          )}
+          {result?.tool?.output != null && (
+            <pre style={{
+              fontFamily: "var(--font-geist-mono, monospace)", fontSize: 11,
+              color: isError ? "#ef4444" : "var(--c-fg-2)",
+              overflowX: "auto", maxHeight: 150, overflowY: "auto",
+              whiteSpace: "pre-wrap", wordBreak: "break-all", margin: 0,
+              borderTop: tool.input ? "1px solid var(--c-line-soft)" : "none",
+              paddingTop: tool.input ? 4 : 0,
+            }}>
+              {String(result.tool.output)}
+            </pre>
+          )}
+        </div>
       )}
     </div>
   );
@@ -229,25 +210,18 @@ function MessageBubble({ event, prevRole }: { event: ChatEvent; prevRole?: strin
   return (
     <div
       className="flex items-end gap-2"
-      style={{
-        justifyContent: isBoss ? "flex-end" : "flex-start",
-        marginTop: sameAuthor ? 1 : 8,
-      }}
+      style={{ justifyContent: isBoss ? "flex-end" : "flex-start", marginTop: sameAuthor ? 1 : 8 }}
     >
-      {/* Left avatar (agent) */}
+      {/* Left avatar */}
       {!isBoss && (
-        <div
-          style={{
-            width: 28, height: 28,
-            borderRadius: "50%",
-            background: sameAuthor ? "transparent" : roleGradient,
-            flexShrink: 0,
-            marginBottom: 2,
-            display: "flex", alignItems: "center", justifyContent: "center",
-            color: "white", fontWeight: 600, fontSize: 11,
-            visibility: sameAuthor ? "hidden" : "visible",
-          }}
-        >
+        <div style={{
+          width: 28, height: 28, borderRadius: "50%",
+          background: sameAuthor ? "transparent" : roleGradient,
+          flexShrink: 0, marginBottom: 2,
+          display: "flex", alignItems: "center", justifyContent: "center",
+          color: "white", fontWeight: 600, fontSize: 11,
+          visibility: sameAuthor ? "hidden" : "visible",
+        }}>
           {event.role[0]}
         </div>
       )}
@@ -255,45 +229,34 @@ function MessageBubble({ event, prevRole }: { event: ChatEvent; prevRole?: strin
       {/* Bubble column */}
       <div
         className="chat-bubble-col"
-        style={{
-          display: "flex",
-          flexDirection: "column",
-          alignItems: isBoss ? "flex-end" : "flex-start",
-        }}
+        style={{ display: "flex", flexDirection: "column", alignItems: isBoss ? "flex-end" : "flex-start" }}
       >
-        {/* Author row (only first message in a sequence) */}
         {!sameAuthor && !isBoss && (
           <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 2, color: roleColor }}>
             {event.role}
           </div>
         )}
 
-        {/* Bubble */}
         <div
           className="glass-bubble"
           style={{
             background: isBoss ? "rgba(220,250,200,0.95)" : "rgba(255,255,255,0.96)",
-            borderRadius: 14,
-            ...(isBoss ? { borderBottomRightRadius: 4 } : { borderBottomLeftRadius: sameAuthor ? 14 : 4 }),
+            borderRadius: 18,
+            ...(isBoss ? { borderBottomRightRadius: 4 } : { borderBottomLeftRadius: sameAuthor ? 18 : 4 }),
             padding: "7px 12px 6px",
             boxShadow: "0 1px 2px rgba(0,0,0,0.08)",
             color: "var(--c-fg-0)",
             position: "relative",
           }}
         >
-          {event.text && <SimpleMarkdown text={event.text} />}
-
-          {/* Time float right */}
-          <span
-            style={{
-              float: "right",
-              fontSize: 11,
-              color: "var(--c-fg-2)",
-              marginLeft: 8,
-              marginTop: 4,
-              userSelect: "none",
-            }}
-          >
+          {event.text && (
+            <div style={{ fontSize: 14, lineHeight: 1.45 }}>
+              <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>
+                {event.text}
+              </ReactMarkdown>
+            </div>
+          )}
+          <span style={{ float: "right", fontSize: 11, color: "var(--c-fg-2)", marginLeft: 8, marginTop: 4, userSelect: "none" }}>
             {formatTime(event.timestamp)}
           </span>
         </div>
@@ -301,18 +264,14 @@ function MessageBubble({ event, prevRole }: { event: ChatEvent; prevRole?: strin
 
       {/* Right avatar (BOSS) */}
       {isBoss && (
-        <div
-          style={{
-            width: 28, height: 28,
-            borderRadius: "50%",
-            background: sameAuthor ? "transparent" : roleGradient,
-            flexShrink: 0,
-            marginBottom: 2,
-            display: "flex", alignItems: "center", justifyContent: "center",
-            color: "white", fontWeight: 600, fontSize: 11,
-            visibility: sameAuthor ? "hidden" : "visible",
-          }}
-        >
+        <div style={{
+          width: 28, height: 28, borderRadius: "50%",
+          background: sameAuthor ? "transparent" : roleGradient,
+          flexShrink: 0, marginBottom: 2,
+          display: "flex", alignItems: "center", justifyContent: "center",
+          color: "white", fontWeight: 600, fontSize: 11,
+          visibility: sameAuthor ? "hidden" : "visible",
+        }}>
           B
         </div>
       )}
@@ -325,29 +284,34 @@ function MessageBubble({ event, prevRole }: { event: ChatEvent; prevRole?: strin
 function DaySeparator({ iso }: { iso: string }) {
   return (
     <div style={{ display: "flex", justifyContent: "center", margin: "12px 0 8px" }}>
-      <span
-        style={{
-          background: "rgba(0,0,0,0.35)",
-          backdropFilter: "blur(8px)",
-          WebkitBackdropFilter: "blur(8px)",
-          color: "white",
-          fontSize: 12,
-          fontWeight: 500,
-          padding: "4px 10px",
-          borderRadius: 12,
-        }}
-      >
+      <span style={{
+        background: "rgba(0,0,0,0.35)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)",
+        color: "white", fontSize: 12, fontWeight: 500, padding: "4px 10px", borderRadius: 12,
+      }}>
         {formatDaySep(iso)}
       </span>
     </div>
   );
 }
 
-// ── Event row (with tool cards in bubble-width column) ────────────────────────
+// ── Event row ─────────────────────────────────────────────────────────────────
 
-function EventRow({ event, prevRole, prevDay }: { event: ChatEvent; prevRole?: string; prevDay?: string }) {
+function EventRow({
+  event,
+  prevRole,
+  prevDay,
+  prevKind,
+  toolResultMap,
+}: {
+  event: ChatEvent;
+  prevRole?: string;
+  prevDay?: string;
+  prevKind?: string;
+  toolResultMap: Map<string, ChatEvent>;
+}) {
   const thisDay = dayKey(event.timestamp);
   const showDaySep = prevDay !== undefined && prevDay !== thisDay;
+  const isConsecutiveTool = event.kind === "tool_use" && prevKind === "tool_use";
 
   return (
     <>
@@ -356,25 +320,51 @@ function EventRow({ event, prevRole, prevDay }: { event: ChatEvent; prevRole?: s
         <MessageBubble event={event} prevRole={prevRole} />
       )}
       {event.kind === "tool_use" && (
-        <div style={{ marginLeft: event.role === "BOSS" ? "auto" : 36, marginRight: event.role === "BOSS" ? 36 : "auto", maxWidth: "65%" }}>
-          <ToolUseCard event={event} />
+        <div
+          className="chat-tool-card-col"
+          style={{
+            marginLeft: event.role === "BOSS" ? "auto" : 36,
+            marginRight: event.role === "BOSS" ? 36 : "auto",
+            marginTop: isConsecutiveTool ? 0 : 8,
+          }}
+        >
+          <CompactToolCard
+            event={event}
+            result={toolResultMap.get(event.tool?.toolUseId ?? "")}
+          />
         </div>
       )}
-      {event.kind === "tool_result" && (
-        <div style={{ marginLeft: event.role === "BOSS" ? "auto" : 36, marginRight: event.role === "BOSS" ? 36 : "auto", maxWidth: "65%" }}>
-          <ToolResultCard event={event} />
-        </div>
-      )}
+      {/* tool_result events are rendered inline via CompactToolCard — skip separate rendering */}
     </>
   );
 }
 
-// ── Main ChatStream ───────────────────────────────────────────────────────────
+// ── ChatStream ────────────────────────────────────────────────────────────────
+
+interface ChatStreamProps {
+  events: ChatEvent[];
+  loading?: boolean;
+  hasMore?: boolean;
+  onLoadMore?: () => void;
+  filterRole?: string;
+  className?: string;
+}
 
 export function ChatStream({ events, loading, hasMore, onLoadMore, filterRole, className = "" }: ChatStreamProps) {
-  const visibleEvents = filterRole
+  const filtered = filterRole
     ? events.filter((e) => e.role === "BOSS" || e.role === filterRole)
     : events;
+
+  // Build tool_result lookup (toolUseId → tool_result event)
+  const toolResultMap = new Map<string, ChatEvent>();
+  for (const e of filtered) {
+    if (e.kind === "tool_result" && e.tool?.toolUseId) {
+      toolResultMap.set(e.tool.toolUseId, e);
+    }
+  }
+
+  // Exclude tool_result events from display list (they're embedded in CompactToolCard)
+  const displayEvents = filtered.filter((e) => e.kind !== "tool_result");
 
   const containerRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -397,7 +387,7 @@ export function ChatStream({ events, loading, hasMore, onLoadMore, filterRole, c
 
   useEffect(() => {
     if (isAtBottomRef.current) scrollToBottom();
-  }, [visibleEvents.length, scrollToBottom]);
+  }, [displayEvents.length, scrollToBottom]);
 
   const handleScroll = () => {
     const el = containerRef.current;
@@ -405,7 +395,7 @@ export function ChatStream({ events, loading, hasMore, onLoadMore, filterRole, c
     if (el.scrollTop < 80) onLoadMore();
   };
 
-  if (visibleEvents.length === 0 && !loading) {
+  if (displayEvents.length === 0 && !loading) {
     return (
       <div className={`flex-1 flex items-center justify-center ${className}`} style={{ color: "var(--c-fg-2)", fontSize: 14 }}>
         {filterRole
@@ -437,15 +427,16 @@ export function ChatStream({ events, loading, hasMore, onLoadMore, filterRole, c
           </button>
         )}
 
-        {/* Inject day separator before the very first event */}
-        {visibleEvents.length > 0 && <DaySeparator iso={visibleEvents[0].timestamp} />}
+        {displayEvents.length > 0 && <DaySeparator iso={displayEvents[0].timestamp} />}
 
-        {visibleEvents.map((e, i) => (
+        {displayEvents.map((e, i) => (
           <EventRow
             key={e.id}
             event={e}
-            prevRole={i > 0 ? visibleEvents[i - 1].role : undefined}
-            prevDay={i > 0 ? dayKey(visibleEvents[i - 1].timestamp) : dayKey(e.timestamp)}
+            prevRole={i > 0 ? displayEvents[i - 1].role : undefined}
+            prevDay={i > 0 ? dayKey(displayEvents[i - 1].timestamp) : dayKey(e.timestamp)}
+            prevKind={i > 0 ? displayEvents[i - 1].kind : undefined}
+            toolResultMap={toolResultMap}
           />
         ))}
         <div ref={bottomRef} />

@@ -35,12 +35,34 @@ export default function ChatPage() {
 
   // Last event preview per project
   const [lastEvents, setLastEvents] = useState<Record<number, string>>({});
+  // Inbox: last event timestamp per project (for sort + unread detection)
+  const [lastEventAt, setLastEventAt] = useState<Record<number, string>>({});
+  // Inbox: last read timestamp per project (persisted in localStorage)
+  const [lastReadAt, setLastReadAt] = useState<Record<number, string>>({});
 
-  // Load projects on mount
+  // Load lastReadAt from localStorage on mount (client-only)
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem("chat-read-state");
+      if (stored) setLastReadAt(JSON.parse(stored));
+    } catch {}
+  }, []);
+
+  // Load projects on mount + fetch last-events for inbox sort
   useEffect(() => {
     api.listProjects().then((ps) => {
       setProjects(ps);
-      if (ps.length > 0 && selectedId === null) {
+      // Fetch last-event timestamps for all projects
+      if (ps.length > 0) {
+        const ids = ps.map((p) => p.id).join(",");
+        fetch(`/api/chat/last-events?projectIds=${ids}`)
+          .then((r) => r.json())
+          .then((data: Record<string, string>) => {
+            const typed: Record<number, string> = {};
+            for (const [k, v] of Object.entries(data)) typed[parseInt(k)] = v;
+            setLastEventAt(typed);
+          })
+          .catch(() => {});
         handleSelectProject(ps[0].id, ps);
       }
     }).catch(() => {});
@@ -55,7 +77,15 @@ export default function ChatPage() {
     setEvents([]);
     oldestTsRef.current = undefined;
     setHasMore(false);
-    setMobileView("chat"); // on mobile: auto-switch to chat view
+    setMobileView("chat");
+
+    // Mark as read
+    const now = new Date().toISOString();
+    setLastReadAt((prev) => {
+      const updated = { ...prev, [id]: now };
+      try { localStorage.setItem("chat-read-state", JSON.stringify(updated)); } catch {}
+      return updated;
+    });
 
     if (!proj) return;
 
@@ -111,17 +141,17 @@ export default function ChatPage() {
     setEvents((prev) => {
       const existingIds = new Set(prev.map((e) => e.id));
       const fresh = newEvts.filter((e) => !existingIds.has(e.id));
-      if (fresh.length === 0) return prev;
-      // Update preview
-      const last = fresh[fresh.length - 1];
-      if (selectedId) {
-        setLastEvents((p) => ({
-          ...p,
-          [selectedId]: last.text?.slice(0, 60) ?? last.tool?.name ?? "",
-        }));
-      }
-      return [...prev, ...fresh];
+      return fresh.length === 0 ? prev : [...prev, ...fresh];
     });
+    // Update preview + lastEventAt outside the updater
+    const last = newEvts[newEvts.length - 1];
+    if (last && selectedId) {
+      setLastEvents((p) => ({
+        ...p,
+        [selectedId]: last.text?.slice(0, 60) ?? last.tool?.name ?? "",
+      }));
+      setLastEventAt((p) => ({ ...p, [selectedId]: last.timestamp }));
+    }
   }, [selectedId]);
 
   useChatWs(selectedId, handleWsEvents);
@@ -184,6 +214,8 @@ export default function ChatPage() {
             activeId={selectedId}
             onSelect={(id) => handleSelectProject(id)}
             lastEvents={lastEvents}
+            lastEventAt={lastEventAt}
+            lastReadAt={lastReadAt}
           />
         </div>
       </aside>

@@ -8,6 +8,8 @@ interface TeamListProps {
   activeId: number | null;
   onSelect: (id: number) => void;
   lastEvents?: Record<number, string>;
+  lastEventAt?: Record<number, string>;
+  lastReadAt?: Record<number, string>;
 }
 
 function teamGradient(id: number): string {
@@ -26,12 +28,12 @@ interface TeamItemProps {
   project: Project;
   active: boolean;
   preview: string;
+  unread: boolean;
   onSelect: () => void;
 }
 
-function TeamItem({ project, active, preview, onSelect }: TeamItemProps) {
+function TeamItem({ project, active, preview, unread, onSelect }: TeamItemProps) {
   const isOnline = project.tmux_active ?? false;
-  const isPinned = project.pinned ?? false;
   const letter = project.name.charAt(0).toUpperCase();
 
   return (
@@ -74,56 +76,71 @@ function TeamItem({ project, active, preview, onSelect }: TeamItemProps) {
 
       {/* Meta */}
       <div className="flex-1 min-w-0 flex flex-col gap-0.5">
-        <div className="flex items-center gap-1">
-          {isPinned && (
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: "var(--c-fg-3)", flexShrink: 0 }}>
-              <path d="M12 17v5"/><path d="M9 10.76V6a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v4.76l2 2.24v2H7v-2l2-2.24z"/>
-            </svg>
-          )}
-          <span
-            className="font-semibold truncate"
-            style={{
-              fontSize: 15,
-              color: active ? "var(--c-accent)" : "var(--c-fg-0)",
-              flex: 1,
-            }}
-          >
-            {project.name}
-          </span>
-        </div>
         <span
           className="truncate"
-          style={{ fontSize: 13, color: "var(--c-fg-2)", lineHeight: 1.35 }}
+          style={{
+            fontSize: 15,
+            fontWeight: unread ? 700 : 600,
+            color: active ? "var(--c-accent)" : "var(--c-fg-0)",
+          }}
+        >
+          {project.name}
+        </span>
+        <span
+          className="truncate"
+          style={{
+            fontSize: 13,
+            fontWeight: unread ? 600 : 400,
+            color: unread ? "var(--c-fg-0)" : "var(--c-fg-2)",
+            lineHeight: 1.35,
+          }}
         >
           {preview || (project.roles?.join(" · ") ?? "")}
         </span>
       </div>
+
+      {/* Unread dot */}
+      {unread && !active && (
+        <span
+          style={{
+            width: 8, height: 8,
+            borderRadius: "50%",
+            background: "var(--c-accent)",
+            flexShrink: 0,
+          }}
+        />
+      )}
     </button>
   );
 }
 
 type FilterTab = "all" | "unread";
 
-export function TeamList({ projects, activeId, onSelect, lastEvents = {} }: TeamListProps) {
+export function TeamList({
+  projects,
+  activeId,
+  onSelect,
+  lastEvents = {},
+  lastEventAt = {},
+  lastReadAt = {},
+}: TeamListProps) {
   const [tab, setTab] = useState<FilterTab>("all");
 
+  // Sort by last-event timestamp descending (most recent first)
   const sorted = [...projects].sort((a, b) => {
-    // Pinned first
-    const pinDiff = (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0);
-    if (pinDiff !== 0) return pinDiff;
-    // Then online
-    const onlineDiff = (b.tmux_active ? 1 : 0) - (a.tmux_active ? 1 : 0);
-    if (onlineDiff !== 0) return onlineDiff;
-    return a.name.localeCompare(b.name);
+    const aTs = lastEventAt[a.id] ?? "0";
+    const bTs = lastEventAt[b.id] ?? "0";
+    return bTs.localeCompare(aTs) || a.name.localeCompare(b.name);
   });
 
-  const filtered = tab === "unread"
-    ? sorted.filter((p) => p.tmux_active) // unread = teams with activity (approximation)
-    : sorted;
+  const filtered =
+    tab === "unread"
+      ? sorted.filter((p) => (lastEventAt[p.id] ?? "0") > (lastReadAt[p.id] ?? "0"))
+      : sorted;
 
   return (
     <div className="flex flex-col h-full">
-      {/* List head: search bar */}
+      {/* Search bar */}
       <div
         className="flex items-center gap-2 px-3 py-2.5 flex-shrink-0"
         style={{ borderBottom: "1px solid var(--c-line)" }}
@@ -160,7 +177,7 @@ export function TeamList({ projects, activeId, onSelect, lastEvents = {} }: Team
               color: tab === t ? "white" : "var(--c-fg-1)",
             }}
           >
-            {t === "all" ? "All" : "Active"}
+            {t === "all" ? "All" : "Unread"}
           </button>
         ))}
       </div>
@@ -172,15 +189,21 @@ export function TeamList({ projects, activeId, onSelect, lastEvents = {} }: Team
             No teams found.
           </p>
         ) : (
-          filtered.map((p) => (
-            <TeamItem
-              key={p.id}
-              project={p}
-              active={p.id === activeId}
-              preview={lastEvents[p.id] ?? ""}
-              onSelect={() => onSelect(p.id)}
-            />
-          ))
+          filtered.map((p) => {
+            const at = lastEventAt[p.id] ?? "0";
+            const read = lastReadAt[p.id] ?? "0";
+            const isUnread = at > read && p.id !== activeId;
+            return (
+              <TeamItem
+                key={p.id}
+                project={p}
+                active={p.id === activeId}
+                preview={lastEvents[p.id] ?? ""}
+                unread={isUnread}
+                onSelect={() => onSelect(p.id)}
+              />
+            );
+          })
         )}
       </div>
     </div>

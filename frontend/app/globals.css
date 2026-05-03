@@ -281,17 +281,29 @@ html[data-theme="light"] {
 .chat-scroll::-webkit-scrollbar-thumb { background: var(--c-fg-3); border-radius: 3px; }
 .chat-scroll::-webkit-scrollbar-thumb:hover { background: var(--c-fg-2); }
 
+/* ── InfoPanel width: 50vw desktop, full-screen mobile ── */
+.info-panel { width: min(50vw, 900px); }
+.info-panel-close { display: grid; }
+.info-panel-back  { display: none; }
+@media (max-width: 767px) {
+  .info-panel { width: 100%; }
+  .info-panel-close { display: none; }
+  .info-panel-back  { display: grid; }
+}
+
 /* ── Theme persistence helper ── */
 html { color-scheme: light; }
 
-/* ── Bubble column width: 70% desktop, 92% mobile ── */
-.chat-bubble-col { max-width: 70%; }
+/* ── Bubble + tool card column widths ── */
+.chat-bubble-col   { max-width: 70%; }
+.chat-tool-card-col { max-width: 65%; }
 
 /* ── Composer: hide menu label on mobile, hide topic status text ── */
 @media (max-width: 767px) {
   .composer-menu-label { display: none; }
   .topic-status-text { display: none; }
-  .chat-bubble-col { max-width: 92%; }
+  .chat-bubble-col    { max-width: 92%; }
+  .chat-tool-card-col { max-width: 92%; }
 }
 
 /* ── Mobile single-view layout (<768px) ── */
