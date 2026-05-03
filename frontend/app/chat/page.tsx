@@ -228,7 +228,9 @@ export default function ChatPage() {
 
   useChatWs(selectedId, handleWsEvents);
 
-  // [351] Firehose — update lastEventAt/lastEvents for all teams live
+  // [351] Firehose — update lastEventAt/lastEvents for all teams live (inbox preview only)
+  // [382] Do NOT forward to handleWsEvents for the active project — per-project WS already handles it.
+  //       Forwarding both was the root cause of duplicate bubbles.
   useFirehoseWs(useCallback((projectId, events) => {
     const last = events[events.length - 1];
     if (!last) return;
@@ -236,9 +238,7 @@ export default function ChatPage() {
     if (last.kind === "message" && last.text) {
       setLastEvents((p) => ({ ...p, [projectId]: last.text!.slice(0, 60) }));
     }
-    // If this is the active project, forward to the per-project WS handler
-    if (projectId === selectedId) handleWsEvents(events);
-  }, [selectedId, handleWsEvents]));
+  }, []));
 
   // [352] PWA Web Push
   usePushNotifications();
