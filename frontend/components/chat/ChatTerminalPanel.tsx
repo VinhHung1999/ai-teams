@@ -9,13 +9,15 @@ interface ChatTerminalPanelProps {
   selectedRole: string | null;
   onClose: () => void;
   initialWidth?: number;
+  dragSide?: "left" | "right"; // which edge has the resize handle
 }
 
 export function ChatTerminalPanel({
   project,
   selectedRole,
   onClose,
-  initialWidth = 380,
+  initialWidth = 360,
+  dragSide = "left",
 }: ChatTerminalPanelProps) {
   const termContainerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<any>(null);
@@ -110,14 +112,16 @@ export function ChatTerminalPanel({
     return () => ro.disconnect();
   }, []);
 
-  // Drag handle on left edge
+  // Drag handle — left edge: drag right = narrower; right edge: drag left = narrower
   const onDragMouseDown = useCallback((e: React.MouseEvent) => {
     dragStartXRef.current = e.clientX;
     dragStartWRef.current = panelWidth;
     e.preventDefault();
 
     const onMove = (ev: MouseEvent) => {
-      const dx = dragStartXRef.current! - ev.clientX;
+      const dx = dragSide === "left"
+        ? dragStartXRef.current! - ev.clientX  // left handle: drag left = wider
+        : ev.clientX - dragStartXRef.current!; // right handle: drag right = wider
       const w = Math.max(240, Math.min(700, dragStartWRef.current + dx));
       setPanelWidth(w);
     };
@@ -134,13 +138,19 @@ export function ChatTerminalPanel({
   return (
     <div
       className="chat-terminal-panel flex flex-col flex-shrink-0"
-      style={{ width: panelWidth, position: "relative", background: "#0d1117", borderLeft: "1px solid rgba(255,255,255,0.08)" }}
+      style={{
+        width: panelWidth, position: "relative", background: "#0d1117",
+        borderLeft: dragSide === "left" ? "1px solid rgba(255,255,255,0.08)" : undefined,
+        borderRight: dragSide === "right" ? "1px solid rgba(255,255,255,0.08)" : undefined,
+      }}
     >
-      {/* Drag handle — left edge */}
+      {/* Drag handle — left or right edge */}
       <div
         onMouseDown={onDragMouseDown}
         style={{
-          position: "absolute", left: 0, top: 0, bottom: 0, width: 4,
+          position: "absolute",
+          [dragSide === "right" ? "right" : "left"]: 0,
+          top: 0, bottom: 0, width: 4,
           cursor: "col-resize", zIndex: 10,
           background: "transparent",
         }}

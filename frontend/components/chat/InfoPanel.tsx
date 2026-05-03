@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import Link from "next/link";
 import type { Project } from "@/lib/types";
 import { api } from "@/lib/api";
@@ -16,6 +16,7 @@ interface InfoPanelProps {
   onClose: () => void;
   onTabChange: (tab: InfoPanelTab) => void;
   onSelectRole: (role: string) => void;
+  onRefreshProjects?: () => void;
 }
 
 // ── Role helpers ──────────────────────────────────────────────────────────────
@@ -246,7 +247,7 @@ function Msg({ children, style }: { children: React.ReactNode; style?: React.CSS
 
 // ── InfoPanel ─────────────────────────────────────────────────────────────────
 
-export function InfoPanel({ open, tab, project, roles, onClose, onTabChange, onSelectRole }: InfoPanelProps) {
+export function InfoPanel({ open, tab, project, roles, onClose, onTabChange, onSelectRole, onRefreshProjects }: InfoPanelProps) {
   // Esc to close
   useEffect(() => {
     if (!open) return;
@@ -254,6 +255,21 @@ export function InfoPanel({ open, tab, project, roles, onClose, onTabChange, onS
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   }, [open, onClose]);
+
+  // [372] Team management actions
+  const [loadingAction, setLoadingAction] = useState<"start" | "kill" | "refresh" | null>(null);
+  const isOnline = project?.tmux_active ?? false;
+
+  const doAction = useCallback(async (action: "start" | "kill" | "refresh") => {
+    if (!project || loadingAction) return;
+    if (action === "kill" || action === "refresh") {
+      if (!window.confirm(`${action === "kill" ? "Kill" : "Refresh"} team "${project.name}"?`)) return;
+    }
+    setLoadingAction(action);
+    try { await fetch(`/api/projects/${project.id}/${action}`, { method: "POST" }); } catch {}
+    setLoadingAction(null);
+    onRefreshProjects?.();
+  }, [project, loadingAction, onRefreshProjects]);
 
   if (!open) return null; // snap: no animation
 
@@ -349,8 +365,40 @@ export function InfoPanel({ open, tab, project, roles, onClose, onTabChange, onS
               {project.name.charAt(0).toUpperCase()}
             </div>
             <div style={{ fontSize: 20, fontWeight: 600, color: "var(--c-fg-0)" }}>{project.name}</div>
-            <div style={{ fontSize: 14, color: "var(--c-fg-2)", marginTop: 4 }}>
-              {roles.join(" · ")}
+            <div style={{ fontSize: 14, color: isOnline ? "var(--c-status-ok)" : "var(--c-fg-2)", marginTop: 4, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+              <span style={{ width: 7, height: 7, borderRadius: "50%", background: isOnline ? "var(--c-status-ok)" : "var(--c-fg-3)", display: "inline-block" }} />
+              {isOnline ? `Active · ${roles.length} pane${roles.length !== 1 ? "s" : ""}` : "Idle"}
+            </div>
+            {/* [372] Team management actions — icon buttons */}
+            <div style={{ display: "flex", gap: 10, marginTop: 14, justifyContent: "center" }}>
+              {([
+                { action: "start" as const, title: "Start team", color: "#10b981", disabled: isOnline || loadingAction !== null,
+                  icon: <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><polygon points="5,3 19,12 5,21"/></svg> },
+                { action: "kill" as const, title: "Kill team", color: "#ef4444", disabled: !isOnline || loadingAction !== null,
+                  icon: <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="4" width="16" height="16" rx="2"/></svg> },
+                { action: "refresh" as const, title: "Refresh team", color: "#3390ec", disabled: loadingAction !== null,
+                  icon: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg> },
+              ]).map(({ action, title, color, disabled, icon }) => (
+                <button
+                  key={action}
+                  disabled={disabled}
+                  onClick={() => doAction(action)}
+                  title={title}
+                  style={{
+                    width: 38, height: 38, borderRadius: "50%", border: "none",
+                    background: disabled ? "rgba(0,0,0,0.04)" : `${color}18`,
+                    color: disabled ? "var(--c-fg-3)" : color,
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    cursor: disabled ? "not-allowed" : "pointer",
+                    opacity: loadingAction === action ? 0.5 : 1,
+                  }}
+                >
+                  {loadingAction === action
+                    ? <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" style={{ animation: "spin 1s linear infinite" }}><path d="M12 2v4"/><path d="M12 18v4" opacity="0.3"/></svg>
+                    : icon
+                  }
+                </button>
+              ))}
             </div>
           </div>
         )}

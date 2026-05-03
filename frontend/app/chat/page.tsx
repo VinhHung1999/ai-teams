@@ -80,6 +80,25 @@ export default function ChatPage() {
 
   useEffect(() => { loadProjects(); }, []);
 
+  // [375] On mount: read ?team=<id> URL param → auto-select team
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const teamId = parseInt(params.get("team") ?? "");
+    if (!isNaN(teamId)) handleSelectProject(teamId);
+  }, []);
+
+  // [375] Listen for SW postMessage select-team (from notification click)
+  useEffect(() => {
+    if (!("serviceWorker" in navigator)) return;
+    const handler = (e: MessageEvent) => {
+      if (e.data?.type === "select-team" && e.data.projectId) {
+        handleSelectProject(Number(e.data.projectId));
+      }
+    };
+    navigator.serviceWorker.addEventListener("message", handler);
+    return () => navigator.serviceWorker.removeEventListener("message", handler);
+  }, []);
+
   const handleSelectProject = useCallback(async (id: number, ps?: Project[]) => {
     const list = ps ?? projects;
     const proj = list.find((p) => p.id === id) ?? null;
@@ -90,6 +109,9 @@ export default function ChatPage() {
     oldestTsRef.current = undefined;
     setHasMore(false);
     setMobileView("chat");
+    // [374] Reset InfoPanel to Overview when switching teams
+    setInfoPanelOpen(false);
+    setInfoPanelTab("overview");
 
     // Mark as read
     const now = new Date().toISOString();
@@ -252,6 +274,18 @@ export default function ChatPage() {
 
       {/* ── Main chat area ── */}
       <main className="chat-wallpaper flex flex-row min-w-0 overflow-hidden chat-mobile-chat" style={{ gridColumn: 2, gridRow: 1 }}>
+        {/* [373] Terminal panel — column 2, left of chat, desktop ≥1024px only */}
+        {terminalOpen && selectedProject && (
+          <div className="chat-terminal-wrap">
+            <ChatTerminalPanel
+              project={selectedProject}
+              selectedRole={selectedRole}
+              onClose={() => setTerminalOpen(false)}
+              dragSide="right"
+            />
+          </div>
+        )}
+
         {/* Chat column (flex-1) */}
         <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
           {/* [359] No team selected — show placeholder on desktop */}
@@ -268,7 +302,6 @@ export default function ChatPage() {
                 project={selectedProject}
                 onOpenInfo={openInfo}
                 onBack={() => setMobileView("list")}
-                onRefreshProjects={loadProjects}
                 terminalOpen={terminalOpen}
                 onToggleTerminal={() => setTerminalOpen((v) => !v)}
               />
@@ -310,22 +343,13 @@ export default function ChatPage() {
             tab={infoPanelTab}
             project={selectedProject}
             roles={roles}
-            onClose={() => setInfoPanelOpen(false)}
+            onClose={() => { setInfoPanelOpen(false); setInfoPanelTab("overview"); }}
             onTabChange={setInfoPanelTab}
             onSelectRole={(role) => { setSelectedRole(role); setInfoPanelOpen(false); }}
+            onRefreshProjects={loadProjects}
           />
         </div>
 
-        {/* [369] Terminal panel — desktop ≥1024px only */}
-        {terminalOpen && selectedProject && (
-          <div className="chat-terminal-wrap">
-            <ChatTerminalPanel
-              project={selectedProject}
-              selectedRole={selectedRole}
-              onClose={() => setTerminalOpen(false)}
-            />
-          </div>
-        )}
       </main>
     </div>
   );

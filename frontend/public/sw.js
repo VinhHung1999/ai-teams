@@ -28,16 +28,23 @@ self.addEventListener("push", (event) => {
   event.waitUntil(self.registration.showNotification(title, options));
 });
 
-// Notification click — focus or open the app
+// [375] Notification click — deeplink to the specific team chat
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
-  const url = event.notification.data?.url || "/chat";
+  const projectId = event.notification.data?.projectId;
+  const targetUrl = projectId ? `/chat?team=${projectId}` : "/chat";
+
   event.waitUntil(
     self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clients) => {
+      // Find existing /chat tab and postMessage the projectId to it
       for (const client of clients) {
-        if (client.url.includes("/chat") && "focus" in client) return client.focus();
+        if (client.url.includes("/chat") && "focus" in client) {
+          if (projectId) client.postMessage({ type: "select-team", projectId });
+          return client.focus();
+        }
       }
-      return self.clients.openWindow(url);
+      // No existing /chat tab — open with ?team param
+      return self.clients.openWindow(targetUrl);
     })
   );
 });

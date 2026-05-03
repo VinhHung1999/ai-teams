@@ -91,15 +91,29 @@ async function transcribeWithSoniox(audioFilePath: string, apiKey: string): Prom
         '-ar', '16000', '-ac', '1', '-f', 's16le', 'pipe:1',
       ], { stdio: ['ignore', 'pipe', 'ignore'] });
 
+      // Track bytes to estimate audio duration for dynamic flush window
+      let totalBytesSent = 0;
+
       ff.stdout.on('data', (chunk: Buffer) => {
-        if (ws.readyState === WebSocket.OPEN) ws.send(chunk);
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(chunk);
+          totalBytesSent += chunk.length;
+        }
       });
 
       ff.stdout.on('end', () => {
-        // 2.5s flush window — gives Soniox time to process remaining PCM buffer
+        // [371] Send empty binary frame as potential EOS hint (binary-only protocol after config)
+        try { if (ws.readyState === WebSocket.OPEN) ws.send(Buffer.alloc(0)); } catch {}
+
+        // [371] Dynamic flush window: stt-rt-v4 processes ~real-time.
+        // PCM 16kHz s16le = 32000 bytes/s. Give Soniox 35% of clip duration + 2s base.
+        // Minimum 3000ms (was 2500ms), max 12000ms.
+        const audioDurationMs = (totalBytesSent / 32000) * 1000;
+        const flushMs = Math.min(12000, Math.max(3000, Math.round(audioDurationMs * 0.35 + 2000)));
+
         setTimeout(() => {
           if (ws.readyState === WebSocket.OPEN) ws.close();
-        }, 2500);
+        }, flushMs);
       });
 
       ff.on('error', (e) => finish(new Error(`ffmpeg: ${e.message}`)));
