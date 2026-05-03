@@ -101,21 +101,31 @@ async function transcribeWithSoniox(audioFilePath: string, apiKey: string, filen
     console.error(`[voice] direct attempt failed (${e.message}) → ffmpeg fallback`);
   }
 
-  // Step 2: Fallback — convert to OGG (Soniox rejects some WebM streams from MediaRecorder)
+  // Step 2: Fallback — rename with extension so ffmpeg can detect format, then convert to OGG
+  // multer saves files without extension → ffmpeg can't auto-detect format
+  const ext = filename.includes('mp4') || filename.includes('aac') ? '.mp4'
+    : filename.includes('ogg') ? '.ogg'
+    : '.webm';
+  const namedPath = `${audioFilePath}${ext}`;
+  fs.renameSync(audioFilePath, namedPath);
+
   const oggPath = `${audioFilePath}.ogg`;
   try {
-    const { stderr } = await execAsync(
-      `ffmpeg -y -i "${audioFilePath}" -c:a libvorbis -q:a 4 "${oggPath}" 2>&1`,
+    const { stdout, stderr } = await execAsync(
+      `ffmpeg -y -i "${namedPath}" -c:a libvorbis -q:a 4 "${oggPath}" 2>&1`,
       { timeout: 30_000 },
     );
-    if (stderr) console.error(`[voice] ffmpeg: ${stderr.slice(-300)}`);
+    console.error(`[voice] ffmpeg stdout: ${stdout}`);
+    if (stderr) console.error(`[voice] ffmpeg stderr: ${stderr}`);
   } catch (e: any) {
+    try { fs.renameSync(namedPath, audioFilePath); } catch {} // restore original name for cleanup
     throw new Error(`ffmpeg: ${e.message}`);
   }
 
   try {
     return await uploadAndTranscribe(oggPath, 'audio.ogg');
   } finally {
+    try { fs.unlinkSync(namedPath); } catch {}
     try { fs.unlinkSync(oggPath); } catch {}
   }
 }
@@ -158,7 +168,11 @@ router.post(
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     } finally {
+      // tmpPath may have been renamed inside transcribeWithSoniox — try both
       fs.unlink(tmpPath, () => {});
+      const mtype = file.mimetype || '';
+      const ext2 = mtype.includes('mp4') || mtype.includes('aac') ? '.mp4' : mtype.includes('ogg') ? '.ogg' : '.webm';
+      fs.unlink(tmpPath + ext2, () => {});
     }
   },
 );
