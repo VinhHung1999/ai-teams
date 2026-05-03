@@ -190,7 +190,7 @@ function AgentsTab({ project, roles, onSelectRole }: { project: Project | null; 
   if (!project || roles.length === 0) return <Msg>No agents for this team.</Msg>;
 
   return (
-    <div style={{ padding: 16 }}>
+    <div style={{ height: "100%", overflowY: "auto", WebkitOverflowScrolling: "touch", padding: 16 } as React.CSSProperties}>
       <div style={{ fontSize: 11, fontWeight: 600, color: "var(--c-fg-2)", textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 8 }}>
         Agents · {roles.length}
       </div>

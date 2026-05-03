@@ -294,6 +294,8 @@ export function ChatInput({ roles, defaultRole, disabled, onSend, projectId }: C
             overflow: "hidden",
           }}
         >
+          {/* [381] Scrollable inner — max 8 visible rows (~240px), touch-scroll on iOS */}
+          <div style={{ maxHeight: 240, overflowY: "auto", WebkitOverflowScrolling: "touch" } as React.CSSProperties}>
           {!skillsLoaded && (
             <div style={{ padding: "12px 16px", fontSize: 13, color: "var(--c-fg-2)" }}>Loading skills…</div>
           )}
@@ -311,6 +313,7 @@ export function ChatInput({ roles, defaultRole, disabled, onSend, projectId }: C
               </span>
             </button>
           ))}
+          </div>
         </div>
       )}
 
