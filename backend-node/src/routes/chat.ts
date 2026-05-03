@@ -7,7 +7,7 @@ import http from 'http';
 import { createInterface } from 'readline';
 import { exec } from 'child_process';
 import { promisify } from 'util';
-import prisma from '../lib/prisma';
+import storage from '../lib/JsonStorage';
 
 const execAsync = promisify(exec);
 const router = Router();
@@ -184,7 +184,7 @@ function getRoleInfos(workingDir: string): RoleInfo[] {
 }
 
 async function aggregateEvents(projectId: number): Promise<ChatEvent[]> {
-  const project = await prisma.project.findUnique({ where: { id: projectId } });
+  const project = storage.getProject(projectId);
   if (!project?.working_directory) return [];
 
   const roleInfos = getRoleInfos(project.working_directory);
@@ -264,7 +264,7 @@ router.post('/api/chat/:projectId/send', async (req: Request, res: Response) => 
   const { role, text } = req.body;
   if (!role || !text) return res.status(400).json({ error: 'role and text required' });
 
-  const project = await prisma.project.findUnique({ where: { id: projectId } });
+  const project = storage.getProject(projectId);
   if (!project) return res.status(404).json({ error: 'project not found' });
 
   // Prefer session_name from the sessions map (authoritative) over DB field
@@ -318,7 +318,7 @@ const fileOffsets = new Map<string, number>();
 async function watchProject(projectId: number) {
   if (chatWatchers.has(projectId)) return;
 
-  const project = await prisma.project.findUnique({ where: { id: projectId } });
+  const project = storage.getProject(projectId);
   if (!project?.working_directory) return;
 
   const roleInfos = getRoleInfos(project.working_directory);

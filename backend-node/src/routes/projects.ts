@@ -4,7 +4,7 @@ import fs, { globSync } from 'fs';
 import os from 'os';
 import { exec } from 'child_process';
 import { promisify } from 'util';
-import prisma from '../lib/prisma';
+import storage from '../lib/JsonStorage';
 
 const execAsync = promisify(exec);
 
@@ -65,42 +65,39 @@ router.post('/api/projects/mkdir', async (req: Request, res: Response) => {
 });
 
 // List projects
-router.get('/api/projects', async (_req: Request, res: Response) => {
-  const projects = await prisma.project.findMany({
-    orderBy: { created_at: 'desc' },
-  });
+router.get('/api/projects', (_req: Request, res: Response) => {
+  const projects = storage.getProjects()
+    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
   res.json(projects.map(p => ({
     id: p.id,
     name: p.name,
     tmux_session_name: p.tmux_session_name,
     working_directory: p.working_directory,
-    created_at: p.created_at.toISOString(),
+    created_at: p.created_at,
   })));
 });
 
 // Create project
-router.post('/api/projects', async (req: Request, res: Response) => {
+router.post('/api/projects', (req: Request, res: Response) => {
   const { name, tmux_session_name, working_directory } = req.body;
-  const project = await prisma.project.create({
-    data: {
-      name,
-      tmux_session_name: tmux_session_name || null,
-      working_directory: working_directory || null,
-    },
+  const project = storage.createProject({
+    name,
+    tmux_session_name: tmux_session_name || null,
+    working_directory: working_directory || null,
   });
   res.json({
     id: project.id,
     name: project.name,
     tmux_session_name: project.tmux_session_name,
     working_directory: project.working_directory,
-    created_at: project.created_at.toISOString(),
+    created_at: project.created_at,
   });
 });
 
 // Get project (includes tmux status to avoid a separate round-trip)
 router.get('/api/projects/:id', async (req: Request, res: Response) => {
   const id = parseInt(req.params.id as string);
-  const project = await prisma.project.findUnique({ where: { id } });
+  const project = storage.getProject(id);
   if (!project) {
     return res.status(404).json({ detail: 'Project not found' });
   }
@@ -142,7 +139,7 @@ router.get('/api/projects/:id', async (req: Request, res: Response) => {
     name: project.name,
     tmux_session_name: project.tmux_session_name,
     working_directory: project.working_directory,
-    created_at: project.created_at.toISOString(),
+    created_at: project.created_at,
     has_setup_file: hasSetupFile,
     setup_file_path: setupFilePath,
     tmux_active: tmuxActive,
@@ -151,13 +148,12 @@ router.get('/api/projects/:id', async (req: Request, res: Response) => {
 });
 
 // Delete project
-router.delete('/api/projects/:id', async (req: Request, res: Response) => {
+router.delete('/api/projects/:id', (req: Request, res: Response) => {
   const id = parseInt(req.params.id as string);
-  const project = await prisma.project.findUnique({ where: { id } });
-  if (!project) {
+  const deleted = storage.deleteProject(id);
+  if (!deleted) {
     return res.status(404).json({ detail: 'Project not found' });
   }
-  await prisma.project.delete({ where: { id } });
   res.json({ ok: true });
 });
 
