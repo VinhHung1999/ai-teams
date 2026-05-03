@@ -288,12 +288,14 @@ export function InfoPanel({ open, tab, project, roles, onClose, onTabChange, onS
         }}
       />
 
-      {/* Panel — 50vw desktop, full-screen mobile */}
+      {/* Panel — 50vw desktop, full-screen mobile; Files tab → full-width for content readability */}
       <div
         className="info-panel"
         style={{
           position: "absolute",
           top: 0, right: 0, bottom: 0,
+          // [406] Files tab expands panel to full width
+          ...(tab === "files" ? { left: 0 } : {}),
           display: "flex",
           flexDirection: "column",
           zIndex: 50,
