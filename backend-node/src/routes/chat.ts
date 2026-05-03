@@ -576,20 +576,37 @@ function stripAnsi(s: string) { return s.replace(ANSI_RE, '').replace(/\r/g, '')
 
 function detectPromptInPane(raw: string): { question: string; options: string[] } | null {
   const lines = raw.split('\n').map(stripAnsi);
+
+  // Pattern A: '? <question>' + '❯ option' / indented option lines (AskUserQuestion)
   for (let i = 0; i < lines.length; i++) {
     const qm = lines[i].trimStart().match(/^\?\s+(.+)$/);
-    if (!qm || !qm[1].trim()) continue;
+    if (!qm || qm[1].trim().length < 4) continue;
     const options: string[] = [];
     for (let j = i + 1; j < Math.min(i + 16, lines.length); j++) {
       const ol = lines[j];
-      // ❯ / > / ◎ / ○ prefix OR 2+ space indented non-empty option text
       const m = ol.match(/^\s*[❯>◎○●]\s*(.+)$/) ?? ol.match(/^\s{2,6}([^?\s].{1,80})$/);
       if (m && m[1]?.trim() && !m[1].startsWith('─')) {
         options.push(m[1].trim());
       } else if (options.length > 0 && ol.trim() === '') { break; }
     }
-    if (qm[1].trim().length > 3) return { question: qm[1].trim(), options };
+    return { question: qm[1].trim(), options };
   }
+
+  // [409-P2] Pattern B: Permission prompts — 'Do you want to...' + '1. Yes' style
+  const PERMISSION_RE = /do you want to|allow.*to run|proceed\?|grant permission/i;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (!PERMISSION_RE.test(line)) continue;
+    const options: string[] = [];
+    for (let j = i + 1; j < Math.min(i + 12, lines.length); j++) {
+      const m = lines[j].trim().match(/^(\d+)[.)]\s+(.+)$/);
+      if (m && m[2]?.trim()) {
+        options.push(m[2].trim());
+      } else if (options.length > 0 && lines[j].trim() === '') { break; }
+    }
+    if (options.length > 0 && line.length > 5) return { question: line, options };
+  }
+
   return null;
 }
 
