@@ -10,6 +10,8 @@ import { ChatInput } from "@/components/chat/ChatInput";
 import { InfoPanel } from "@/components/chat/InfoPanel";
 import { api } from "@/lib/api";
 import { useChatWs } from "@/lib/useChatWs";
+import { useFirehoseWs } from "@/lib/useFirehoseWs";
+import { usePushNotifications } from "@/lib/usePushNotifications";
 import type { Project } from "@/lib/types";
 import type { ChatEvent } from "@/lib/chat-types";
 
@@ -55,12 +57,19 @@ export default function ChatPage() {
       // Fetch last-event timestamps for all projects
       if (ps.length > 0) {
         const ids = ps.map((p) => p.id).join(",");
+        // [350] last-events now returns {lastMessageAt, lastMessageText}
         fetch(`/api/chat/last-events?projectIds=${ids}`)
           .then((r) => r.json())
-          .then((data: Record<string, string>) => {
-            const typed: Record<number, string> = {};
-            for (const [k, v] of Object.entries(data)) typed[parseInt(k)] = v;
-            setLastEventAt(typed);
+          .then((data: Record<string, { lastMessageAt: string; lastMessageText: string }>) => {
+            const ats: Record<number, string> = {};
+            const previews: Record<number, string> = {};
+            for (const [k, v] of Object.entries(data)) {
+              const id = parseInt(k);
+              ats[id] = v.lastMessageAt;
+              previews[id] = v.lastMessageText;
+            }
+            setLastEventAt(ats);
+            setLastEvents((p) => ({ ...p, ...previews }));
           })
           .catch(() => {});
         handleSelectProject(ps[0].id, ps);
@@ -157,6 +166,21 @@ export default function ChatPage() {
   }, [selectedId]);
 
   useChatWs(selectedId, handleWsEvents);
+
+  // [351] Firehose — update lastEventAt/lastEvents for all teams live
+  useFirehoseWs(useCallback((projectId, events) => {
+    const last = events[events.length - 1];
+    if (!last) return;
+    setLastEventAt((p) => ({ ...p, [projectId]: last.timestamp }));
+    if (last.kind === "message" && last.text) {
+      setLastEvents((p) => ({ ...p, [projectId]: last.text!.slice(0, 60) }));
+    }
+    // If this is the active project, forward to the per-project WS handler
+    if (projectId === selectedId) handleWsEvents(events);
+  }, [selectedId, handleWsEvents]));
+
+  // [352] PWA Web Push
+  usePushNotifications();
 
   const handleSend = useCallback(async (role: string, text: string) => {
     if (!selectedId) throw new Error("No team selected");

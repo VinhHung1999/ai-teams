@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import type { Project } from "@/lib/types";
 import { api } from "@/lib/api";
+import { FileManager } from "@/components/FileManager";
 
 export type InfoPanelTab = "overview" | "files" | "agents";
 
@@ -171,107 +172,13 @@ function OverviewTab({ project }: { project: Project | null }) {
 
 // ── Files tab ─────────────────────────────────────────────────────────────────
 
-interface FileNode { name: string; path: string; type: "file" | "directory"; children?: FileNode[] }
-
-function FolderItem({ node, onSelect }: { node: FileNode; onSelect: (p: string) => void }) {
-  const [open, setOpen] = useState(false);
-  return (
-    <div>
-      <button
-        onClick={() => setOpen((x) => !x)}
-        className="w-full flex items-center gap-1.5 text-left px-2 py-1 rounded"
-        style={{ background: "transparent", fontSize: 13, color: "var(--c-fg-1)" }}
-        onMouseEnter={(e) => (e.currentTarget.style.background = "var(--c-bg-hover)")}
-        onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
-      >
-        <span>{open ? "📂" : "📁"}</span>
-        <span className="truncate">{node.name}</span>
-      </button>
-      {open && node.children && (
-        <div style={{ marginLeft: 16 }}>
-          {node.children.map((c) => (
-            c.type === "directory"
-              ? <FolderItem key={c.path} node={c} onSelect={onSelect} />
-              : (
-                <button
-                  key={c.path}
-                  onClick={() => onSelect(c.path)}
-                  className="w-full flex items-center gap-1.5 text-left px-2 py-1 rounded"
-                  style={{ background: "transparent", fontSize: 13, color: "var(--c-fg-1)" }}
-                  onMouseEnter={(e) => (e.currentTarget.style.background = "var(--c-bg-hover)")}
-                  onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
-                >
-                  <span>📄</span>
-                  <span className="truncate">{c.name}</span>
-                </button>
-              )
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
 
 function FilesTab({ project }: { project: Project | null }) {
-  const [tree, setTree] = useState<FileNode[]>([]);
-  const [fileContent, setFileContent] = useState<string>("");
-  const [selectedFile, setSelectedFile] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-
-  useEffect(() => {
-    if (!project?.working_directory) return;
-    fetch(`/api/files/tree?path=${encodeURIComponent(`${project.working_directory}/docs`)}`)
-      .then((r) => r.json())
-      .then((d) => setTree(d.entries ?? []))
-      .catch(() => setTree([]));
-  }, [project?.working_directory]);
-
-  const openFile = async (path: string) => {
-    setSelectedFile(path);
-    setLoading(true);
-    setFileContent("");
-    try {
-      const r = await fetch(`/api/files/read?path=${encodeURIComponent(path)}`);
-      const d = await r.json();
-      setFileContent(d.content ?? "");
-    } catch {} finally { setLoading(false); }
-  };
-
-  if (!project) return <Msg>Select a team to view files.</Msg>;
-
+  if (!project?.working_directory) return <Msg>Select a team to view files.</Msg>;
+  // [353] Full FileManager (Sprint 13-15) — CRUD, upload, drag-drop, image preview
   return (
-    <div style={{ display: "flex", height: "100%", overflow: "hidden" }}>
-      <div style={{ width: 160, borderRight: "1px solid var(--c-line)", overflowY: "auto", padding: 8, flexShrink: 0 }} className="chat-scroll">
-        {tree.length === 0
-          ? <p style={{ fontSize: 12, color: "var(--c-fg-2)", padding: 8 }}>No docs/ folder.</p>
-          : tree.map((n) => (
-            n.type === "directory"
-              ? <FolderItem key={n.path} node={n} onSelect={openFile} />
-              : (
-                <button
-                  key={n.path}
-                  onClick={() => openFile(n.path)}
-                  className="w-full flex items-center gap-1.5 text-left px-2 py-1 rounded"
-                  style={{ background: selectedFile === n.path ? "var(--c-bg-active)" : "transparent", fontSize: 13, color: "var(--c-fg-0)" }}
-                  onMouseEnter={(e) => (e.currentTarget.style.background = "var(--c-bg-hover)")}
-                  onMouseLeave={(e) => (e.currentTarget.style.background = selectedFile === n.path ? "var(--c-bg-active)" : "transparent")}
-                >
-                  <span>📄</span>
-                  <span className="truncate">{n.name}</span>
-                </button>
-              )
-          ))
-        }
-      </div>
-      <div className="flex-1 overflow-y-auto chat-scroll" style={{ padding: 12 }}>
-        {!selectedFile && <p style={{ fontSize: 13, color: "var(--c-fg-2)" }}>Select a file to preview.</p>}
-        {loading && <p style={{ fontSize: 13, color: "var(--c-fg-2)" }}>Loading…</p>}
-        {selectedFile && !loading && fileContent && (
-          <pre style={{ fontSize: 12, color: "var(--c-fg-1)", fontFamily: "var(--font-geist-mono, monospace)", whiteSpace: "pre-wrap", wordBreak: "break-word", lineHeight: 1.55 }}>
-            {fileContent}
-          </pre>
-        )}
-      </div>
+    <div style={{ flex: 1, minHeight: 0, overflow: "hidden", display: "flex", flexDirection: "column" }}>
+      <FileManager rootPath={project.working_directory} />
     </div>
   );
 }
