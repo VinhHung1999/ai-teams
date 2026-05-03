@@ -4,9 +4,10 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { TeamList } from "@/components/chat/TeamList";
 import { ChatHeader } from "@/components/chat/ChatHeader";
 import { TopicBar } from "@/components/chat/TopicBar";
+import { PinStrip } from "@/components/chat/PinStrip";
 import { ChatStream } from "@/components/chat/ChatStream";
 import { ChatInput } from "@/components/chat/ChatInput";
-import { Drawer, type DrawerTab } from "@/components/chat/Drawer";
+import { InfoPanel } from "@/components/chat/InfoPanel";
 import { api } from "@/lib/api";
 import { useChatWs } from "@/lib/useChatWs";
 import type { Project } from "@/lib/types";
@@ -25,12 +26,12 @@ export default function ChatPage() {
   const [hasMore, setHasMore] = useState(false);
   const oldestTsRef = useRef<string | undefined>(undefined);
 
-  const [drawerOpen, setDrawerOpen] = useState(false);
-  const [drawerTab, setDrawerTab] = useState<DrawerTab>("kanban");
+  const [infoPanelOpen, setInfoPanelOpen] = useState(false);
+  const [infoPanelTab, setInfoPanelTab] = useState<"overview" | "files" | "agents">("overview");
   const [selectedRole, setSelectedRole] = useState<string | null>(null);
 
-  // Sidebar mobile state
-  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  // Mobile single-view state: 'list' | 'chat'
+  const [mobileView, setMobileView] = useState<"list" | "chat">("list");
 
   // Last event preview per project
   const [lastEvents, setLastEvents] = useState<Record<number, string>>({});
@@ -54,7 +55,7 @@ export default function ChatPage() {
     setEvents([]);
     oldestTsRef.current = undefined;
     setHasMore(false);
-    setMobileSidebarOpen(false);
+    setMobileView("chat"); // on mobile: auto-switch to chat view
 
     if (!proj) return;
 
@@ -142,47 +143,42 @@ export default function ChatPage() {
     await api.chatSend(selectedId, role, text);
   }, [selectedId]);
 
-  const openDrawer = useCallback((tab: DrawerTab) => {
-    setDrawerTab(tab);
-    setDrawerOpen(true);
-  }, []);
-
-  const openInfo = useCallback(() => {
-    setDrawerOpen(true);
-    setDrawerTab("kanban");
+  const openInfo = useCallback((tab: "overview" | "files" | "agents" = "overview") => {
+    setInfoPanelTab(tab);
+    setInfoPanelOpen(true);
   }, []);
 
   return (
-    <div className="flex h-[100dvh] overflow-hidden" style={{ background: 'var(--c-bg-app)', color: 'var(--c-fg-0)' }}>
-      {/* ── Mobile sidebar overlay ── */}
-      {mobileSidebarOpen && (
-        <div
-          className="fixed inset-0 z-30 md:hidden"
-          style={{ background: 'rgba(0,0,0,0.3)' }}
-          onClick={() => setMobileSidebarOpen(false)}
-        />
-      )}
-
+    // data-mobile-view drives CSS for single-view on mobile (list|chat slide)
+    <div
+      className="h-[100dvh] overflow-hidden"
+      data-mobile-view={mobileView}
+      style={{
+        display: "grid",
+        gridTemplateColumns: "320px 1fr",
+        background: "var(--c-bg-app)",
+        color: "var(--c-fg-0)",
+      }}
+    >
       {/* ── Teams sidebar ── */}
       <aside
-        className={`
-          glass-sidebar flex-shrink-0 flex flex-col overflow-hidden
-          fixed inset-y-0 left-0 z-40 w-80 transition-transform duration-200
-          md:relative md:translate-x-0
-          ${mobileSidebarOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"}
-        `}
-        style={{ borderRight: '1px solid var(--c-line)' }}
+        className="glass-sidebar flex flex-col overflow-hidden chat-mobile-list"
+        style={{ borderRight: "1px solid var(--c-line)", gridColumn: 1, gridRow: 1 }}
       >
-        <div className="flex items-center gap-2 px-4 py-3 flex-shrink-0" style={{ borderBottom: '1px solid var(--c-line)' }}>
-          <span className="font-semibold text-sm flex-1" style={{ color: 'var(--c-fg-0)' }}>AI Teams</span>
-          <button
-            onClick={() => setMobileSidebarOpen(false)}
-            className="md:hidden w-7 h-7 flex items-center justify-center rounded hover:bg-zinc-700 text-zinc-400"
-          >
-            ✕
+        <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 12px", borderBottom: "1px solid var(--c-line)", flexShrink: 0, background: "var(--c-bg-list-glass)", backdropFilter: "blur(24px) saturate(180%)" }}>
+          <button style={{ width: 36, height: 36, borderRadius: "50%", border: "none", background: "transparent", color: "var(--c-fg-1)", display: "grid", placeItems: "center", cursor: "pointer" }}>
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M3 6h18M3 12h18M3 18h18"/>
+            </svg>
           </button>
+          <div style={{ flex: 1, height: 36, background: "rgba(0,0,0,0.04)", borderRadius: 18, display: "flex", alignItems: "center", gap: 8, padding: "0 14px", color: "var(--c-fg-2)", fontSize: 14 }}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/>
+            </svg>
+            Search
+          </div>
         </div>
-        <div className="flex-1 overflow-y-auto">
+        <div className="flex-1 overflow-y-auto chat-scroll">
           <TeamList
             projects={projects}
             activeId={selectedId}
@@ -192,28 +188,23 @@ export default function ChatPage() {
         </div>
       </aside>
 
-      {/* ── Main area ── */}
-      <main className="chat-wallpaper flex-1 flex flex-col min-w-0 overflow-hidden">
-        {/* Mobile hamburger */}
-        <div className="md:hidden absolute left-3 top-3 z-10">
-          <button
-            onClick={() => setMobileSidebarOpen(true)}
-            className="w-8 h-8 flex items-center justify-center rounded-full"
-            style={{ color: 'var(--c-fg-1)', background: 'var(--c-bg-hover)' }}
-          >
-            ☰
-          </button>
-        </div>
-
+      {/* ── Main chat area ── */}
+      <main className="chat-wallpaper flex flex-col min-w-0 overflow-hidden chat-mobile-chat" style={{ gridColumn: 2, gridRow: 1 }}>
         <ChatHeader
           project={selectedProject}
           onOpenInfo={openInfo}
+          onBack={() => setMobileView("list")}
         />
 
         <TopicBar
           project={selectedProject}
           selectedRole={selectedRole}
           onSelectRole={setSelectedRole}
+        />
+
+        <PinStrip
+          projectId={selectedId}
+          onClick={() => openInfo("overview")}
         />
 
         <ChatStream
@@ -232,13 +223,15 @@ export default function ChatPage() {
           onSend={handleSend}
         />
 
-        {/* Drawer overlay */}
-        <Drawer
-          open={drawerOpen}
-          tab={drawerTab}
+        {/* Info panel (snap open/close, no animation per design) */}
+        <InfoPanel
+          open={infoPanelOpen}
+          tab={infoPanelTab}
           project={selectedProject}
-          onClose={() => setDrawerOpen(false)}
-          onTabChange={setDrawerTab}
+          roles={roles}
+          onClose={() => setInfoPanelOpen(false)}
+          onTabChange={setInfoPanelTab}
+          onSelectRole={(role) => { setSelectedRole(role); setInfoPanelOpen(false); }}
         />
       </main>
     </div>

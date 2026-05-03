@@ -62,8 +62,8 @@ kanban-plugin: board
       2026-05-03 DEV: Tokens `--c-*` namespace (surfaces, fg-0..3, accent #3390ec light / #6ab3f3 dark, role colors PO/TL/BE/FE/QA/DEV). Wallpaper: mint radial gradient `::before` + 180×180 SVG pattern repeat `::after` on `.chat-wallpaper`. Glass utilities: glass-sidebar/header/bubble/panel/composer-btn/input-pill. Light DEFAULT; dark via `html[data-theme='dark']` + inline script reading localStorage before paint (no flash). Commit 591abb3.
       2026-05-03 PO: ACCEPTED. globals.css verified: tokens at lines 175-227, glass classes 239-274, chat-wallpaper 281-305. layout.tsx has theme bootstrap script. /chat HTTP 200 (26KB). Foundation solid for [325]–[330].
 
-- [ ] **[325]** Sidebar TeamList redesign — Telegram-style với avatar + preview + dots
-      **Priority:** P0 · **Points:** 2 · **Assignee:** DEV · **Status:** todo · **Backlog-ID:** 362
+- [x] **[325]** Sidebar TeamList redesign — Telegram-style với avatar + preview + dots
+      **Priority:** P0 · **Points:** 2 · **Assignee:** DEV · **Status:** done · **Backlog-ID:** 362
       **Description:**
       Refactor `frontend/components/chat/TeamList.tsx` theo design:
 
@@ -93,8 +93,8 @@ kanban-plugin: board
       **Notes:**
       _(DEV fill khi done)_
 
-- [ ] **[326]** ChatHeader + Topic bar — agent switcher
-      **Priority:** P0 · **Points:** 3 · **Assignee:** DEV · **Status:** todo · **Backlog-ID:** 363
+- [x] **[326]** ChatHeader + Topic bar — agent switcher
+      **Priority:** P0 · **Points:** 3 · **Assignee:** DEV · **Status:** done · **Backlog-ID:** 363
       **Description:**
       Refactor `frontend/components/chat/ChatHeader.tsx` + tạo mới `TopicBar.tsx`:
 
@@ -127,8 +127,8 @@ kanban-plugin: board
       **Notes:**
       _(DEV fill khi done)_
 
-- [ ] **[327]** Composer 4-frame restructure — Menu pill | Attach | Input pill | Mic/Send
-      **Priority:** P0 · **Points:** 2 · **Assignee:** DEV · **Status:** todo · **Backlog-ID:** 364
+- [x] **[327]** Composer 4-frame restructure — Menu pill | Attach | Input pill | Mic/Send
+      **Priority:** P0 · **Points:** 2 · **Assignee:** DEV · **Status:** done · **Backlog-ID:** 364
       **Description:**
       Refactor `frontend/components/chat/ChatInput.tsx` theo design 4-frame tách rời:
 
