@@ -51,13 +51,11 @@ export default function ChatPage() {
   }, []);
 
   // Load projects on mount + fetch last-events for inbox sort
-  useEffect(() => {
+  const loadProjects = useCallback(() => {
     api.listProjects().then((ps) => {
       setProjects(ps);
-      // Fetch last-event timestamps for all projects
       if (ps.length > 0) {
         const ids = ps.map((p) => p.id).join(",");
-        // [350] last-events now returns {lastMessageAt, lastMessageText}
         fetch(`/api/chat/last-events?projectIds=${ids}`)
           .then((r) => r.json())
           .then((data: Record<string, { lastMessageAt: string; lastMessageText: string }>) => {
@@ -72,10 +70,11 @@ export default function ChatPage() {
             setLastEvents((p) => ({ ...p, ...previews }));
           })
           .catch(() => {});
-        // [359] No auto-select — user picks a team from the list
       }
     }).catch(() => {});
   }, []);
+
+  useEffect(() => { loadProjects(); }, []);
 
   const handleSelectProject = useCallback(async (id: number, ps?: Project[]) => {
     const list = ps ?? projects;
@@ -231,6 +230,7 @@ export default function ChatPage() {
             projects={projects}
             activeId={selectedId}
             onSelect={(id) => handleSelectProject(id)}
+            onRefreshProjects={loadProjects}
             lastEvents={lastEvents}
             lastEventAt={lastEventAt}
             lastReadAt={lastReadAt}

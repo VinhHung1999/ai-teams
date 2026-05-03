@@ -85,6 +85,7 @@ import voiceRouter from './routes/voice';
 import skillsRouter from './routes/skills';
 import attachmentsRouter from './routes/attachments';
 import pushRouter from './routes/push';
+import teamActionsRouter from './routes/team-actions';
 
 app.use(projectsRouter);
 app.use(backlogRouter);
@@ -99,6 +100,7 @@ app.use(voiceRouter);
 app.use(skillsRouter);
 app.use(attachmentsRouter);
 app.use(pushRouter);
+app.use(teamActionsRouter);
 
 // Terminal REST endpoints
 app.get('/api/terminal/sessions', (_req, res) => {
