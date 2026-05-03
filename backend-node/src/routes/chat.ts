@@ -657,7 +657,7 @@ async function startPromptDetection(
     }
   };
 
-  const interval = setInterval(tick, 1500);
+  const interval = setInterval(tick, 500);
   promptDetectors.set(projectId, interval);
   tick(); // immediate first check
 }
