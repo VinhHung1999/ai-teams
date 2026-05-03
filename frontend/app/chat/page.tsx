@@ -237,6 +237,11 @@ export default function ChatPage() {
       try {
         const { events: hist } = await api.chatHistory(selectedId, HISTORY_LIMIT);
         setEvents(hist);
+        // [386] Force scroll to bottom after replace — isAtBottomRef may be stale
+        requestAnimationFrame(() => {
+          const el = document.querySelector<HTMLElement>("main .chat-scroll");
+          if (el) el.scrollTop = el.scrollHeight;
+        });
         if (hist.some((e) => e.role === "BOSS" && e.text?.trim() === text.trim())) break;
       } catch { break; }
     }
