@@ -280,17 +280,20 @@ export default function ChatPage() {
             </div>
           ) : (
             <>
-              <ChatHeader
-                project={selectedProject}
-                onOpenInfo={openInfo}
-                onBack={() => setMobileView("list")}
-              />
+              {/* [399] Sticky header zone — stays at top when mobile keyboard appears */}
+              <div style={{ position: "sticky", top: 0, zIndex: 10, flexShrink: 0 }}>
+                <ChatHeader
+                  project={selectedProject}
+                  onOpenInfo={openInfo}
+                  onBack={() => setMobileView("list")}
+                />
 
-              <TopicBar
-                project={selectedProject}
-                selectedRole={selectedRole}
-                onSelectRole={setSelectedRole}
-              />
+                <TopicBar
+                  project={selectedProject}
+                  selectedRole={selectedRole}
+                  onSelectRole={setSelectedRole}
+                />
+              </div>
 
               {/* [392] Terminal tab — full main area swap */}
               {selectedRole === "TERMINAL" ? (
