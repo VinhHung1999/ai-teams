@@ -70,11 +70,6 @@ const mdComponents: Record<string, any> = {
       {children}
     </blockquote>
   ),
-  table: ({ children }: any) => (
-    <div style={{ overflowX: "auto", margin: "4px 0" }}>
-      <table style={{ borderCollapse: "collapse", fontSize: 13, width: "100%" }}>{children}</table>
-    </div>
-  ),
   th: ({ children }: any) => (
     <th style={{ padding: "4px 8px", borderBottom: "1px solid var(--c-line)", textAlign: "left", fontWeight: 600 }}>{children}</th>
   ),
@@ -97,9 +92,15 @@ const mdComponents: Record<string, any> = {
       background: "rgba(0,0,0,0.06)", fontFamily: "var(--font-geist-mono, monospace)",
       fontSize: 12.5, lineHeight: 1.55, overflowX: "auto", whiteSpace: "pre",
       color: "var(--c-fg-0)", maxWidth: "100%", boxSizing: "border-box",
+      display: "block",
     }}>
       {children}
     </pre>
+  ),
+  table: ({ children }: any) => (
+    <div style={{ overflowX: "auto", maxWidth: "100%", display: "block", margin: "4px 0" }}>
+      <table style={{ borderCollapse: "collapse", fontSize: 13, width: "100%" }}>{children}</table>
+    </div>
   ),
 };
 
@@ -154,7 +155,7 @@ function MessageBubble({ event, prevRole }: { event: ChatEvent; prevRole?: strin
           }}
         >
           {event.text && (
-            <div style={{ fontSize: 14, lineHeight: 1.45 }}>
+            <div style={{ fontSize: 14, lineHeight: 1.45, wordBreak: "break-word", overflowWrap: "anywhere", minWidth: 0 }}>
               <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>
                 {event.text}
               </ReactMarkdown>
@@ -230,6 +231,8 @@ function EventRow({
             marginLeft: event.role === "BOSS" ? "auto" : 36,
             marginRight: event.role === "BOSS" ? 36 : "auto",
             marginTop: isConsecutiveTool ? 0 : 8,
+            minWidth: 0,
+            maxWidth: "100%",
           }}
         >
           {(() => {

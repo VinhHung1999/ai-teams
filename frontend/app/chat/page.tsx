@@ -72,7 +72,7 @@ export default function ChatPage() {
             setLastEvents((p) => ({ ...p, ...previews }));
           })
           .catch(() => {});
-        handleSelectProject(ps[0].id, ps);
+        // [359] No auto-select — user picks a team from the list
       }
     }).catch(() => {});
   }, []);
@@ -240,40 +240,52 @@ export default function ChatPage() {
 
       {/* ── Main chat area ── */}
       <main className="chat-wallpaper flex flex-col min-w-0 overflow-hidden chat-mobile-chat" style={{ gridColumn: 2, gridRow: 1 }}>
-        <ChatHeader
-          project={selectedProject}
-          onOpenInfo={openInfo}
-          onBack={() => setMobileView("list")}
-        />
+        {/* [359] No team selected — show placeholder on desktop */}
+        {!selectedId ? (
+          <div className="flex-1 flex flex-col items-center justify-center chat-no-team-placeholder" style={{ color: "var(--c-fg-2)", gap: 12 }}>
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.4 }}>
+              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+            </svg>
+            <span style={{ fontSize: 15 }}>Select a team to start chatting</span>
+          </div>
+        ) : (
+          <>
+            <ChatHeader
+              project={selectedProject}
+              onOpenInfo={openInfo}
+              onBack={() => setMobileView("list")}
+            />
 
-        <TopicBar
-          project={selectedProject}
-          selectedRole={selectedRole}
-          onSelectRole={setSelectedRole}
-        />
+            <TopicBar
+              project={selectedProject}
+              selectedRole={selectedRole}
+              onSelectRole={setSelectedRole}
+            />
 
-        <PinStrip
-          projectId={selectedId}
-          onClick={() => openInfo("overview")}
-        />
+            <PinStrip
+              projectId={selectedId}
+              onClick={() => openInfo("overview")}
+            />
 
-        <ChatStream
-          events={events}
-          loading={loadingHistory}
-          hasMore={hasMore}
-          onLoadMore={loadMore}
-          filterRole={selectedRole ?? undefined}
-          sendingMessage={sendingMessage}
-          className="flex-1 min-h-0"
-        />
+            <ChatStream
+              events={events}
+              loading={loadingHistory}
+              hasMore={hasMore}
+              onLoadMore={loadMore}
+              filterRole={selectedRole ?? undefined}
+              sendingMessage={sendingMessage}
+              className="flex-1 min-h-0"
+            />
 
-        <ChatInput
-          roles={roles}
-          defaultRole={selectedRole ?? roles[0]}
-          disabled={!selectedId}
-          onSend={handleSend}
-          projectId={selectedId ?? undefined}
-        />
+            <ChatInput
+              roles={roles}
+              defaultRole={selectedRole ?? roles[0]}
+              disabled={!selectedId}
+              onSend={handleSend}
+              projectId={selectedId ?? undefined}
+            />
+          </>
+        )}
 
         {/* Info panel (snap open/close, no animation per design) */}
         <InfoPanel

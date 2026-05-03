@@ -295,6 +295,7 @@ html[data-theme="light"] {
 .chat-wallpaper {
   position: relative;
   background: var(--c-bg-chat);
+  overflow-x: hidden;
 }
 .chat-wallpaper::before {
   content: '';
