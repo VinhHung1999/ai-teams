@@ -196,12 +196,13 @@ export default function ChatPage() {
     }
   }, [selectedId, loadingHistory, hasMore]);
 
-  // [382] 2-way optimistic: frontend adds pending bubble; confirmed WS event replaces it.
-  // Backend no longer emits pending:hash — attachment/queue-op blocks removed.
+  // [383] Ephemeral text indicator — no optimistic bubble, 0 dup risk
+  const [pendingText, setPendingText] = useState<string | null>(null);
+  const pendingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const handleWsEvents = useCallback((newEvts: ChatEvent[]) => {
     setEvents((prev) => {
       const existingIds = new Set(prev.map((e) => e.id));
-      // [378] Dedup within the batch itself (queue-operation + attachment may share same content-hash id)
       const seenInBatch = new Set<string>();
       const fresh = newEvts.filter((e) => {
         if (existingIds.has(e.id) || seenInBatch.has(e.id)) return false;
@@ -209,16 +210,12 @@ export default function ChatPage() {
         return true;
       });
       if (fresh.length === 0) return prev;
-      // [367] When confirmed BOSS events arrive, remove matching pending ones
-      const confirmedTexts = new Set(
-        fresh.filter(e => e.role === "BOSS" && e.kind === "message" && !e.pending)
-          .map(e => e.text?.trim() ?? "").filter(Boolean)
-      );
-      const base = confirmedTexts.size > 0
-        ? prev.filter(e => !(e.pending && confirmedTexts.has(e.text?.trim() ?? "")))
-        : prev;
-      return [...base, ...fresh];
+      return [...prev, ...fresh];
     });
+    // Clear ephemeral indicator when any confirmed BOSS message arrives
+    const hasBossConfirm = newEvts.some(e => e.role === "BOSS" && e.kind === "message" && !e.pending);
+    if (hasBossConfirm) setPendingText(null);
+
     const last = newEvts[newEvts.length - 1];
     if (last && selectedId) {
       setLastEvents((p) => ({ ...p, [selectedId]: (last.text ?? last.tool?.name ?? "").slice(0, 60) }));
@@ -245,22 +242,12 @@ export default function ChatPage() {
 
   const handleSend = useCallback(async (role: string, text: string) => {
     if (!selectedId) throw new Error("No team selected");
-    // [382] Optimistic: instant pending bubble; [367] dedup in handleWsEvents replaces it on confirm
-    const optimisticEvent: ChatEvent = {
-      id: `optimistic-${Date.now()}`,
-      role: "BOSS",
-      sessionId: "optimistic",
-      timestamp: new Date().toISOString(),
-      kind: "message",
-      text,
-      pending: true,
-      ...(selectedRole === "PO" || selectedRole === "DEV"
-        ? { targetRole: selectedRole as "PO" | "DEV" }
-        : {}),
-    };
-    setEvents((prev) => [...prev, optimisticEvent]);
+    // [383] Ephemeral text indicator (no bubble) — clears on WS confirm or 2s failsafe
+    setPendingText(text);
+    if (pendingTimerRef.current) clearTimeout(pendingTimerRef.current);
+    pendingTimerRef.current = setTimeout(() => setPendingText(null), 2000);
     await api.chatSend(selectedId, role, text);
-  }, [selectedId, selectedRole]);
+  }, [selectedId]);
 
   const openInfo = useCallback((tab: "overview" | "files" | "agents" = "overview") => {
     setInfoPanelTab(tab);
@@ -370,6 +357,12 @@ export default function ChatPage() {
                 onSend={handleSend}
                 projectId={selectedId ?? undefined}
               />
+              {/* [383] Ephemeral send indicator — text only, no bubble, 0 dup risk */}
+              {pendingText && (
+                <div style={{ padding: "2px 20px 6px", fontSize: 12, color: "var(--c-fg-2)", fontStyle: "italic" }}>
+                  Sending: {pendingText.slice(0, 40)}{pendingText.length > 40 ? "…" : ""}
+                </div>
+              )}
             </>
           )}
 
