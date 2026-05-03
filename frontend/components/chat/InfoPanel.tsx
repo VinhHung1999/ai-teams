@@ -288,21 +288,21 @@ export function InfoPanel({ open, tab, project, roles, onClose, onTabChange, onS
         }}
       />
 
-      {/* Panel — 50vw desktop, full-screen mobile; Files tab → full-width for content readability */}
+      {/* Panel — Files tab: fixed full-viewport; others: 50vw absolute */}
       <div
-        className="info-panel"
+        className={tab === "files" ? undefined : "info-panel"}
         style={{
-          position: "absolute",
+          position: tab === "files" ? "fixed" : "absolute",
           top: 0, right: 0, bottom: 0,
-          // [406] Files tab expands panel to full width (overrides .info-panel CSS width)
-          ...(tab === "files" ? { left: 0, width: "100%", maxWidth: "none" } : {}),
+          ...(tab === "files"
+            ? { left: 0, width: "100vw", height: "100dvh", maxWidth: "none", zIndex: 100 }
+            : { zIndex: 50 }),
           display: "flex",
           flexDirection: "column",
-          zIndex: 50,
           background: "var(--c-bg-list-glass)",
           backdropFilter: "blur(28px) saturate(180%)",
           WebkitBackdropFilter: "blur(28px) saturate(180%)",
-          borderLeft: "1px solid var(--c-line)",
+          borderLeft: tab === "files" ? "none" : "1px solid var(--c-line)",
           boxShadow: "-4px 0 24px rgba(0,0,0,0.08)",
         }}
       >
