@@ -54,7 +54,7 @@ async function tmSend(sessionName: string, role: string, text: string): Promise<
 async function transcribeWithSoniox(audioFilePath: string, apiKey: string, filename: string = 'audio.webm'): Promise<string> {
   const authHeader = { 'Authorization': `Bearer ${apiKey}` };
   const fileSize = fs.statSync(audioFilePath).size;
-  console.log(`[voice] received ${filename} size=${(fileSize/1024).toFixed(1)}KB`);
+  console.error(`[voice] received ${filename} size=${(fileSize/1024).toFixed(1)}KB`);
 
   const uploadAndTranscribe = async (filePath: string, fname: string): Promise<string> => {
     const audioBlob = new Blob([fs.readFileSync(filePath)], { type: 'application/octet-stream' });
@@ -67,7 +67,7 @@ async function transcribeWithSoniox(audioFilePath: string, apiKey: string, filen
     const upBody = await upRes.text();
     if (!upRes.ok) throw new Error(`upload_failed:${upBody}`);
     const { id: fileId } = JSON.parse(upBody) as { id: string };
-    console.log(`[voice] uploaded file_id=${fileId}`);
+    console.error(`[voice] uploaded file_id=${fileId}`);
 
     const txRes = await fetch('https://api.soniox.com/v1/transcriptions', {
       method: 'POST',
@@ -93,12 +93,12 @@ async function transcribeWithSoniox(audioFilePath: string, apiKey: string, filen
     return text.trim();
   };
 
-  // Step 1: Try direct upload (works for audio/mp4 from iOS, sometimes webm)
+  // Step 1: Try direct upload. Any Soniox rejection (upload, invalid audio, transcribe error)
+  // falls through to ffmpeg — iOS audio/mp4 and some WebM streams are unreliable.
   try {
     return await uploadAndTranscribe(audioFilePath, filename);
   } catch (e: any) {
-    if (!String(e.message).includes('upload_failed')) throw e;
-    console.log(`[voice] direct upload rejected, converting to OGG via ffmpeg...`);
+    console.error(`[voice] direct attempt failed (${e.message}) → ffmpeg fallback`);
   }
 
   // Step 2: Fallback — convert to OGG (Soniox rejects some WebM streams from MediaRecorder)
@@ -108,7 +108,7 @@ async function transcribeWithSoniox(audioFilePath: string, apiKey: string, filen
       `ffmpeg -y -i "${audioFilePath}" -c:a libvorbis -q:a 4 "${oggPath}" 2>&1`,
       { timeout: 30_000 },
     );
-    if (stderr) console.log(`[voice] ffmpeg: ${stderr.slice(-300)}`);
+    if (stderr) console.error(`[voice] ffmpeg: ${stderr.slice(-300)}`);
   } catch (e: any) {
     throw new Error(`ffmpeg: ${e.message}`);
   }
