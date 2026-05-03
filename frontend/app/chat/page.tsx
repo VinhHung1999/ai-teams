@@ -196,26 +196,14 @@ export default function ChatPage() {
     }
   }, [selectedId, loadingHistory, hasMore]);
 
-  // [383] Ephemeral text indicator — no optimistic bubble, 0 dup risk
-  const [pendingText, setPendingText] = useState<string | null>(null);
-  const pendingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
+  // [384] Pure WS render — id dedup only, no pending logic
   const handleWsEvents = useCallback((newEvts: ChatEvent[]) => {
     setEvents((prev) => {
       const existingIds = new Set(prev.map((e) => e.id));
-      const seenInBatch = new Set<string>();
-      const fresh = newEvts.filter((e) => {
-        if (existingIds.has(e.id) || seenInBatch.has(e.id)) return false;
-        seenInBatch.add(e.id);
-        return true;
-      });
+      const fresh = newEvts.filter((e) => !existingIds.has(e.id));
       if (fresh.length === 0) return prev;
       return [...prev, ...fresh];
     });
-    // Clear ephemeral indicator when any confirmed BOSS message arrives
-    const hasBossConfirm = newEvts.some(e => e.role === "BOSS" && e.kind === "message" && !e.pending);
-    if (hasBossConfirm) setPendingText(null);
-
     const last = newEvts[newEvts.length - 1];
     if (last && selectedId) {
       setLastEvents((p) => ({ ...p, [selectedId]: (last.text ?? last.tool?.name ?? "").slice(0, 60) }));
@@ -242,10 +230,6 @@ export default function ChatPage() {
 
   const handleSend = useCallback(async (role: string, text: string) => {
     if (!selectedId) throw new Error("No team selected");
-    // [383] Ephemeral text indicator (no bubble) — clears on WS confirm or 2s failsafe
-    setPendingText(text);
-    if (pendingTimerRef.current) clearTimeout(pendingTimerRef.current);
-    pendingTimerRef.current = setTimeout(() => setPendingText(null), 2000);
     await api.chatSend(selectedId, role, text);
   }, [selectedId]);
 
@@ -357,12 +341,6 @@ export default function ChatPage() {
                 onSend={handleSend}
                 projectId={selectedId ?? undefined}
               />
-              {/* [383] Ephemeral send indicator — text only, no bubble, 0 dup risk */}
-              {pendingText && (
-                <div style={{ padding: "2px 20px 6px", fontSize: 12, color: "var(--c-fg-2)", fontStyle: "italic" }}>
-                  Sending: {pendingText.slice(0, 40)}{pendingText.length > 40 ? "…" : ""}
-                </div>
-              )}
             </>
           )}
 
