@@ -257,18 +257,19 @@ export function InfoPanel({ open, tab, project, roles, onClose, onTabChange, onS
   }, [open, onClose]);
 
   // [372] Team management actions
-  const [loadingAction, setLoadingAction] = useState<"start" | "kill" | "refresh" | null>(null);
+  const [loadingAction, setLoadingAction] = useState<"start" | "kill" | "refresh" | "compact" | null>(null);
   const isOnline = project?.tmux_active ?? false;
 
-  const doAction = useCallback(async (action: "start" | "kill" | "refresh") => {
+  const doAction = useCallback(async (action: "start" | "kill" | "refresh" | "compact") => {
     if (!project || loadingAction) return;
     if (action === "kill" || action === "refresh") {
       if (!window.confirm(`${action === "kill" ? "Kill" : "Refresh"} team "${project.name}"?`)) return;
     }
     setLoadingAction(action);
-    try { await fetch(`/api/projects/${project.id}/${action}`, { method: "POST" }); } catch {}
+    const endpoint = action === "compact" ? "compact-all" : action;
+    try { await fetch(`/api/projects/${project.id}/${endpoint}`, { method: "POST" }); } catch {}
     setLoadingAction(null);
-    onRefreshProjects?.();
+    if (action !== "compact") onRefreshProjects?.();
   }, [project, loadingAction, onRefreshProjects]);
 
   if (!open) return null; // snap: no animation
@@ -380,6 +381,8 @@ export function InfoPanel({ open, tab, project, roles, onClose, onTabChange, onS
                   icon: <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="4" width="16" height="16" rx="2"/></svg> },
                 { action: "refresh" as const, title: "Refresh team", color: "#3390ec", disabled: loadingAction !== null,
                   icon: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg> },
+                { action: "compact" as const, title: "Compact all (free context)", color: "#a78bfa", disabled: !isOnline || loadingAction !== null,
+                  icon: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/><line x1="12" y1="8" x2="12" y2="16"/><polyline points="8 12 12 16 16 12"/></svg> },
               ]).map(({ action, title, color, disabled, icon }) => (
                 <button
                   key={action}

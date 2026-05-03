@@ -207,4 +207,34 @@ router.get('/api/projects/:id/context-usage', async (req: Request, res: Response
   }
 });
 
+// ── POST /api/projects/:id/compact-all ────────────────────────────────────────
+
+router.post('/api/projects/:id/compact-all', async (req: Request, res: Response) => {
+  const id = parseInt(req.params.id as string);
+  const project = getProject(id);
+  if (!project) return res.status(404).json({ ok: false, error: 'Project not found' });
+
+  const sessionName = project.tmux_session_name;
+  if (!sessionName) return res.status(400).json({ ok: false, error: 'No tmux session' });
+  if (!(await tmuxHasSession(sessionName))) return res.status(400).json({ ok: false, error: 'Session not running' });
+
+  try {
+    const { stdout } = await execAsync(
+      `tmux list-panes -t ${sessionName} -F "#{pane_index} #{@role_name}"`,
+      { timeout: 3000, encoding: 'utf-8' },
+    );
+    const panes = stdout.trim().split('\n').map((l) => {
+      const parts = l.trim().split(' ', 2);
+      return parts.length === 2 ? { idx: parts[0], role: parts[1] } : null;
+    }).filter(Boolean) as { idx: string; role: string }[];
+
+    for (const { idx } of panes) {
+      await execAsync(`tmux send-keys -t ${sessionName}:0.${idx} '/compact' Enter`);
+    }
+    return res.json({ ok: true, compacted: panes.length });
+  } catch (e: any) {
+    return res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
 export default router;
