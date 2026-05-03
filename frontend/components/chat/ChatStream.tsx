@@ -266,8 +266,13 @@ interface ChatStreamProps {
 }
 
 export function ChatStream({ events, loading, hasMore, onLoadMore, filterRole, sendingMessage, className = "" }: ChatStreamProps) {
+  // [358] BOSS messages only show in the topic they were sent to (targetRole).
+  // Legacy events without targetRole fall back to showing in all topics.
   const filtered = filterRole
-    ? events.filter((e) => e.role === "BOSS" || e.role === filterRole)
+    ? events.filter((e) =>
+        e.role === filterRole ||
+        (e.role === "BOSS" && (!e.targetRole || e.targetRole === filterRole))
+      )
     : events;
 
   // Build tool_result lookup (toolUseId → tool_result event)

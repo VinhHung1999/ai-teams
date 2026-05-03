@@ -18,6 +18,7 @@ const router = Router();
 export type ChatEvent = {
   id: string;
   role: 'PO' | 'DEV' | 'BOSS';
+  targetRole?: 'PO' | 'DEV'; // BOSS messages: which pane's JSONL they came from
   sessionId: string;
   timestamp: string;
   kind: 'message' | 'tool_use' | 'tool_result';
@@ -73,9 +74,10 @@ function parseJsonlLine(
   const BOSS_PREFIX_RE   = /^\[via UI\]\s*BOSS:\s*/;
   const SENDER_PREFIX_RE = /^([A-Z]{2,})\s*\[\d{1,2}:\d{2}\]:\s*/;
 
-  function retagContent(text: string): { role: 'BOSS' | 'PO' | 'DEV'; text: string } {
+  function retagContent(text: string): { role: 'BOSS' | 'PO' | 'DEV'; text: string; targetRole?: 'PO' | 'DEV' } {
     if (BOSS_PREFIX_RE.test(text)) {
-      return { role: 'BOSS', text: text.replace(BOSS_PREFIX_RE, '') };
+      // [358] BOSS messages belong to the pane whose JSONL they came from
+      return { role: 'BOSS', text: text.replace(BOSS_PREFIX_RE, ''), targetRole: fileRole };
     }
     const m = text.match(SENDER_PREFIX_RE);
     if (m) {
@@ -93,6 +95,7 @@ function parseJsonlLine(
       events.push({
         id: d.uuid || `${ts}-user`,
         role: retagged.role,
+        ...(retagged.targetRole ? { targetRole: retagged.targetRole } : {}),
         sessionId,
         timestamp: ts,
         kind: 'message',
@@ -108,6 +111,7 @@ function parseJsonlLine(
         events.push({
           id: `${d.uuid}:text`,
           role: retagged.role,
+          ...(retagged.targetRole ? { targetRole: retagged.targetRole } : {}),
           sessionId,
           timestamp: ts,
           kind: 'message',

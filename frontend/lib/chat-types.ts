@@ -4,6 +4,7 @@ export type ChatKind = 'message' | 'tool_use' | 'tool_result';
 export interface ChatEvent {
   id: string;
   role: ChatRole;
+  targetRole?: 'PO' | 'DEV'; // for BOSS messages: which pane's JSONL this came from
   sessionId: string;
   timestamp: string;
   kind: ChatKind;
