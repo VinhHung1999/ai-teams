@@ -8,26 +8,61 @@ interface ChatStreamProps {
   loading?: boolean;
   hasMore?: boolean;
   onLoadMore?: () => void;
+  filterRole?: string;
   className?: string;
 }
 
+// ── Role colors (matches design CSS) ──────────────────────────────────────────
+
+const ROLE_COLOR: Record<string, string> = {
+  PO:   "#8b5cf6",
+  TL:   "#3b82f6",
+  BE:   "#10b981",
+  FE:   "#f59e0b",
+  QA:   "#ec4899",
+  SM:   "#f43f5e",
+  DEV:  "#71717a",
+  BOSS: "#3390ec",
+};
+
+const ROLE_GRADIENT: Record<string, string> = {
+  PO:   "linear-gradient(135deg,#a78bfa,#7c3aed)",
+  TL:   "linear-gradient(135deg,#60a5fa,#2563eb)",
+  BE:   "linear-gradient(135deg,#34d399,#059669)",
+  FE:   "linear-gradient(135deg,#fbbf24,#d97706)",
+  QA:   "linear-gradient(135deg,#f472b6,#db2777)",
+  SM:   "linear-gradient(135deg,#fb7185,#e11d48)",
+  DEV:  "linear-gradient(135deg,#a1a1aa,#52525b)",
+  BOSS: "linear-gradient(135deg,#60a5fa,#3390ec)",
+};
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
 function formatTime(iso: string): string {
+  return new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+function formatDaySep(iso: string): string {
   const d = new Date(iso);
-  return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  const now = new Date();
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+  const key = (date: Date) => date.toISOString().slice(0, 10);
+  if (key(d) === key(now)) return "TODAY";
+  if (key(d) === key(yesterday)) return "YESTERDAY";
+  return d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }).toUpperCase();
 }
 
-function roleBadgeClass(role: string): string {
-  if (role === "BOSS") return "bg-blue-600 text-white";
-  if (role === "PO") return "bg-purple-700 text-white";
-  return "bg-emerald-700 text-white";
+function dayKey(iso: string): string {
+  return iso.slice(0, 10);
 }
 
-// Very lightweight markdown → plain text with code block detection
+// ── Markdown renderer ─────────────────────────────────────────────────────────
+
 function SimpleMarkdown({ text }: { text: string }) {
-  // Split on fenced code blocks
   const parts = text.split(/(```[\s\S]*?```)/g);
   return (
-    <div className="break-words whitespace-pre-wrap text-sm leading-relaxed">
+    <div style={{ fontSize: 14, lineHeight: 1.45, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
       {parts.map((part, i) => {
         if (part.startsWith("```")) {
           const lines = part.split("\n");
@@ -36,25 +71,37 @@ function SimpleMarkdown({ text }: { text: string }) {
           return (
             <pre
               key={i}
-              className="my-1 p-2 rounded bg-zinc-950 border border-zinc-700 overflow-x-auto text-xs font-mono text-zinc-200"
+              style={{
+                margin: "6px 0 4px",
+                padding: "10px 12px",
+                borderRadius: 8,
+                background: "rgba(0,0,0,0.06)",
+                fontFamily: "var(--font-geist-mono, monospace)",
+                fontSize: 12.5,
+                lineHeight: 1.55,
+                overflowX: "auto",
+                whiteSpace: "pre",
+                color: "var(--c-fg-0)",
+              }}
             >
-              {lang && <span className="text-zinc-500 text-xs">{lang}\n</span>}
+              {lang && (
+                <span style={{ display: "block", fontSize: 10, fontWeight: 600, color: "var(--c-fg-2)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4, fontFamily: "inherit" }}>
+                  {lang}
+                </span>
+              )}
               {code}
             </pre>
           );
         }
-        // Inline code
         const inlineParts = part.split(/(`[^`]+`)/g);
         return (
           <span key={i}>
             {inlineParts.map((p, j) =>
               p.startsWith("`") ? (
-                <code key={j} className="px-1 py-0.5 rounded bg-zinc-800 text-zinc-200 text-xs font-mono">
+                <code key={j} style={{ padding: "1px 5px", borderRadius: 4, background: "rgba(0,0,0,0.06)", fontFamily: "var(--font-geist-mono, monospace)", fontSize: 13, color: "var(--c-fg-0)" }}>
                   {p.slice(1, -1)}
                 </code>
-              ) : (
-                <span key={j}>{p}</span>
-              )
+              ) : <span key={j}>{p}</span>
             )}
           </span>
         );
@@ -63,34 +110,57 @@ function SimpleMarkdown({ text }: { text: string }) {
   );
 }
 
+// ── Tool cards (glass style) ─────────────────────────────────────────────────
+
 function ToolUseCard({ event }: { event: ChatEvent }) {
   const [expanded, setExpanded] = useState(false);
   const tool = event.tool!;
 
   const inputSummary = (() => {
-    if (!tool.input) return "";
     const inp = tool.input;
-    if (inp.file_path) return inp.file_path;
-    if (inp.command) return inp.command.slice(0, 80);
-    if (inp.path) return inp.path;
+    if (!inp) return "";
+    if (inp.file_path) return inp.file_path as string;
+    if (inp.command) return (inp.command as string).slice(0, 80);
+    if (inp.path) return inp.path as string;
     return "";
   })();
 
   return (
-    <div className="my-1 rounded border border-zinc-700 bg-zinc-800/50 text-xs overflow-hidden">
+    <div
+      style={{
+        borderRadius: 8,
+        border: "1px solid var(--c-line)",
+        background: "rgba(0,0,0,0.04)",
+        overflow: "hidden",
+        fontSize: 12,
+        marginTop: 4,
+      }}
+    >
       <button
         onClick={() => setExpanded((x) => !x)}
-        className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-zinc-700/40 transition-colors"
+        className="w-full flex items-center gap-2 text-left"
+        style={{ padding: "8px 12px", background: "transparent", color: "var(--c-fg-1)" }}
+        onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(0,0,0,0.04)")}
+        onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
       >
-        <span className="text-zinc-400">🔧</span>
-        <span className="font-mono text-zinc-200 font-medium">{tool.name}</span>
-        {inputSummary && (
-          <span className="text-zinc-400 truncate flex-1">{inputSummary}</span>
-        )}
-        <span className="text-zinc-500 ml-auto flex-shrink-0">{expanded ? "▲" : "▼"}</span>
+        <span>🔧</span>
+        <span style={{ fontFamily: "var(--font-geist-mono, monospace)", fontWeight: 600, color: "var(--c-fg-0)" }}>{tool.name}</span>
+        {inputSummary && <span style={{ color: "var(--c-fg-2)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{inputSummary}</span>}
+        <span style={{ marginLeft: "auto", flexShrink: 0, color: "var(--c-fg-3)" }}>{expanded ? "▲" : "▼"}</span>
       </button>
       {expanded && tool.input && (
-        <pre className="px-3 pb-2 text-xs font-mono text-zinc-300 overflow-x-auto max-h-48 overflow-y-auto border-t border-zinc-700">
+        <pre
+          style={{
+            padding: "0 12px 8px",
+            fontFamily: "var(--font-geist-mono, monospace)",
+            fontSize: 11.5,
+            color: "var(--c-fg-1)",
+            overflowX: "auto",
+            maxHeight: 192,
+            overflowY: "auto",
+            borderTop: "1px solid var(--c-line)",
+          }}
+        >
           {JSON.stringify(tool.input, null, 2)}
         </pre>
       )}
@@ -101,59 +171,148 @@ function ToolUseCard({ event }: { event: ChatEvent }) {
 function ToolResultCard({ event }: { event: ChatEvent }) {
   const [expanded, setExpanded] = useState(false);
   const tool = event.tool!;
-  const output = tool.output ?? "";
-  const truncated = typeof output === "string" && output.length > 1000;
+  const output = String(tool.output ?? "");
+  const truncated = output.length > 1000;
   const displayOutput = truncated && !expanded ? output.slice(0, 1000) + "…" : output;
 
   return (
-    <div className={`my-1 rounded border text-xs overflow-hidden ${tool.isError ? "border-red-800 bg-red-950/30" : "border-zinc-700 bg-zinc-800/30"}`}>
+    <div
+      style={{
+        borderRadius: 8,
+        border: `1px solid ${tool.isError ? "rgba(239,68,68,0.3)" : "var(--c-line)"}`,
+        background: tool.isError ? "rgba(239,68,68,0.06)" : "rgba(0,0,0,0.03)",
+        overflow: "hidden",
+        fontSize: 12,
+        marginTop: 4,
+      }}
+    >
       <button
         onClick={() => setExpanded((x) => !x)}
-        className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-zinc-700/20 transition-colors"
+        className="w-full flex items-center gap-2 text-left"
+        style={{ padding: "6px 12px", background: "transparent", color: "var(--c-fg-2)" }}
+        onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(0,0,0,0.03)")}
+        onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
       >
         <span>{tool.isError ? "❌" : "✓"}</span>
-        <span className="font-mono text-zinc-400">{tool.name} result</span>
-        <span className="ml-auto text-zinc-500 flex-shrink-0">{expanded ? "▲" : "▼"}</span>
+        <span style={{ fontFamily: "var(--font-geist-mono, monospace)", color: "var(--c-fg-2)" }}>{tool.name}</span>
+        <span style={{ marginLeft: "auto", flexShrink: 0, color: "var(--c-fg-3)" }}>{expanded ? "▲" : "▼"}</span>
       </button>
       {expanded && (
-        <div className="border-t border-zinc-700">
-          <pre className="px-3 pb-2 text-xs font-mono text-zinc-400 overflow-x-auto max-h-48 overflow-y-auto whitespace-pre-wrap">
-            {displayOutput}
-          </pre>
-          {truncated && !expanded && (
-            <button
-              onClick={() => setExpanded(true)}
-              className="px-3 py-1 text-blue-400 hover:underline"
-            >
-              Show all
-            </button>
-          )}
-        </div>
+        <pre
+          style={{
+            padding: "0 12px 8px",
+            fontFamily: "var(--font-geist-mono, monospace)",
+            fontSize: 11.5,
+            color: "var(--c-fg-2)",
+            overflowX: "auto",
+            maxHeight: 192,
+            overflowY: "auto",
+            borderTop: "1px solid var(--c-line)",
+            whiteSpace: "pre-wrap",
+          }}
+        >
+          {displayOutput}
+        </pre>
       )}
     </div>
   );
 }
 
-function MessageBubble({ event }: { event: ChatEvent }) {
+// ── Message bubble ────────────────────────────────────────────────────────────
+
+function MessageBubble({ event, prevRole }: { event: ChatEvent; prevRole?: string }) {
   const isBoss = event.role === "BOSS";
+  const sameAuthor = prevRole === event.role;
+  const roleColor = ROLE_COLOR[event.role] ?? "#71717a";
+  const roleGradient = ROLE_GRADIENT[event.role] ?? ROLE_GRADIENT.DEV;
+
   return (
-    <div className={`flex gap-2 ${isBoss ? "justify-end" : "justify-start"}`}>
+    <div
+      className="flex items-end gap-2"
+      style={{
+        justifyContent: isBoss ? "flex-end" : "flex-start",
+        marginTop: sameAuthor ? 1 : 8,
+      }}
+    >
+      {/* Left avatar (agent) */}
       {!isBoss && (
-        <div className={`flex-shrink-0 w-6 h-6 rounded-full text-[10px] font-bold flex items-center justify-center ${roleBadgeClass(event.role)}`}>
+        <div
+          style={{
+            width: 28, height: 28,
+            borderRadius: "50%",
+            background: sameAuthor ? "transparent" : roleGradient,
+            flexShrink: 0,
+            marginBottom: 2,
+            display: "flex", alignItems: "center", justifyContent: "center",
+            color: "white", fontWeight: 600, fontSize: 11,
+            visibility: sameAuthor ? "hidden" : "visible",
+          }}
+        >
           {event.role[0]}
         </div>
       )}
-      <div className={`max-w-[80%] flex flex-col ${isBoss ? "items-end" : "items-start"}`}>
-        <div className="flex items-center gap-2 mb-0.5">
-          {!isBoss && <span className="text-[10px] text-zinc-500 font-mono">{event.role}</span>}
-          <span className="text-[10px] text-zinc-600">{formatTime(event.timestamp)}</span>
-        </div>
-        <div className={`px-3 py-2 rounded-xl ${isBoss ? "bg-blue-600 text-white rounded-tr-sm" : "bg-zinc-800 text-zinc-100 rounded-tl-sm"}`}>
-          <SimpleMarkdown text={event.text ?? ""} />
+
+      {/* Bubble column */}
+      <div
+        style={{
+          maxWidth: "70%",
+          display: "flex",
+          flexDirection: "column",
+          alignItems: isBoss ? "flex-end" : "flex-start",
+        }}
+      >
+        {/* Author row (only first message in a sequence) */}
+        {!sameAuthor && !isBoss && (
+          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 2, color: roleColor }}>
+            {event.role}
+          </div>
+        )}
+
+        {/* Bubble */}
+        <div
+          className="glass-bubble"
+          style={{
+            background: isBoss ? "rgba(220,250,200,0.95)" : "rgba(255,255,255,0.96)",
+            borderRadius: 14,
+            ...(isBoss ? { borderBottomRightRadius: 4 } : { borderBottomLeftRadius: sameAuthor ? 14 : 4 }),
+            padding: "7px 12px 6px",
+            boxShadow: "0 1px 2px rgba(0,0,0,0.08)",
+            color: "var(--c-fg-0)",
+            position: "relative",
+          }}
+        >
+          {event.text && <SimpleMarkdown text={event.text} />}
+
+          {/* Time float right */}
+          <span
+            style={{
+              float: "right",
+              fontSize: 11,
+              color: "var(--c-fg-2)",
+              marginLeft: 8,
+              marginTop: 4,
+              userSelect: "none",
+            }}
+          >
+            {formatTime(event.timestamp)}
+          </span>
         </div>
       </div>
+
+      {/* Right avatar (BOSS) */}
       {isBoss && (
-        <div className={`flex-shrink-0 w-6 h-6 rounded-full text-[10px] font-bold flex items-center justify-center ${roleBadgeClass(event.role)}`}>
+        <div
+          style={{
+            width: 28, height: 28,
+            borderRadius: "50%",
+            background: sameAuthor ? "transparent" : roleGradient,
+            flexShrink: 0,
+            marginBottom: 2,
+            display: "flex", alignItems: "center", justifyContent: "center",
+            color: "white", fontWeight: 600, fontSize: 11,
+            visibility: sameAuthor ? "hidden" : "visible",
+          }}
+        >
           B
         </div>
       )}
@@ -161,58 +320,97 @@ function MessageBubble({ event }: { event: ChatEvent }) {
   );
 }
 
-function EventRow({ event }: { event: ChatEvent }) {
-  if (event.kind === "message") return <MessageBubble event={event} />;
-  if (event.kind === "tool_use") return (
-    <div className="mx-8">
-      <ToolUseCard event={event} />
+// ── Day separator ─────────────────────────────────────────────────────────────
+
+function DaySeparator({ iso }: { iso: string }) {
+  return (
+    <div style={{ display: "flex", justifyContent: "center", margin: "12px 0 8px" }}>
+      <span
+        style={{
+          background: "rgba(0,0,0,0.35)",
+          backdropFilter: "blur(8px)",
+          WebkitBackdropFilter: "blur(8px)",
+          color: "white",
+          fontSize: 12,
+          fontWeight: 500,
+          padding: "4px 10px",
+          borderRadius: 12,
+        }}
+      >
+        {formatDaySep(iso)}
+      </span>
     </div>
   );
-  if (event.kind === "tool_result") return (
-    <div className="mx-8">
-      <ToolResultCard event={event} />
-    </div>
-  );
-  return null;
 }
 
-export function ChatStream({ events, loading, hasMore, onLoadMore, className = "" }: ChatStreamProps) {
+// ── Event row (with tool cards in bubble-width column) ────────────────────────
+
+function EventRow({ event, prevRole, prevDay }: { event: ChatEvent; prevRole?: string; prevDay?: string }) {
+  const thisDay = dayKey(event.timestamp);
+  const showDaySep = prevDay !== undefined && prevDay !== thisDay;
+
+  return (
+    <>
+      {showDaySep && <DaySeparator iso={event.timestamp} />}
+      {event.kind === "message" && (
+        <MessageBubble event={event} prevRole={prevRole} />
+      )}
+      {event.kind === "tool_use" && (
+        <div style={{ marginLeft: event.role === "BOSS" ? "auto" : 36, marginRight: event.role === "BOSS" ? 36 : "auto", maxWidth: "65%" }}>
+          <ToolUseCard event={event} />
+        </div>
+      )}
+      {event.kind === "tool_result" && (
+        <div style={{ marginLeft: event.role === "BOSS" ? "auto" : 36, marginRight: event.role === "BOSS" ? 36 : "auto", maxWidth: "65%" }}>
+          <ToolResultCard event={event} />
+        </div>
+      )}
+    </>
+  );
+}
+
+// ── Main ChatStream ───────────────────────────────────────────────────────────
+
+export function ChatStream({ events, loading, hasMore, onLoadMore, filterRole, className = "" }: ChatStreamProps) {
+  const visibleEvents = filterRole
+    ? events.filter((e) => e.role === "BOSS" || e.role === filterRole)
+    : events;
+
   const containerRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const isAtBottomRef = useRef(true);
 
-  const scrollToBottom = useCallback((smooth = false) => {
-    bottomRef.current?.scrollIntoView({ behavior: smooth ? "smooth" : "auto" });
+  const scrollToBottom = useCallback(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "auto" });
   }, []);
 
-  // Track whether user is at bottom
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
     const onScroll = () => {
       const { scrollTop, scrollHeight, clientHeight } = el;
-      isAtBottomRef.current = scrollHeight - scrollTop - clientHeight < 60;
+      isAtBottomRef.current = scrollHeight - scrollTop - clientHeight < 80;
     };
-    el.addEventListener("scroll", onScroll);
+    el.addEventListener("scroll", onScroll, { passive: true });
     return () => el.removeEventListener("scroll", onScroll);
   }, []);
 
-  // Scroll to bottom when events arrive (if already at bottom)
   useEffect(() => {
     if (isAtBottomRef.current) scrollToBottom();
-  }, [events.length, scrollToBottom]);
+  }, [visibleEvents.length, scrollToBottom]);
 
-  // Load more on scroll to top
   const handleScroll = () => {
     const el = containerRef.current;
     if (!el || !hasMore || !onLoadMore) return;
     if (el.scrollTop < 80) onLoadMore();
   };
 
-  if (events.length === 0 && !loading) {
+  if (visibleEvents.length === 0 && !loading) {
     return (
-      <div className={`flex-1 flex items-center justify-center text-zinc-500 text-sm ${className}`}>
-        No messages yet — chat sẽ xuất hiện khi pane PO/DEV chạy.
+      <div className={`flex-1 flex items-center justify-center ${className}`} style={{ color: "var(--c-fg-2)", fontSize: 14 }}>
+        {filterRole
+          ? `No messages with ${filterRole} yet.`
+          : "No messages yet — chat sẽ xuất hiện khi pane PO/DEV chạy."}
       </div>
     );
   }
@@ -221,23 +419,37 @@ export function ChatStream({ events, loading, hasMore, onLoadMore, className = "
     <div
       ref={containerRef}
       onScroll={handleScroll}
-      className={`flex-1 overflow-y-auto px-4 py-4 flex flex-col gap-2 ${className}`}
+      className={`flex-1 overflow-y-auto chat-scroll ${className}`}
+      style={{ padding: "12px 0" }}
     >
-      {loading && (
-        <div className="text-center text-xs text-zinc-500 py-2">Loading older messages…</div>
-      )}
-      {hasMore && !loading && (
-        <button
-          onClick={onLoadMore}
-          className="text-center text-xs text-blue-400 hover:underline py-1"
-        >
-          Load more
-        </button>
-      )}
-      {events.map((e) => (
-        <EventRow key={e.id} event={e} />
-      ))}
-      <div ref={bottomRef} />
+      <div style={{ maxWidth: 760, margin: "0 auto", padding: "0 16px", display: "flex", flexDirection: "column", gap: 0 }}>
+        {loading && (
+          <div style={{ textAlign: "center", fontSize: 12, color: "var(--c-fg-2)", padding: "8px 0" }}>
+            Loading older messages…
+          </div>
+        )}
+        {hasMore && !loading && (
+          <button
+            onClick={onLoadMore}
+            style={{ textAlign: "center", fontSize: 12, color: "var(--c-accent)", padding: "4px 0", background: "transparent", border: "none", cursor: "pointer" }}
+          >
+            Load more
+          </button>
+        )}
+
+        {/* Inject day separator before the very first event */}
+        {visibleEvents.length > 0 && <DaySeparator iso={visibleEvents[0].timestamp} />}
+
+        {visibleEvents.map((e, i) => (
+          <EventRow
+            key={e.id}
+            event={e}
+            prevRole={i > 0 ? visibleEvents[i - 1].role : undefined}
+            prevDay={i > 0 ? dayKey(visibleEvents[i - 1].timestamp) : dayKey(e.timestamp)}
+          />
+        ))}
+        <div ref={bottomRef} />
+      </div>
     </div>
   );
 }

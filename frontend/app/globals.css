@@ -148,3 +148,207 @@
 .status-pulse {
   animation: status-pulse 2.5s ease-in-out infinite;
 }
+
+/* ═══════════════════════════════════════════════════════════
+   CHAT UI — Design tokens (Sprint 41 Telegram-style redesign)
+   Light theme is DEFAULT per Boss final iteration.
+   Token namespace: --c-* to avoid collision with board tokens.
+   ═══════════════════════════════════════════════════════════ */
+
+:root,
+html[data-theme="light"] {
+  /* Surfaces */
+  --c-bg-app:          #ffffff;
+  --c-bg-list:         #ffffff;
+  --c-bg-list-glass:   rgba(255,255,255,0.72);
+  --c-bg-chat:         #c5d3e0;
+  --c-bg-hover:        rgba(0,0,0,0.04);
+  --c-bg-active:       #e8f1fb;
+  --c-bg-bubble-them:  rgba(255,255,255,0.96);
+  --c-bg-bubble-me:    #effdde;
+
+  /* Lines */
+  --c-line:            rgba(0,0,0,0.06);
+  --c-line-soft:       rgba(0,0,0,0.04);
+
+  /* Foregrounds */
+  --c-fg-0:            #18181b;
+  --c-fg-1:            #52525b;
+  --c-fg-2:            #8a8a93;
+  --c-fg-3:            #b5b5bb;
+
+  /* Accent (Telegram blue) */
+  --c-accent:          #3390ec;
+  --c-accent-soft:     #e8f1fb;
+
+  /* Shadows */
+  --c-bubble-shadow:   0 1px 2px rgba(0,0,0,0.08);
+
+  /* Role colors (matches design CSS) */
+  --c-role-PO: #8b5cf6;
+  --c-role-TL: #3b82f6;
+  --c-role-BE: #10b981;
+  --c-role-FE: #f59e0b;
+  --c-role-QA: #ec4899;
+  --c-role-SM: #f43f5e;
+  --c-role-DEV: #71717a;
+
+  /* Status */
+  --c-status-ok:   #10b981;
+  --c-status-warn: #f59e0b;
+  --c-status-err:  #ef4444;
+
+  /* Wallpaper gradient — mint light */
+  --c-wallpaper-gradient:
+    radial-gradient(ellipse at 20% 30%, #c8e6c9 0%, transparent 55%),
+    radial-gradient(ellipse at 80% 70%, #b3d9c2 0%, transparent 60%),
+    linear-gradient(160deg, #d4ecd8 0%, #b8dcc1 100%);
+
+  /* SVG pattern opacity */
+  --c-wallpaper-pattern-opacity: 0.6;
+}
+
+html[data-theme="dark"] {
+  --c-bg-app:          #17212b;
+  --c-bg-list:         #17212b;
+  --c-bg-list-glass:   rgba(23,33,43,0.72);
+  --c-bg-chat:         #0e1621;
+  --c-bg-hover:        rgba(255,255,255,0.06);
+  --c-bg-active:       #2b5278;
+  --c-bg-bubble-them:  rgba(24,37,51,0.92);
+  --c-bg-bubble-me:    #2b5278;
+  --c-line:            rgba(255,255,255,0.06);
+  --c-line-soft:       rgba(255,255,255,0.04);
+  --c-fg-0:            #ffffff;
+  --c-fg-1:            #aebac8;
+  --c-fg-2:            #708499;
+  --c-fg-3:            #4a5d75;
+  --c-accent:          #6ab3f3;
+  --c-accent-soft:     #2b5278;
+  --c-bubble-shadow:   0 1px 2px rgba(0,0,0,0.24);
+
+  --c-wallpaper-gradient:
+    radial-gradient(ellipse at 20% 30%, #2d4a3a 0%, transparent 55%),
+    radial-gradient(ellipse at 80% 70%, #1e3a2b 0%, transparent 60%),
+    linear-gradient(160deg, #1a2e25 0%, #0f1e16 100%);
+  --c-wallpaper-pattern-opacity: 0.18;
+}
+
+/* ── Glass utilities ── */
+@layer utilities {
+  .glass-sidebar {
+    background: var(--c-bg-list-glass);
+    backdrop-filter: blur(24px) saturate(180%);
+    -webkit-backdrop-filter: blur(24px) saturate(180%);
+  }
+  .glass-header {
+    background: var(--c-bg-list-glass);
+    backdrop-filter: blur(24px) saturate(180%);
+    -webkit-backdrop-filter: blur(24px) saturate(180%);
+  }
+  .glass-bubble {
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+  }
+  .glass-panel {
+    background: var(--c-bg-list-glass);
+    backdrop-filter: blur(28px) saturate(180%);
+    -webkit-backdrop-filter: blur(28px) saturate(180%);
+  }
+  .glass-composer-btn {
+    background: rgba(255,255,255,0.55);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    border: 1px solid rgba(255,255,255,0.4);
+  }
+  html[data-theme="dark"] .glass-composer-btn {
+    background: rgba(255,255,255,0.06);
+    border-color: rgba(255,255,255,0.06);
+  }
+  .glass-input-pill {
+    background: rgba(255,255,255,0.55);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    border: 1px solid rgba(255,255,255,0.4);
+  }
+  html[data-theme="dark"] .glass-input-pill {
+    background: rgba(255,255,255,0.06);
+    border-color: rgba(255,255,255,0.06);
+  }
+}
+
+/* ── Mint wallpaper — applied to the chat main container ── */
+.chat-wallpaper {
+  position: relative;
+  background: var(--c-bg-chat);
+}
+.chat-wallpaper::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: var(--c-wallpaper-gradient);
+  pointer-events: none;
+  z-index: 0;
+}
+.chat-wallpaper::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  /* 180×180 SVG repeat: flowers, stars, leaves, peace — white stroke 1.4 opacity 0.55 */
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180' viewBox='0 0 180 180'><g fill='none' stroke='%23ffffff' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round' opacity='0.55'><path d='M20 30 q5 -8 10 0 q5 8 10 0'/><path d='M55 18 l3 6 l6 1 l-4 4 l1 6 l-6 -3 l-6 3 l1 -6 l-4 -4 l6 -1 z'/><path d='M100 35 c-6 0 -10 4 -10 10 c0 6 4 10 10 10 c6 0 10 -4 10 -10 c0 -6 -4 -10 -10 -10 z M100 35 v20 M90 45 h20'/><path d='M150 22 q-6 6 0 12 q6 -6 0 -12 z M150 16 v18 M141 25 h18'/><path d='M30 80 c0 -8 6 -14 14 -14 c8 0 14 6 14 14 c-4 0 -7 2 -10 2 c-3 0 -6 -2 -10 -2 c-4 0 -7 0 -8 0 z'/><path d='M85 75 q3 -10 12 -10 q9 0 12 10 q-9 -2 -12 4 q-3 -6 -12 -4 z'/><path d='M140 90 l4 4 l-4 4 l-4 -4 z M140 82 v16 M132 90 h16'/><path d='M25 130 l4 8 l9 1 l-7 6 l2 9 l-8 -5 l-8 5 l2 -9 l-7 -6 l9 -1 z'/><path d='M75 125 c-6 -2 -8 4 -4 8 c-4 4 -2 10 4 8 c-2 6 4 8 8 4 c4 4 10 2 8 -4 c6 -2 8 -8 4 -10 c4 -4 2 -10 -4 -8 c2 -6 -4 -8 -8 -4 c-4 -4 -10 -2 -8 6 z'/><path d='M125 135 q4 -8 10 0 q4 8 10 0'/><path d='M160 145 l3 6 l6 1 l-4 4 l1 6 l-6 -3 l-6 3 l1 -6 l-4 -4 l6 -1 z'/></g></svg>");
+  background-size: 180px 180px;
+  background-repeat: repeat;
+  pointer-events: none;
+  z-index: 0;
+  opacity: var(--c-wallpaper-pattern-opacity);
+}
+html[data-theme="dark"] .chat-wallpaper::after {
+  filter: invert(1);
+}
+/* All direct children of wallpaper container stay above the pseudo-elements */
+.chat-wallpaper > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* ── Thin custom scrollbar for chat areas ── */
+.chat-scroll::-webkit-scrollbar { width: 5px; height: 5px; }
+.chat-scroll::-webkit-scrollbar-track { background: transparent; }
+.chat-scroll::-webkit-scrollbar-thumb { background: var(--c-fg-3); border-radius: 3px; }
+.chat-scroll::-webkit-scrollbar-thumb:hover { background: var(--c-fg-2); }
+
+/* ── Theme persistence helper ── */
+html { color-scheme: light; }
+html[data-theme="dark"] { color-scheme: dark; }
+
+/* ── Composer: hide menu label on mobile, hide topic status text ── */
+@media (max-width: 767px) {
+  .composer-menu-label { display: none; }
+  .topic-status-text { display: none; }
+}
+
+/* ── Mobile single-view layout (<768px) ── */
+@media (max-width: 767px) {
+  /* Override grid → stacked, both panels in same cell */
+  [data-mobile-view] {
+    grid-template-columns: 1fr !important;
+    position: relative;
+    overflow: hidden;
+  }
+  .chat-mobile-list,
+  .chat-mobile-chat {
+    grid-column: 1 !important;
+    grid-row: 1 !important;
+    width: 100vw;
+  }
+  .chat-mobile-list { z-index: 1; }
+  .chat-mobile-chat { z-index: 2; }
+
+  /* Default: show list, hide chat */
+  [data-mobile-view="list"] .chat-mobile-list { transform: translateX(0); }
+  [data-mobile-view="list"] .chat-mobile-chat { transform: translateX(100%); }
+
+  /* Chat view: push list left, show chat */
+  [data-mobile-view="chat"] .chat-mobile-list { transform: translateX(-30%); }
+  [data-mobile-view="chat"] .chat-mobile-chat { transform: translateX(0); }
+}
