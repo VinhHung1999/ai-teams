@@ -8,6 +8,7 @@ interface ChatStreamProps {
   loading?: boolean;
   hasMore?: boolean;
   onLoadMore?: () => void;
+  filterRole?: string; // when set: show only events from this role + BOSS
   className?: string;
 }
 
@@ -176,7 +177,11 @@ function EventRow({ event }: { event: ChatEvent }) {
   return null;
 }
 
-export function ChatStream({ events, loading, hasMore, onLoadMore, className = "" }: ChatStreamProps) {
+export function ChatStream({ events, loading, hasMore, onLoadMore, filterRole, className = "" }: ChatStreamProps) {
+  // Apply role filter: show BOSS always; agent events only if matching filterRole
+  const visibleEvents = filterRole
+    ? events.filter((e) => e.role === "BOSS" || e.role === filterRole)
+    : events;
   const containerRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const isAtBottomRef = useRef(true);
@@ -209,10 +214,12 @@ export function ChatStream({ events, loading, hasMore, onLoadMore, className = "
     if (el.scrollTop < 80) onLoadMore();
   };
 
-  if (events.length === 0 && !loading) {
+  if (visibleEvents.length === 0 && !loading) {
     return (
-      <div className={`flex-1 flex items-center justify-center text-zinc-500 text-sm ${className}`}>
-        No messages yet — chat sẽ xuất hiện khi pane PO/DEV chạy.
+      <div className={`flex-1 flex items-center justify-center text-sm ${className}`} style={{ color: "var(--c-fg-2)" }}>
+        {filterRole
+          ? `No messages with ${filterRole} yet.`
+          : "No messages yet — chat sẽ xuất hiện khi pane PO/DEV chạy."}
       </div>
     );
   }
@@ -234,7 +241,7 @@ export function ChatStream({ events, loading, hasMore, onLoadMore, className = "
           Load more
         </button>
       )}
-      {events.map((e) => (
+      {visibleEvents.map((e) => (
         <EventRow key={e.id} event={e} />
       ))}
       <div ref={bottomRef} />

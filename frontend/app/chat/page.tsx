@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { TeamList } from "@/components/chat/TeamList";
 import { ChatHeader } from "@/components/chat/ChatHeader";
+import { TopicBar } from "@/components/chat/TopicBar";
 import { ChatStream } from "@/components/chat/ChatStream";
 import { ChatInput } from "@/components/chat/ChatInput";
 import { Drawer, type DrawerTab } from "@/components/chat/Drawer";
@@ -26,6 +27,7 @@ export default function ChatPage() {
 
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [drawerTab, setDrawerTab] = useState<DrawerTab>("kanban");
+  const [selectedRole, setSelectedRole] = useState<string | null>(null);
 
   // Sidebar mobile state
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
@@ -59,8 +61,10 @@ export default function ChatPage() {
     // Enrich with roles
     try {
       const full = await api.getProject(id);
-      setRoles(full.roles?.length ? full.roles : ["PO", "DEV"]);
+      const projectRoles = full.roles?.length ? full.roles : ["PO", "DEV"];
+      setRoles(projectRoles);
       setSelectedProject(full);
+      setSelectedRole(projectRoles[0] ?? null); // default to first role, no "All"
     } catch {}
 
     // Load initial history
@@ -143,6 +147,11 @@ export default function ChatPage() {
     setDrawerOpen(true);
   }, []);
 
+  const openInfo = useCallback(() => {
+    setDrawerOpen(true);
+    setDrawerTab("kanban");
+  }, []);
+
   return (
     <div className="flex h-[100dvh] overflow-hidden" style={{ background: 'var(--c-bg-app)', color: 'var(--c-fg-0)' }}>
       {/* ── Mobile sidebar overlay ── */}
@@ -198,8 +207,13 @@ export default function ChatPage() {
 
         <ChatHeader
           project={selectedProject}
-          onOpenKanban={() => openDrawer("kanban")}
-          onOpenFiles={() => openDrawer("files")}
+          onOpenInfo={openInfo}
+        />
+
+        <TopicBar
+          project={selectedProject}
+          selectedRole={selectedRole}
+          onSelectRole={setSelectedRole}
         />
 
         <ChatStream
@@ -207,12 +221,13 @@ export default function ChatPage() {
           loading={loadingHistory}
           hasMore={hasMore}
           onLoadMore={loadMore}
+          filterRole={selectedRole ?? undefined}
           className="flex-1 min-h-0"
         />
 
         <ChatInput
           roles={roles}
-          defaultRole={roles[0]}
+          defaultRole={selectedRole ?? roles[0]}
           disabled={!selectedId}
           onSend={handleSend}
         />

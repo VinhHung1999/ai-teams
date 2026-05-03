@@ -320,3 +320,9 @@ html[data-theme="dark"] .chat-wallpaper::after {
 /* ── Theme persistence helper ── */
 html { color-scheme: light; }
 html[data-theme="dark"] { color-scheme: dark; }
+
+/* ── Composer: hide menu label on mobile, hide topic status text ── */
+@media (max-width: 767px) {
+  .composer-menu-label { display: none; }
+  .topic-status-text { display: none; }
+}

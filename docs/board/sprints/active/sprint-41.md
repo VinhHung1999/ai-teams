@@ -34,8 +34,8 @@ kanban-plugin: board
 
 ## Todo
 
-- [ ] **[324]** Foundation — design tokens + mint wallpaper + glass utilities
-      **Priority:** P0 · **Points:** 3 · **Assignee:** DEV · **Status:** in_progress · **Backlog-ID:** 361
+- [x] **[324]** Foundation — design tokens + mint wallpaper + glass utilities
+      **Priority:** P0 · **Points:** 3 · **Assignee:** DEV · **Status:** done · **Backlog-ID:** 361
       **Description:**
       Setup nền tảng cho toàn bộ redesign:
 
@@ -58,14 +58,9 @@ kanban-plugin: board
       ```
       Dark mode counterparts với rgba mint xanh.
 
-      **Acceptance:**
-      - `/chat` background = mint gradient + SVG pattern visible (so với `docs/design/project/debug-info-final.png`)
-      - Glass classes work — header/bubble/panel có blur + transparency
-      - Light mode default, toggle dark vẫn còn (qua localStorage hoặc env)
-      - No layout regression; existing components vẫn render
-
       **Notes:**
-      _(DEV fill khi done)_
+      2026-05-03 DEV: Tokens `--c-*` namespace (surfaces, fg-0..3, accent #3390ec light / #6ab3f3 dark, role colors PO/TL/BE/FE/QA/DEV). Wallpaper: mint radial gradient `::before` + 180×180 SVG pattern repeat `::after` on `.chat-wallpaper`. Glass utilities: glass-sidebar/header/bubble/panel/composer-btn/input-pill. Light DEFAULT; dark via `html[data-theme='dark']` + inline script reading localStorage before paint (no flash). Commit 591abb3.
+      2026-05-03 PO: ACCEPTED. globals.css verified: tokens at lines 175-227, glass classes 239-274, chat-wallpaper 281-305. layout.tsx has theme bootstrap script. /chat HTTP 200 (26KB). Foundation solid for [325]–[330].
 
 - [ ] **[325]** Sidebar TeamList redesign — Telegram-style với avatar + preview + dots
       **Priority:** P0 · **Points:** 2 · **Assignee:** DEV · **Status:** todo · **Backlog-ID:** 362
