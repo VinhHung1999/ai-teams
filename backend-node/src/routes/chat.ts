@@ -5,7 +5,7 @@ import path from 'path';
 import os from 'os';
 import http from 'http';
 import { createInterface } from 'readline';
-import { exec } from 'child_process';
+import { exec, spawn } from 'child_process';
 import { promisify } from 'util';
 import chokidar from 'chokidar';
 import storage from '../lib/JsonStorage';
@@ -463,11 +463,38 @@ export { router as chatRouter };
 const chatSubscribers = new Map<number, Set<WebSocket>>();
 // [351] Firehose clients: receive events from all projects
 const firehoseClients = new Set<WebSocket>();
-const chatWatchers = new Map<number, { close: () => Promise<void> | void }>();
-const fileOffsets = new Map<string, number>();
 
-async function watchProject(projectId: number) {
-  if (chatWatchers.has(projectId)) return;
+// [391] tail -F per JSONL file — replaces chokidar (unreliable on macOS)
+interface TailEntry {
+  proc: ReturnType<typeof spawn>;
+  filePath: string;
+}
+const chatTails = new Map<number, TailEntry[]>();
+
+function pushEvents(projectId: number, dedupedEvents: ChatEvent[]) {
+  console.error(`[chat-ws] push project=${projectId} events=${dedupedEvents.length} t=${Date.now()}`);
+  const projectMsg = JSON.stringify({ type: 'chat_events', events: dedupedEvents });
+  const clients = chatSubscribers.get(projectId);
+  if (clients) {
+    for (const ws of clients) {
+      if (ws.readyState === WebSocket.OPEN) ws.send(projectMsg);
+    }
+  }
+  const firehoseMsg = JSON.stringify({ type: 'chat_events', projectId, events: dedupedEvents });
+  for (const ws of firehoseClients) {
+    if (ws.readyState === WebSocket.OPEN) ws.send(firehoseMsg);
+  }
+  const msgEvents = dedupedEvents.filter((e) => e.kind === 'message');
+  if (msgEvents.length > 0) {
+    const project = storage.getProject(projectId);
+    const lastMsg = msgEvents[msgEvents.length - 1];
+    pushNotify(projectId, project?.name ?? String(projectId), lastMsg.text ?? '', lastMsg.role).catch(() => {});
+  }
+  lastEventsCache.delete(projectId);
+}
+
+function watchProject(projectId: number) {
+  if (chatTails.has(projectId)) return;
 
   const project = storage.getProject(projectId);
   if (!project?.working_directory) return;
@@ -475,121 +502,56 @@ async function watchProject(projectId: number) {
   const roleInfos = getRoleInfos(project.working_directory);
   if (roleInfos.length === 0) return;
 
-  // Build folder → role mapping (assume same CWD for all roles → same folder)
-  const folderToRoles = new Map<string, RoleInfo[]>();
+  const tails: TailEntry[] = [];
+
   for (const ri of roleInfos) {
-    const list = folderToRoles.get(ri.folder) ?? [];
-    list.push(ri);
-    folderToRoles.set(ri.folder, list);
-  }
-
-  // Initialize offsets so we only tail new bytes
-  for (const folder of folderToRoles.keys()) {
-    if (!fs.existsSync(folder)) continue;
-    for (const f of fs.readdirSync(folder).filter(f => f.endsWith('.jsonl'))) {
-      const fp = path.join(folder, f);
-      if (!fileOffsets.has(fp)) fileOffsets.set(fp, fs.statSync(fp).size);
+    const filePath = path.join(ri.folder, `${ri.sessionId}.jsonl`);
+    if (!fs.existsSync(filePath)) {
+      console.error(`[chat-ws] watchProject project=${projectId} role=${ri.role} file=${ri.sessionId}.jsonl NOT FOUND — skipping`);
+      continue;
     }
-  }
 
-  // Watch the first folder (usually identical across roles when same CWD)
-  const folder = [...folderToRoles.keys()][0];
-  if (!folder || !fs.existsSync(folder)) return;
+    console.error(`[chat-ws] tail-start project=${projectId} role=${ri.role} file=${ri.sessionId}.jsonl`);
 
-  const roles = folderToRoles.get(folder)!;
+    // tail -F -n 0: follow file (even across renames), start from current end
+    const proc = spawn('tail', ['-F', '-n', '0', filePath], { stdio: ['ignore', 'pipe', 'ignore'] });
 
-  console.error(`[chat-ws] watchProject project=${projectId} folder=${folder}`);
+    const toolUseMap = new Map<string, { name: string; input: any; hidden?: boolean }>();
+    let lineBuffer = '';
 
-  // awaitWriteFinish: false can miss events on macOS; 30ms grace is safer
-  const watcher = chokidar.watch(`${folder}/*.jsonl`, {
-    persistent: true, ignoreInitial: true,
-    awaitWriteFinish: { stabilityThreshold: 30, pollInterval: 20 },
-  });
+    proc.stdout.on('data', (chunk: Buffer) => {
+      lineBuffer += chunk.toString('utf-8');
+      const parts = lineBuffer.split('\n');
+      lineBuffer = parts.pop() ?? '';
 
-  const handleFileEvent = (filePath: string) => {
-    console.error(`[chat-ws] file-event project=${projectId} file=${path.basename(filePath)} subscribers=${chatSubscribers.get(projectId)?.size ?? 0}`);
-    const filename = path.basename(filePath);
-    if (!filename.endsWith('.jsonl')) return;
-    {
-      const changedFile = filePath;
-      const sid = path.basename(filename, '.jsonl');
-
-      // Determine which role owns this file
-      let fileRole: 'PO' | 'DEV' = roles[0]?.role ?? 'DEV';
-      for (const ri of roles) {
-        if (ri.sessionId === sid) { fileRole = ri.role; break; }
-      }
-
-      const prevOffset = fileOffsets.get(changedFile) ?? 0;
-      let currentSize = 0;
-      try { currentSize = fs.statSync(changedFile).size; } catch { return; }
-      if (currentSize <= prevOffset) return;
-
-      const fd = fs.openSync(changedFile, 'r');
-      const buf = Buffer.alloc(currentSize - prevOffset);
-      fs.readSync(fd, buf, 0, buf.length, prevOffset);
-      fs.closeSync(fd);
-      fileOffsets.set(changedFile, currentSize);
-
-      const toolUseMap = new Map<string, { name: string; input: any }>();
       const newEvents: ChatEvent[] = [];
-      for (const line of buf.toString('utf-8').split('\n')) {
+      for (const line of parts) {
         if (!line.trim()) continue;
-        newEvents.push(...parseJsonlLine(line, fileRole, sid, toolUseMap));
+        newEvents.push(...parseJsonlLine(line, ri.role, ri.sessionId, toolUseMap));
       }
-
       if (newEvents.length === 0) return;
 
-      // [378] Dedup events in batch by id (queue-operation + attachment may share content-hash id)
-      const seenIds = new Set<string>();
-      const dedupedEvents = newEvents.filter((e) => {
-        if (seenIds.has(e.id)) return false;
-        seenIds.add(e.id);
-        return true;
-      });
-      if (dedupedEvents.length === 0) return;
+      const seen = new Set<string>();
+      const deduped = newEvents.filter((e) => { if (seen.has(e.id)) return false; seen.add(e.id); return true; });
+      if (deduped.length > 0) pushEvents(projectId, deduped);
+    });
 
-      // [382] Stderr log so PM2 captures it (console.log goes to stdout, buffered)
-      console.error(`[chat-ws] push project=${projectId} events=${dedupedEvents.length} t=${Date.now()}`);
+    proc.on('exit', (code) => {
+      console.error(`[chat-ws] tail exit project=${projectId} role=${ri.role} code=${code}`);
+    });
 
-      // Push to per-project subscribers
-      const clients = chatSubscribers.get(projectId);
-      const projectMsg = JSON.stringify({ type: 'chat_events', events: dedupedEvents });
-      if (clients) {
-        for (const ws of clients) {
-          if (ws.readyState === WebSocket.OPEN) ws.send(projectMsg);
-        }
-      }
+    tails.push({ proc, filePath });
+  }
 
-      // [351] Firehose — push to all-projects subscribers with projectId field
-      const firehoseMsg = JSON.stringify({ type: 'chat_events', projectId, events: dedupedEvents });
-      for (const ws of firehoseClients) {
-        if (ws.readyState === WebSocket.OPEN) ws.send(firehoseMsg);
-      }
-
-      // [352] Web Push notifications for message events
-      const msgEvents = dedupedEvents.filter((e) => e.kind === 'message');
-      if (msgEvents.length > 0) {
-        const project = storage.getProject(projectId);
-        const lastMsg = msgEvents[msgEvents.length - 1];
-        pushNotify(projectId, project?.name ?? String(projectId), lastMsg.text ?? '', lastMsg.role).catch(() => {});
-      }
-
-      // Invalidate last-events cache for this project
-      lastEventsCache.delete(projectId);
-    }
-  };
-
-  // Claude Code may do atomic writes (temp→rename) → fires 'add', not 'change'
-  watcher.on('change', handleFileEvent);
-  watcher.on('add', handleFileEvent);
-
-  chatWatchers.set(projectId, watcher);
+  chatTails.set(projectId, tails);
 }
 
 function unwatchProject(projectId: number) {
-  chatWatchers.get(projectId)?.close();
-  chatWatchers.delete(projectId);
+  const tails = chatTails.get(projectId);
+  if (tails) {
+    for (const { proc } of tails) { try { proc.kill(); } catch {} }
+    chatTails.delete(projectId);
+  }
 }
 
 export function createChatWss(): WebSocketServer {
@@ -604,7 +566,7 @@ export function createChatWss(): WebSocketServer {
     chatSubscribers.get(projectId)!.add(ws);
     console.error(`[chat-ws] subscribe project=${projectId} total=${chatSubscribers.get(projectId)!.size}`);
 
-    watchProject(projectId).catch(e => console.error('[chat-ws] watch error:', e));
+    watchProject(projectId);
 
     const ping = setInterval(() => {
       if (ws.readyState === WebSocket.OPEN) ws.ping();
@@ -639,7 +601,7 @@ export function createFirehoseWss(): WebSocketServer {
     // Start watching all known projects so their fs.watch is active
     const projects = storage.getProjects();
     for (const p of projects) {
-      if (p.tmux_session_name) watchProject(p.id).catch(() => {});
+      if (p.tmux_session_name) watchProject(p.id);
     }
 
     const ping = setInterval(() => {
