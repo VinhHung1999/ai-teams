@@ -1,5 +1,5 @@
 export type ChatRole = 'PO' | 'DEV' | 'BOSS';
-export type ChatKind = 'message' | 'tool_use' | 'tool_result';
+export type ChatKind = 'message' | 'tool_use' | 'tool_result' | 'ask_question';
 
 export interface ChatEvent {
   id: string;
@@ -11,6 +11,7 @@ export interface ChatEvent {
   text?: string;
   pending?: boolean; // [367] queued but not yet processed by agent
   attachment?: { filename: string; url: string; isImage: boolean }; // [408]
+  question?: { text: string; options: string[]; toolUseId: string }; // [409]
   tool?: {
     name: string;
     input?: any;

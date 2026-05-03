@@ -60,7 +60,6 @@ export function PinStrip({ projectId, onClick }: PinStripProps) {
             overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
           }}
         >
-          Click to view board
         </div>
       </div>
 

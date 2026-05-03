@@ -71,10 +71,10 @@ const mdComponents: Record<string, any> = {
     </blockquote>
   ),
   th: ({ children }: any) => (
-    <th style={{ padding: "4px 8px", borderBottom: "1px solid var(--c-line)", textAlign: "left", fontWeight: 600 }}>{children}</th>
+    <th style={{ padding: "4px 10px", borderBottom: "1px solid var(--c-line)", textAlign: "left", fontWeight: 600, whiteSpace: "nowrap" }}>{children}</th>
   ),
   td: ({ children }: any) => (
-    <td style={{ padding: "3px 8px", borderBottom: "1px solid var(--c-line-soft)" }}>{children}</td>
+    <td style={{ padding: "3px 10px", borderBottom: "1px solid var(--c-line-soft)", whiteSpace: "nowrap" }}>{children}</td>
   ),
   code: ({ className, children }: any) => {
     if (!className) {
@@ -99,12 +99,74 @@ const mdComponents: Record<string, any> = {
   ),
   table: ({ children }: any) => (
     <div style={{ overflowX: "auto", maxWidth: "100%", display: "block", margin: "4px 0" }}>
-      <table style={{ borderCollapse: "collapse", fontSize: 13, width: "100%" }}>{children}</table>
+      <table style={{ borderCollapse: "collapse", fontSize: 13, width: "max-content" }}>{children}</table>
     </div>
   ),
 };
 
 // ── Message bubble ────────────────────────────────────────────────────────────
+
+// [409] Prompt card — ask_followup_question interactive choices
+function PromptCard({ event, projectId }: { event: ChatEvent; projectId?: number }) {
+  const [answered, setAnswered] = useState<string | null>(null);
+  const [custom, setCustom] = useState("");
+  const q = event.question;
+  if (!q) return null;
+
+  const respond = async (value: string) => {
+    if (!projectId || answered) return;
+    setAnswered(value);
+    try {
+      await fetch(`/api/chat/${projectId}/respond`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ role: event.role, value }),
+      });
+    } catch {}
+  };
+
+  return (
+    <div style={{ margin: "8px 0 8px auto", maxWidth: 340, background: "rgba(255,255,255,0.96)", borderRadius: 16, padding: "12px 14px", boxShadow: "0 1px 4px rgba(0,0,0,0.10)", borderLeft: "3px solid var(--c-accent)" }}>
+      <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 8, color: "var(--c-fg-0)" }}>{q.text}</div>
+      {q.options.length > 0 ? (
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          {q.options.map((opt, idx) => (
+            <button
+              key={idx}
+              onClick={() => respond(String(idx + 1))}
+              disabled={!!answered}
+              style={{
+                textAlign: "left", padding: "7px 12px", borderRadius: 10,
+                background: answered === String(idx + 1) ? "var(--c-accent)" : "rgba(0,0,0,0.05)",
+                color: answered === String(idx + 1) ? "white" : "var(--c-fg-0)",
+                border: "none", cursor: answered ? "default" : "pointer", fontSize: 13,
+              }}
+            >
+              <span style={{ fontWeight: 600, marginRight: 6 }}>{idx + 1}.</span>{opt}
+            </button>
+          ))}
+        </div>
+      ) : (
+        <div style={{ display: "flex", gap: 6 }}>
+          <input
+            value={custom}
+            onChange={(e) => setCustom(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && respond(custom)}
+            disabled={!!answered}
+            placeholder="Type your answer…"
+            style={{ flex: 1, padding: "6px 10px", borderRadius: 8, border: "1px solid var(--c-line)", fontSize: 13, background: "var(--c-bg-list)" }}
+          />
+          <button
+            onClick={() => respond(custom)}
+            disabled={!custom || !!answered}
+            style={{ padding: "6px 14px", borderRadius: 8, background: "var(--c-accent)", color: "white", border: "none", fontSize: 13, cursor: "pointer" }}
+          >Send</button>
+        </div>
+      )}
+      {answered && <div style={{ fontSize: 11, color: "var(--c-accent)", marginTop: 6 }}>✓ Answered: {answered}</div>}
+    </div>
+  );
+}
 
 // [408] Attachment card — image thumbnail or file chip
 function AttachmentCard({ attachment }: { attachment: NonNullable<ChatEvent["attachment"]> }) {
@@ -259,12 +321,14 @@ function EventRow({
   prevDay,
   prevKind,
   toolResultMap,
+  projectId,
 }: {
   event: ChatEvent;
   prevRole?: string;
   prevDay?: string;
   prevKind?: string;
   toolResultMap: Map<string, ChatEvent>;
+  projectId?: number;
 }) {
   const thisDay = dayKey(event.timestamp);
   const showDaySep = prevDay !== undefined && prevDay !== thisDay;
@@ -275,6 +339,9 @@ function EventRow({
       {showDaySep && <DaySeparator iso={event.timestamp} />}
       {event.kind === "message" && (
         <MessageBubble event={event} prevRole={prevRole} />
+      )}
+      {(event.kind as string) === "ask_question" && (
+        <PromptCard event={event} projectId={projectId} />
       )}
       {event.kind === "tool_use" && (
         <div
@@ -317,10 +384,11 @@ interface ChatStreamProps {
   onLoadMore?: () => void;
   filterRole?: string;
   sendingMessage?: string | null;
+  projectId?: number; // [409] for prompt respond
   className?: string;
 }
 
-export function ChatStream({ events, loading, hasMore, onLoadMore, filterRole, sendingMessage, className = "" }: ChatStreamProps) {
+export function ChatStream({ events, loading, hasMore, onLoadMore, filterRole, sendingMessage, projectId, className = "" }: ChatStreamProps) {
   // [358] BOSS messages only show in the topic they were sent to (targetRole).
   // Legacy events without targetRole fall back to showing in all topics.
   const filtered = filterRole
@@ -412,6 +480,7 @@ export function ChatStream({ events, loading, hasMore, onLoadMore, filterRole, s
             prevDay={i > 0 ? dayKey(displayEvents[i - 1].timestamp) : dayKey(e.timestamp)}
             prevKind={i > 0 ? displayEvents[i - 1].kind : undefined}
             toolResultMap={toolResultMap}
+            projectId={projectId}
           />
         ))}
         {/* Ephemeral "sending…" indicator — dismissed when WS confirms arrival */}

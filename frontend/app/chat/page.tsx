@@ -365,6 +365,7 @@ export default function ChatPage() {
                     hasMore={hasMore}
                     onLoadMore={loadMore}
                     filterRole={selectedRole ?? undefined}
+                    projectId={selectedId ?? undefined}
                     className="flex-1 min-h-0"
                   />
 

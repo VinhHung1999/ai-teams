@@ -26,6 +26,7 @@ export type ChatEvent = {
   text?: string;
   pending?: boolean; // [367] queued_command attachment, agent hasn't processed yet
   attachment?: { filename: string; url: string; isImage: boolean }; // [408]
+  question?: { text: string; options: string[]; toolUseId: string }; // [409]
   tool?: {
     name: string;
     input?: any;
@@ -175,7 +176,23 @@ function parseJsonlLine(
         const isTmSend = c.name === 'Bash' &&
           /^(tm-send|tmux\s+send-keys)\b/.test(String(c.input?.command ?? ''));
         toolUseMap.set(c.id, { name: c.name, input: c.input, hidden: isTmSend });
-        if (!isTmSend) {
+        if (isTmSend) {
+          // no-op: hidden
+        } else if (c.name === 'ask_followup_question') {
+          // [409] Phase 1: structured ask → PromptCard in chat UI
+          events.push({
+            id: c.id,
+            role: fileRole,
+            sessionId,
+            timestamp: ts,
+            kind: 'ask_question' as any,
+            question: {
+              text: c.input?.question ?? 'Question',
+              options: (c.input?.options ?? []) as string[],
+              toolUseId: c.id as string,
+            },
+          });
+        } else {
           events.push({
             id: c.id,
             role: fileRole,
@@ -459,6 +476,42 @@ router.post('/api/chat/:projectId/send', async (req: Request, res: Response) => 
     await execAsync(`tmux send-keys -t ${sessionName}:0.${paneIdx} ${JSON.stringify(wrappedText)} C-m`);
     await execAsync(`tmux send-keys -t ${sessionName}:0.${paneIdx} C-m`);
 
+    res.json({ ok: true });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// [409] POST /api/chat/:projectId/respond — Boss answers an ask_followup_question prompt
+router.post('/api/chat/:projectId/respond', async (req: Request, res: Response) => {
+  const projectId = parseInt(req.params.projectId as string);
+  if (isNaN(projectId)) return res.status(400).json({ error: 'invalid projectId' });
+
+  const { role, value } = req.body;
+  if (!role || value === undefined) return res.status(400).json({ error: 'role and value required' });
+
+  const project = storage.getProject(projectId);
+  if (!project) return res.status(404).json({ error: 'project not found' });
+
+  const sessionsMap = loadSessionsMap(project.working_directory ?? '');
+  const sessionInfo = sessionsMap[role as string];
+  const sessionName = project.tmux_session_name;
+  if (!sessionName) return res.status(404).json({ error: 'no tmux session' });
+
+  try {
+    const { stdout } = await execAsync(
+      `tmux list-panes -t ${sessionName} -F "#{pane_index} #{@role_name}"`,
+      { timeout: 3000, encoding: 'utf-8' },
+    );
+    let paneIdx: string | null = null;
+    for (const line of stdout.trim().split('\n')) {
+      const parts = line.trim().split(' ', 2);
+      if (parts.length === 2 && parts[1] === role) { paneIdx = parts[0]; break; }
+    }
+    if (paneIdx === null) return res.status(404).json({ error: `Role ${role} not found` });
+
+    // Send the value then Enter — answers the interactive prompt
+    await execAsync(`tmux send-keys -t ${sessionName}:0.${paneIdx} ${JSON.stringify(String(value))} Enter`);
     res.json({ ok: true });
   } catch (e: any) {
     res.status(500).json({ error: e.message });
