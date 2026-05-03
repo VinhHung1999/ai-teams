@@ -43,6 +43,9 @@ export function ChatInput({ roles, defaultRole, disabled, onSend, projectId }: C
   const [skillsLoaded, setSkillsLoaded] = useState(false);
   const [skillSearch, setSkillSearch] = useState("");
 
+  // [362] Multi-line pill padding state
+  const [isMultiline, setIsMultiline] = useState(false);
+
   // Voice state
   const [voiceState, setVoiceState] = useState<VoiceState>("idle");
   const [voiceDuration, setVoiceDuration] = useState(0);
@@ -83,6 +86,7 @@ export function ChatInput({ roles, defaultRole, disabled, onSend, projectId }: C
     if (!el) return;
     el.style.height = "auto";
     el.style.height = Math.min(el.scrollHeight, 160) + "px";
+    setIsMultiline(el.scrollHeight > 36);
   }, []);
 
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -424,7 +428,7 @@ export function ChatInput({ roles, defaultRole, disabled, onSend, projectId }: C
 
         {/* Frame 3: Input pill */}
         <div className="glass-input-pill flex-1 flex items-center gap-1"
-          style={{ borderRadius: 20, padding: "0 6px 0 16px", minHeight: 40 }}>
+          style={{ borderRadius: 20, padding: isMultiline ? "8px 6px 8px 16px" : "4px 6px 4px 16px", minHeight: 40, transition: "padding 120ms ease" }}>
           <textarea
             ref={textareaRef}
             value={text}
@@ -441,13 +445,6 @@ export function ChatInput({ roles, defaultRole, disabled, onSend, projectId }: C
               padding: 0, alignSelf: "center",
             }}
           />
-          <button className="flex-shrink-0 flex items-center justify-center rounded-full"
-            style={{ width: 32, height: 32, color: "var(--c-fg-2)", background: "transparent" }}
-            title="Schedule (coming soon)">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-              <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
-            </svg>
-          </button>
         </div>
 
         {/* Frame 4: Mic / Send swap */}
