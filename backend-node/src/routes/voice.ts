@@ -49,57 +49,72 @@ async function tmSend(sessionName: string, role: string, text: string): Promise<
 }
 
 // [377] Transcribe audio via Soniox async batch HTTP API (stt-async-v4).
-// More accurate than real-time WS for pre-recorded clips; no token-drop issue.
-// Flow: convert WebM → OGG → upload file → submit transcription → poll → fetch transcript.
-// Note: Soniox rejects WebM directly ("invalid audio file") — OGG conversion required.
-async function transcribeWithSoniox(audioFilePath: string, apiKey: string): Promise<string> {
+// Flow: try direct upload → if Soniox rejects (invalid_audio_file) → ffmpeg convert → retry.
+// iOS sends audio/mp4; desktop Chrome/Firefox sends audio/webm. Both paths handled.
+async function transcribeWithSoniox(audioFilePath: string, apiKey: string, filename: string = 'audio.webm'): Promise<string> {
   const authHeader = { 'Authorization': `Bearer ${apiKey}` };
+  const fileSize = fs.statSync(audioFilePath).size;
+  console.log(`[voice] received ${filename} size=${(fileSize/1024).toFixed(1)}KB`);
 
-  // Step 1: Convert to OGG (Soniox rejects .webm from browser MediaRecorder)
-  const oggPath = `${audioFilePath}.ogg`;
-  try {
-    await execAsync(`ffmpeg -y -i "${audioFilePath}" -c:a libvorbis -q:a 4 "${oggPath}"`, { timeout: 30_000 });
-  } catch (e: any) {
-    throw new Error(`ffmpeg convert: ${e.message}`);
-  }
-
-  try {
-    // Step 2: Upload audio file
-    const audioBlob = new Blob([fs.readFileSync(oggPath)], { type: 'audio/ogg' });
+  const uploadAndTranscribe = async (filePath: string, fname: string): Promise<string> => {
+    const audioBlob = new Blob([fs.readFileSync(filePath)], { type: 'application/octet-stream' });
     const uploadForm = new FormData();
-    uploadForm.append('file', audioBlob, 'audio.ogg');
+    uploadForm.append('file', audioBlob, fname);
 
     const upRes = await fetch('https://api.soniox.com/v1/files', {
       method: 'POST', headers: authHeader, body: uploadForm,
     });
-    if (!upRes.ok) throw new Error(`Soniox upload: ${await upRes.text()}`);
-    const { id: fileId } = await upRes.json() as { id: string };
+    const upBody = await upRes.text();
+    if (!upRes.ok) throw new Error(`upload_failed:${upBody}`);
+    const { id: fileId } = JSON.parse(upBody) as { id: string };
+    console.log(`[voice] uploaded file_id=${fileId}`);
 
-    // Step 3: Submit async transcription
     const txRes = await fetch('https://api.soniox.com/v1/transcriptions', {
       method: 'POST',
       headers: { ...authHeader, 'Content-Type': 'application/json' },
       body: JSON.stringify({ file_id: fileId, model: 'stt-async-v4', language_hints: ['vi', 'en'] }),
     });
-    if (!txRes.ok) throw new Error(`Soniox submit: ${await txRes.text()}`);
+    if (!txRes.ok) throw new Error(`submit: ${await txRes.text()}`);
     const { id: txId } = await txRes.json() as { id: string };
 
-    // Step 4: Poll until completed (max 2 min, 1.5s interval)
     const deadline = Date.now() + 120_000;
     while (Date.now() < deadline) {
       await new Promise<void>((r) => setTimeout(r, 1500));
       const pollRes = await fetch(`https://api.soniox.com/v1/transcriptions/${txId}`, { headers: authHeader });
-      if (!pollRes.ok) throw new Error(`Soniox poll: ${pollRes.status}`);
+      if (!pollRes.ok) throw new Error(`poll: ${pollRes.status}`);
       const poll = await pollRes.json() as { status: string; error_message?: string };
-      if (poll.status === 'error') throw new Error(`Soniox: ${poll.error_message ?? 'unknown error'}`);
+      if (poll.status === 'error') throw new Error(`soniox: ${poll.error_message ?? 'unknown'}`);
       if (poll.status === 'completed') break;
     }
 
-    // Step 5: Fetch transcript text
     const tRes = await fetch(`https://api.soniox.com/v1/transcriptions/${txId}/transcript`, { headers: authHeader });
-    if (!tRes.ok) throw new Error(`Soniox transcript: ${tRes.status}`);
+    if (!tRes.ok) throw new Error(`transcript: ${tRes.status}`);
     const { text } = await tRes.json() as { text: string };
     return text.trim();
+  };
+
+  // Step 1: Try direct upload (works for audio/mp4 from iOS, sometimes webm)
+  try {
+    return await uploadAndTranscribe(audioFilePath, filename);
+  } catch (e: any) {
+    if (!String(e.message).includes('upload_failed')) throw e;
+    console.log(`[voice] direct upload rejected, converting to OGG via ffmpeg...`);
+  }
+
+  // Step 2: Fallback — convert to OGG (Soniox rejects some WebM streams from MediaRecorder)
+  const oggPath = `${audioFilePath}.ogg`;
+  try {
+    const { stderr } = await execAsync(
+      `ffmpeg -y -i "${audioFilePath}" -c:a libvorbis -q:a 4 "${oggPath}" 2>&1`,
+      { timeout: 30_000 },
+    );
+    if (stderr) console.log(`[voice] ffmpeg: ${stderr.slice(-300)}`);
+  } catch (e: any) {
+    throw new Error(`ffmpeg: ${e.message}`);
+  }
+
+  try {
+    return await uploadAndTranscribe(oggPath, 'audio.ogg');
   } finally {
     try { fs.unlinkSync(oggPath); } catch {}
   }
@@ -134,7 +149,7 @@ router.post(
       if (!apiKey) {
         transcript = '[STT pending — set SONIOX_API_KEY in .env to enable voice transcription]';
       } else {
-        transcript = await transcribeWithSoniox(tmpPath, apiKey);
+        transcript = await transcribeWithSoniox(tmpPath, apiKey, file.originalname || 'voice.webm');
         if (!transcript) return res.status(422).json({ error: 'empty transcript from STT' });
       }
 

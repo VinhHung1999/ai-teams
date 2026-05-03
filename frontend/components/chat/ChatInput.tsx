@@ -183,10 +183,10 @@ export function ChatInput({ roles, defaultRole, disabled, onSend, projectId }: C
     if (durationIntervalRef.current) clearInterval(durationIntervalRef.current);
     const duration = Date.now() - voiceStartRef.current;
 
-    // [377] requestData() forces a dataavailable event with buffered samples BEFORE stop()
-    // prevents tail loss when browser hasn't emitted the last timeslice chunk yet
+    // [377] requestData() forces buffered samples to emit before stop — iOS needs longer wait
     try { mr.requestData(); } catch {}
-    await new Promise<void>((r) => setTimeout(r, 120)); // let that chunk arrive
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+    await new Promise<void>((r) => setTimeout(r, isIOS ? 500 : 120));
 
     mr.stop();
     if (cancelledRef.current || duration < 500) {
@@ -197,20 +197,30 @@ export function ChatInput({ roles, defaultRole, disabled, onSend, projectId }: C
       setVoiceDuration(0);
       return;
     }
-    // Wait for stop event — browser fires final dataavailable then stop (spec-guaranteed order)
     await new Promise<void>((resolve) => {
       mr.addEventListener("stop", () => resolve(), { once: true });
     });
-    const blob = new Blob(chunksRef.current, { type: mr.mimeType || "audio/webm" });
+    const mimeType = mr.mimeType || "audio/webm";
+    const blob = new Blob(chunksRef.current, { type: mimeType });
     chunksRef.current = [];
     mr.stream.getTracks().forEach((t) => t.stop());
     mediaRecorderRef.current = null;
+
+    // [377] Instrumentation: log blob size + duration for tail-loss diagnosis
+    const expectedSeconds = duration / 1000;
+    const kbps = (blob.size * 8) / 1000 / expectedSeconds;
+    console.log(`[voice] mimeType=${mimeType} duration=${expectedSeconds.toFixed(1)}s blob=${(blob.size/1024).toFixed(1)}KB bitrate≈${kbps.toFixed(0)}kbps isIOS=${isIOS}`);
+
     if (!projectId) { setVoiceState("idle"); setVoiceDuration(0); return; }
     setVoiceState("uploading");
     try {
+      // Determine file extension from mimeType (iOS uses audio/mp4)
+      const ext = mimeType.includes("mp4") || mimeType.includes("aac") ? "voice.mp4"
+                : mimeType.includes("ogg") ? "voice.ogg"
+                : "voice.webm";
       const form = new FormData();
       form.append("role", role);
-      form.append("audio", blob, "voice.webm");
+      form.append("audio", blob, ext);
       const res = await fetch(`/api/chat/${projectId}/voice`, { method: "POST", body: form });
       if (res.status === 413) { setError("Recording too large (max 5MB)"); return; }
       if (!res.ok) {
