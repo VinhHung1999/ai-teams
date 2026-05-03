@@ -14,7 +14,7 @@ fs.mkdirSync(voiceTmpDir, { recursive: true });
 
 const upload = multer({
   dest: voiceTmpDir,
-  limits: { fileSize: 5 * 1024 * 1024 },
+  limits: { fileSize: 50 * 1024 * 1024 }, // [401] 50MB — ~5min at 96kbps webm
 });
 
 function loadSessionName(project: ReturnType<typeof storage.getProject>): string {

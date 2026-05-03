@@ -257,7 +257,7 @@ export function ChatInput({ roles, defaultRole, disabled, onSend, projectId }: C
     durationIntervalRef.current = setInterval(() => {
       setVoiceDuration(Date.now() - voiceStartRef.current);
     }, 100);
-    maxDurationTimerRef.current = setTimeout(() => stopRecordingAndUpload(), 60000);
+    // [401] No auto-stop — Boss taps mic to stop. Soniox stt-async-v4 supports up to 60min.
   }, [voiceState, disabled, stopRecordingAndUpload]);
 
   const cancelRecording = useCallback(() => {
