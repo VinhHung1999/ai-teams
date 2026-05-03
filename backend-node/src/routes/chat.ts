@@ -498,12 +498,16 @@ async function watchProject(projectId: number) {
 
   const roles = folderToRoles.get(folder)!;
 
-  // [378] chokidar: more reliable than fs.watch on macOS (handles renames, no missed events)
+  console.error(`[chat-ws] watchProject project=${projectId} folder=${folder}`);
+
+  // awaitWriteFinish: false can miss events on macOS; 30ms grace is safer
   const watcher = chokidar.watch(`${folder}/*.jsonl`, {
-    persistent: true, ignoreInitial: true, awaitWriteFinish: false,
+    persistent: true, ignoreInitial: true,
+    awaitWriteFinish: { stabilityThreshold: 30, pollInterval: 20 },
   });
 
-  watcher.on('change', (filePath: string) => {
+  const handleFileEvent = (filePath: string) => {
+    console.error(`[chat-ws] file-event project=${projectId} file=${path.basename(filePath)} subscribers=${chatSubscribers.get(projectId)?.size ?? 0}`);
     const filename = path.basename(filePath);
     if (!filename.endsWith('.jsonl')) return;
     {
@@ -574,7 +578,11 @@ async function watchProject(projectId: number) {
       // Invalidate last-events cache for this project
       lastEventsCache.delete(projectId);
     }
-  });
+  };
+
+  // Claude Code may do atomic writes (temp→rename) → fires 'add', not 'change'
+  watcher.on('change', handleFileEvent);
+  watcher.on('add', handleFileEvent);
 
   chatWatchers.set(projectId, watcher);
 }
@@ -594,6 +602,7 @@ export function createChatWss(): WebSocketServer {
 
     if (!chatSubscribers.has(projectId)) chatSubscribers.set(projectId, new Set());
     chatSubscribers.get(projectId)!.add(ws);
+    console.error(`[chat-ws] subscribe project=${projectId} total=${chatSubscribers.get(projectId)!.size}`);
 
     watchProject(projectId).catch(e => console.error('[chat-ws] watch error:', e));
 
