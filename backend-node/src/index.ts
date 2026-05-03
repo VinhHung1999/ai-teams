@@ -79,6 +79,7 @@ import tmuxRouter from './routes/tmux';
 import filesRouter from './routes/files';
 import gitRouter from './routes/git';
 import notificationsRouter from './routes/notifications';
+import { chatRouter } from './routes/chat';
 
 app.use(projectsRouter);
 app.use(backlogRouter);
@@ -88,6 +89,7 @@ app.use(tmuxRouter);
 app.use(filesRouter);
 app.use(gitRouter);
 app.use(notificationsRouter);
+app.use(chatRouter);
 
 // Terminal REST endpoints
 app.get('/api/terminal/sessions', (_req, res) => {

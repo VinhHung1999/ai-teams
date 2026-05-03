@@ -1,0 +1,184 @@
+{
+  "projects": [
+    {
+      "id": 7,
+      "name": "habit-tracker",
+      "tmux_session_name": "habit_tracker",
+      "working_directory": "/Users/hungphu/Documents/AI_Projects/habit-tracker",
+      "pinned": false,
+      "created_at": "2026-04-16T15:53:11.636Z"
+    },
+    {
+      "id": 10,
+      "name": "voice-everywhere-phone",
+      "tmux_session_name": "voice-everywhere-phone",
+      "working_directory": "/Users/hungphu/Documents/AI_Projects/voice-everywhere-phone",
+      "pinned": false,
+      "created_at": "2026-04-16T15:53:11.637Z"
+    },
+    {
+      "id": 11,
+      "name": "App store",
+      "tmux_session_name": "app-store",
+      "working_directory": "/Users/hungphu/Documents/AI_Projects/app-store",
+      "pinned": false,
+      "created_at": "2026-04-16T15:53:11.635Z"
+    },
+    {
+      "id": 12,
+      "name": "love-scrum",
+      "tmux_session_name": "love_scrum",
+      "working_directory": "/Users/hungphu/Documents/AI_Projects/love-scrum",
+      "pinned": false,
+      "created_at": "2026-04-16T15:53:11.637Z"
+    },
+    {
+      "id": 13,
+      "name": "assistant",
+      "tmux_session_name": "assistant",
+      "working_directory": "/Users/hungphu/Documents/AI_Projects/assistant",
+      "pinned": false,
+      "created_at": "2026-04-16T15:53:11.636Z"
+    },
+    {
+      "id": 14,
+      "name": "ai-teams",
+      "tmux_session_name": "ai_teams",
+      "working_directory": "/Users/hungphu/Documents/AI_Projects/ai-teams",
+      "pinned": true,
+      "created_at": "2026-04-16T15:53:11.635Z"
+    },
+    {
+      "id": 15,
+      "name": "ai-news",
+      "tmux_session_name": "ai-news",
+      "working_directory": "/Users/hungphu/Documents/AI_Projects/ai-news",
+      "pinned": false,
+      "created_at": "2026-04-16T15:53:11.634Z"
+    },
+    {
+      "id": 18,
+      "name": "murmur-team",
+      "tmux_session_name": "murmur-team",
+      "working_directory": "/Users/hungphu/Documents/AI_Projects/journaling-app",
+      "pinned": false,
+      "created_at": "2026-04-16T15:53:11.637Z"
+    },
+    {
+      "id": 22,
+      "name": "hexarian",
+      "tmux_session_name": "hexarian",
+      "working_directory": "/Users/hungphu/Documents/AI_Projects/hexarian",
+      "pinned": false,
+      "created_at": "2026-04-16T15:53:11.636Z"
+    },
+    {
+      "id": 23,
+      "name": "tuvi-team",
+      "tmux_session_name": "tuvi-team",
+      "working_directory": "/Users/hungphu/Documents/AI_Projects/horoscope",
+      "pinned": true,
+      "created_at": "2026-04-16T15:53:11.636Z"
+    },
+    {
+      "id": 25,
+      "name": "hexarian-team",
+      "tmux_session_name": "hexarian_team",
+      "working_directory": "/Users/hungphu/Documents/AI_Projects/hexarian",
+      "pinned": false,
+      "created_at": "2026-04-17T05:12:47.143Z"
+    },
+    {
+      "id": 27,
+      "name": "files",
+      "tmux_session_name": "files",
+      "working_directory": "/Users/hungphu/Documents/AI_Projects/ai-teams/backend-node",
+      "pinned": false,
+      "created_at": "2026-04-17T09:50:23.598Z"
+    }
+  ],
+  "nextProjectId": 28,
+  "nextNotificationId": 9,
+  "notifications": [
+    {
+      "id": 8,
+      "project_id": 18,
+      "session_name": "murmur-team",
+      "from_role": "CMO",
+      "message": "\ud83d\udd12 CMO initialized. X/Twitter session expired \u2014 browser shows login page (auth cookies from Apr 3 invalidated server-side). All 3 crons created but BLOCKED until re-auth. Need Boss to: (1) open headed browser, (2) login to @speakmurmur, (3) I'll save new session. Status: 15 posts published, posts 16-30 queued, engagement running well before session expired.",
+      "urgency": "high",
+      "read": false,
+      "created_at": "2026-04-17T06:05:26.182Z"
+    },
+    {
+      "id": 7,
+      "project_id": 18,
+      "session_name": "murmur-team",
+      "from_role": "CMO",
+      "message": "\ud83d\udd12 X/Twitter session expired \u2014 browser shows login page. Auth cookies from Apr 3 were invalidated server-side. Need fresh login: (1) I'll open headed browser, (2) Boss logs in manually to @speakmurmur, (3) I save new session. All 3 crons (replies/engage/post) are blocked until re-auth. Ready to open browser when you are.",
+      "urgency": "high",
+      "read": false,
+      "created_at": "2026-04-17T06:04:22.918Z"
+    },
+    {
+      "id": 6,
+      "project_id": 14,
+      "session_name": "ai_teams",
+      "from_role": "DEV",
+      "message": "Sprint 30 DONE \u2705\n\n[283] Project list from tmux + local registry:\n- GET /api/projects merges registry data + live tmux status (single shell call)\n- Auto-registers new AI team sessions (detects @role_name pane options)\n- Frontend: green/gray status dot per project \u2014 running vs stopped\n- Storage mode toggle fully removed (frontend + backend)\n- All builds clean, PM2 running",
+      "urgency": "high",
+      "read": false,
+      "created_at": "2026-04-17T05:14:43.387Z"
+    },
+    {
+      "id": 5,
+      "project_id": 18,
+      "session_name": "murmur-team",
+      "from_role": "CMO",
+      "message": "Hi\u1ec3u r\u1ed3i anh! \u0110\u00fang l\u00e0 d\u00f9ng \u1ea3nh th\u1eadt s\u1ebd authentic h\u01a1n nhi\u1ec1u. \n\nHi\u1ec7n t\u1ea1i t\u00f4i ch\u01b0a c\u00f3 real screenshots c\u1ee7a app \u2014 \u0111ang ch\u1edd DEV ch\u1ee5p t\u1eeb simulator (screenshot-captions.md status = \"waiting for DEV raw screenshots\").\n\nAnh c\u00f3 th\u1ec3:\n1. Ch\u1ee5p v\u00e0i screenshot t\u1eeb TestFlight tr\u00ean iPhone th\u1eadt r\u1ed3i drop v\u00e0o folder docs/marketing/assets/real-screenshots/\n2. Ho\u1eb7c t\u00f4i nh\u1edd DEV ch\u1ee5p t\u1eeb iOS Simulator\n\nC\u1ea7n screenshots c\u00e1c m\u00e0n h\u00ecnh: Home, Recording (waveform), AI Result, Journal list, Mood Timeline, Prompts.\n\nC\u00f3 \u1ea3nh th\u1eadt r\u1ed3i th\u00ec c\u00e1c post ti\u1ebfp theo (16-30) t\u00f4i s\u1ebd d\u00f9ng real screenshots thay v\u00ec AI-generated mood images.",
+      "urgency": "normal",
+      "read": false,
+      "created_at": "2026-04-17T04:07:30.156Z"
+    },
+    {
+      "id": 4,
+      "project_id": 14,
+      "session_name": "ai_teams",
+      "from_role": "DEV",
+      "message": "Sprint 29 DONE \u2705\n\n[282] Migrated all 9 teams from MCP board tools \u2192 Markdown files:\n- 32 files updated across 8 repos\n- All get_board/update_task_status/create_sprint etc. replaced with Read/Edit on docs/board/ MD files\n- notify_boss kept intact in all teams\n- grep confirms zero remaining MCP board refs in prompt/workflow files",
+      "urgency": "high",
+      "read": false,
+      "created_at": "2026-04-17T03:54:57.568Z"
+    },
+    {
+      "id": 3,
+      "project_id": 18,
+      "session_name": "murmur-team",
+      "from_role": "CMO",
+      "message": "\u2705 \u0110\u00e3 \u0111\u0103ng post #14 + #15 (b\u00e0i \u0111\u1ea7u ti\u00ean nh\u1eafc Murmur!) \u2014 c\u1ea3 hai verified tr\u00ean profile v\u1edbi \u1ea3nh.\n\n\u0110\u00e3 t\u1ea1o cron \u0111\u0103ng b\u00e0i t\u1ef1 \u0111\u1ed9ng: m\u1ed7i ng\u00e0y 8PM VN (8AM EST \u2014 peak US morning). T\u1eeb nay s\u1ebd kh\u00f4ng b\u1ecb gap n\u1eefa.\n\n3 cron \u0111ang ch\u1ea1y: reply check (hourly), engage (2h), post daily (8PM VN).",
+      "urgency": "normal",
+      "read": false,
+      "created_at": "2026-04-17T03:36:33.233Z"
+    },
+    {
+      "id": 2,
+      "project_id": 14,
+      "session_name": "ai_teams",
+      "from_role": "DEV",
+      "message": "Sprint 28 DONE \u2705\n\n[280] Realtime board updates via file watcher \u2014 chokidar watches all 10 project docs/board/ dirs, pushes WS update within ~450ms of any MD file edit.\n\n[281] Download file/folder button \u2014 file streams directly, folder zips via archiver and downloads as .zip. Toast shown while preparing zip.",
+      "urgency": "high",
+      "read": false,
+      "created_at": "2026-04-17T03:23:02.887Z"
+    },
+    {
+      "id": 1,
+      "project_id": 14,
+      "session_name": "ai_teams",
+      "from_role": "DEV",
+      "message": "Phase 2 test notification",
+      "urgency": "normal",
+      "read": false,
+      "created_at": "2026-04-16T15:55:30.982Z"
+    }
+  ]
+}
