@@ -182,40 +182,8 @@ function parseJsonlLine(
         }
       }
     }
-  } else if (d.type === 'attachment' && d.attachment?.type === 'queued_command') {
-    // [367] Queued BOSS message — agent busy, prompt waiting in queue
-    const prompt = d.attachment.prompt as string | undefined;
-    if (prompt?.trim()) {
-      const retagged = retagContent(prompt);
-      // Use content-hash ID so queue-operation + attachment for same text dedup to same event
-      events.push({
-        id: `pending:${contentKey(retagged.text)}`,
-        role: retagged.role,
-        ...(retagged.targetRole ? { targetRole: retagged.targetRole } : {}),
-        sessionId,
-        timestamp: ts,
-        kind: 'message',
-        text: retagged.text,
-        pending: true,
-      });
-    }
-  } else if (d.type === 'queue-operation' && d.operation === 'enqueue') {
-    // [378] Fallback: some sessions only write queue-operation (no attachment line)
-    const content = d.content as string | undefined;
-    if (content?.trim() && BOSS_PREFIX_RE.test(content)) {
-      const retagged = retagContent(content);
-      events.push({
-        id: `pending:${contentKey(retagged.text)}`,
-        role: retagged.role,
-        ...(retagged.targetRole ? { targetRole: retagged.targetRole } : {}),
-        sessionId,
-        timestamp: ts,
-        kind: 'message',
-        text: retagged.text,
-        pending: true,
-      });
-    }
   }
+  // [382] attachment queued_command + queue-operation skipped — frontend optimistic covers pending state
 
   return events;
 }
@@ -532,7 +500,7 @@ async function watchProject(projectId: number) {
 
   // [378] chokidar: more reliable than fs.watch on macOS (handles renames, no missed events)
   const watcher = chokidar.watch(`${folder}/*.jsonl`, {
-    persistent: true, ignoreInitial: true, awaitWriteFinish: { stabilityThreshold: 80, pollInterval: 50 },
+    persistent: true, ignoreInitial: true, awaitWriteFinish: false,
   });
 
   watcher.on('change', (filePath: string) => {
@@ -577,12 +545,8 @@ async function watchProject(projectId: number) {
       });
       if (dedupedEvents.length === 0) return;
 
-      // [378] Debug log per WS push
-      for (const e of dedupedEvents) {
-        if (e.kind === 'message') {
-          console.log(`[chat-ws] push project=${projectId} role=${e.role} kind=${e.kind} pending=${!!e.pending} text="${(e.text ?? '').slice(0, 60)}"`);
-        }
-      }
+      // [382] Stderr log so PM2 captures it (console.log goes to stdout, buffered)
+      console.error(`[chat-ws] push project=${projectId} events=${dedupedEvents.length} t=${Date.now()}`);
 
       // Push to per-project subscribers
       const clients = chatSubscribers.get(projectId);

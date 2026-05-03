@@ -196,10 +196,8 @@ export default function ChatPage() {
     }
   }, [selectedId, loadingHistory, hasMore]);
 
-  // [344] Simplified WS handler — JSONL is source of truth. No optimistic, no dedup.
-  const [sendingMessage, setSendingMessage] = useState<string | null>(null);
-  const sendingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
+  // [382] 2-way optimistic: frontend adds pending bubble; confirmed WS event replaces it.
+  // Backend no longer emits pending:hash — attachment/queue-op blocks removed.
   const handleWsEvents = useCallback((newEvts: ChatEvent[]) => {
     setEvents((prev) => {
       const existingIds = new Set(prev.map((e) => e.id));
@@ -221,9 +219,6 @@ export default function ChatPage() {
         : prev;
       return [...base, ...fresh];
     });
-    // Clear "sending…" ephemeral indicator when WS confirms arrival
-    if (newEvts.length > 0) setSendingMessage(null);
-
     const last = newEvts[newEvts.length - 1];
     if (last && selectedId) {
       setLastEvents((p) => ({ ...p, [selectedId]: (last.text ?? last.tool?.name ?? "").slice(0, 60) }));
@@ -250,12 +245,22 @@ export default function ChatPage() {
 
   const handleSend = useCallback(async (role: string, text: string) => {
     if (!selectedId) throw new Error("No team selected");
-    // Show ephemeral indicator while waiting for WS roundtrip (~500ms-1s)
-    setSendingMessage(text);
-    if (sendingTimerRef.current) clearTimeout(sendingTimerRef.current);
-    sendingTimerRef.current = setTimeout(() => setSendingMessage(null), 5000);
+    // [382] Optimistic: instant pending bubble; [367] dedup in handleWsEvents replaces it on confirm
+    const optimisticEvent: ChatEvent = {
+      id: `optimistic-${Date.now()}`,
+      role: "BOSS",
+      sessionId: "optimistic",
+      timestamp: new Date().toISOString(),
+      kind: "message",
+      text,
+      pending: true,
+      ...(selectedRole === "PO" || selectedRole === "DEV"
+        ? { targetRole: selectedRole as "PO" | "DEV" }
+        : {}),
+    };
+    setEvents((prev) => [...prev, optimisticEvent]);
     await api.chatSend(selectedId, role, text);
-  }, [selectedId]);
+  }, [selectedId, selectedRole]);
 
   const openInfo = useCallback((tab: "overview" | "files" | "agents" = "overview") => {
     setInfoPanelTab(tab);
@@ -355,7 +360,6 @@ export default function ChatPage() {
                 hasMore={hasMore}
                 onLoadMore={loadMore}
                 filterRole={selectedRole ?? undefined}
-                sendingMessage={sendingMessage}
                 className="flex-1 min-h-0"
               />
 
