@@ -168,8 +168,8 @@ kanban-plugin: board
       **Notes:**
       _(DEV fill khi done)_
 
-- [ ] **[328]** Bubbles + day separators + pin strip
-      **Priority:** P1 · **Points:** 2 · **Assignee:** DEV · **Status:** todo · **Backlog-ID:** 365
+- [x] **[328]** Bubbles + day separators + pin strip
+      **Priority:** P1 · **Points:** 2 · **Assignee:** DEV · **Status:** done · **Backlog-ID:** 365
       **Description:**
       Refactor `frontend/components/chat/ChatStream.tsx` visual:
 
@@ -200,8 +200,8 @@ kanban-plugin: board
       **Notes:**
       _(DEV fill khi done)_
 
-- [ ] **[329]** Info panel slide-from-right — 3 tabs (Overview/Files/Agents)
-      **Priority:** P1 · **Points:** 3 · **Assignee:** DEV · **Status:** todo · **Backlog-ID:** 366
+- [x] **[329]** Info panel slide-from-right — 3 tabs (Overview/Files/Agents)
+      **Priority:** P1 · **Points:** 3 · **Assignee:** DEV · **Status:** done · **Backlog-ID:** 366
       **Description:**
       Replace current `Drawer.tsx` (Sprint 39 [314]) với Info panel mới theo design:
 
@@ -244,8 +244,8 @@ kanban-plugin: board
       **Notes:**
       _(DEV fill khi done)_
 
-- [ ] **[330]** Mobile responsive — single-view + back nav + 100dvh
-      **Priority:** P1 · **Points:** 2 · **Assignee:** DEV · **Status:** todo · **Backlog-ID:** 367
+- [x] **[330]** Mobile responsive — single-view + back nav + 100dvh
+      **Priority:** P1 · **Points:** 2 · **Assignee:** DEV · **Status:** done · **Backlog-ID:** 367
       **Description:**
       Wire mobile UX <768px theo design:
 
