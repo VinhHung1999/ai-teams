@@ -144,11 +144,12 @@ export default function ChatPage() {
   }, []);
 
   return (
-    <div className="flex h-screen bg-zinc-950 text-white overflow-hidden">
+    <div className="flex h-[100dvh] overflow-hidden" style={{ background: 'var(--c-bg-app)', color: 'var(--c-fg-0)' }}>
       {/* ── Mobile sidebar overlay ── */}
       {mobileSidebarOpen && (
         <div
-          className="fixed inset-0 bg-black/50 z-30 md:hidden"
+          className="fixed inset-0 z-30 md:hidden"
+          style={{ background: 'rgba(0,0,0,0.3)' }}
           onClick={() => setMobileSidebarOpen(false)}
         />
       )}
@@ -156,14 +157,15 @@ export default function ChatPage() {
       {/* ── Teams sidebar ── */}
       <aside
         className={`
-          flex-shrink-0 flex flex-col border-r border-zinc-800 bg-zinc-900 overflow-hidden
-          fixed inset-y-0 left-0 z-40 w-72 transition-transform duration-200
+          glass-sidebar flex-shrink-0 flex flex-col overflow-hidden
+          fixed inset-y-0 left-0 z-40 w-80 transition-transform duration-200
           md:relative md:translate-x-0
           ${mobileSidebarOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"}
         `}
+        style={{ borderRight: '1px solid var(--c-line)' }}
       >
-        <div className="flex items-center gap-2 px-4 py-3 border-b border-zinc-800 flex-shrink-0">
-          <span className="font-semibold text-sm text-white flex-1">AI Teams</span>
+        <div className="flex items-center gap-2 px-4 py-3 flex-shrink-0" style={{ borderBottom: '1px solid var(--c-line)' }}>
+          <span className="font-semibold text-sm flex-1" style={{ color: 'var(--c-fg-0)' }}>AI Teams</span>
           <button
             onClick={() => setMobileSidebarOpen(false)}
             className="md:hidden w-7 h-7 flex items-center justify-center rounded hover:bg-zinc-700 text-zinc-400"
@@ -182,12 +184,13 @@ export default function ChatPage() {
       </aside>
 
       {/* ── Main area ── */}
-      <main className="flex-1 flex flex-col min-w-0 relative">
+      <main className="chat-wallpaper flex-1 flex flex-col min-w-0 overflow-hidden">
         {/* Mobile hamburger */}
         <div className="md:hidden absolute left-3 top-3 z-10">
           <button
             onClick={() => setMobileSidebarOpen(true)}
-            className="w-8 h-8 flex items-center justify-center rounded-md hover:bg-zinc-800 text-zinc-400"
+            className="w-8 h-8 flex items-center justify-center rounded-full"
+            style={{ color: 'var(--c-fg-1)', background: 'var(--c-bg-hover)' }}
           >
             ☰
           </button>
