@@ -52,7 +52,6 @@ export function TopicBar({ project, selectedRole, onSelectRole }: TopicBarProps)
         WebkitOverflowScrolling: "touch",
       }}
     >
-      {/* NO "All" chip — per Boss decision */}
       {roles.map((role) => {
         const isActive = selectedRole === role;
         const gradient = ROLE_GRADIENT[role] ?? ROLE_GRADIENT.DEV;
@@ -127,6 +126,39 @@ export function TopicBar({ project, selectedRole, onSelectRole }: TopicBarProps)
           </button>
         );
       })}
+
+      {/* [392] Terminal tab — opens pty shell in main area */}
+      {(() => {
+        const isActive = selectedRole === "TERMINAL";
+        return (
+          <button
+            onClick={() => onSelectRole("TERMINAL")}
+            className="flex items-center gap-2 flex-shrink-0 transition-colors"
+            style={{
+              padding: "6px 12px 6px 8px",
+              borderRadius: 18,
+              background: isActive ? "var(--c-accent-soft)" : "transparent",
+              border: "none",
+            }}
+            onMouseEnter={(e) => { if (!isActive) (e.currentTarget as HTMLElement).style.background = "var(--c-bg-hover)"; }}
+            onMouseLeave={(e) => { if (!isActive) (e.currentTarget as HTMLElement).style.background = "transparent"; }}
+          >
+            <div className="flex items-center justify-center" style={{ width: 28, height: 28, borderRadius: "50%", background: "#1a1a2e", border: "1px solid rgba(255,255,255,0.12)", flexShrink: 0 }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={isActive ? "var(--c-accent)" : "#c9d1d9"} strokeWidth="2" strokeLinecap="round">
+                <polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/>
+              </svg>
+            </div>
+            <div className="text-left leading-tight">
+              <div className="font-semibold whitespace-nowrap" style={{ fontSize: 13, color: isActive ? "var(--c-accent)" : "var(--c-fg-0)" }}>
+                Terminal
+              </div>
+              <div className="whitespace-nowrap topic-status-text" style={{ fontSize: 11, color: "var(--c-fg-2)" }}>
+                shell
+              </div>
+            </div>
+          </button>
+        );
+      })()}
     </div>
   );
 }

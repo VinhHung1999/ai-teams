@@ -33,8 +33,7 @@ export default function ChatPage() {
   const [infoPanelTab, setInfoPanelTab] = useState<"overview" | "files" | "agents">("overview");
   const [selectedRole, setSelectedRole] = useState<string | null>(null);
 
-  // [369] Terminal panel (desktop ≥1024px only)
-  const [terminalOpen, setTerminalOpen] = useState(true);
+  // [392] Terminal tab is a value of selectedRole === 'TERMINAL'
 
   // Mobile single-view state: 'list' | 'chat'
   const [mobileView, setMobileView] = useState<"list" | "chat">("list");
@@ -282,18 +281,6 @@ export default function ChatPage() {
 
       {/* ── Main chat area ── */}
       <main className="chat-wallpaper flex flex-row min-w-0 overflow-hidden chat-mobile-chat" style={{ gridColumn: 2, gridRow: 1 }}>
-        {/* [373] Terminal panel — column 2, left of chat, desktop ≥1024px only */}
-        {terminalOpen && selectedProject && (
-          <div className="chat-terminal-wrap">
-            <ChatTerminalPanel
-              project={selectedProject}
-              selectedRole={selectedRole}
-              onClose={() => setTerminalOpen(false)}
-              dragSide="right"
-            />
-          </div>
-        )}
-
         {/* Chat column (flex-1) */}
         <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
           {/* [359] No team selected — show placeholder on desktop */}
@@ -310,8 +297,6 @@ export default function ChatPage() {
                 project={selectedProject}
                 onOpenInfo={openInfo}
                 onBack={() => setMobileView("list")}
-                terminalOpen={terminalOpen}
-                onToggleTerminal={() => setTerminalOpen((v) => !v)}
               />
 
               <TopicBar
@@ -320,27 +305,37 @@ export default function ChatPage() {
                 onSelectRole={setSelectedRole}
               />
 
-              <PinStrip
-                projectId={selectedId}
-                onClick={() => openInfo("overview")}
-              />
+              {/* [392] Terminal tab — full main area swap */}
+              {selectedRole === "TERMINAL" ? (
+                <ChatTerminalPanel
+                  project={selectedProject}
+                  className="flex-1 min-h-0"
+                />
+              ) : (
+                <>
+                  <PinStrip
+                    projectId={selectedId}
+                    onClick={() => openInfo("overview")}
+                  />
 
-              <ChatStream
-                events={events}
-                loading={loadingHistory}
-                hasMore={hasMore}
-                onLoadMore={loadMore}
-                filterRole={selectedRole ?? undefined}
-                className="flex-1 min-h-0"
-              />
+                  <ChatStream
+                    events={events}
+                    loading={loadingHistory}
+                    hasMore={hasMore}
+                    onLoadMore={loadMore}
+                    filterRole={selectedRole ?? undefined}
+                    className="flex-1 min-h-0"
+                  />
 
-              <ChatInput
-                roles={roles}
-                defaultRole={selectedRole ?? roles[0]}
-                disabled={!selectedId}
-                onSend={handleSend}
-                projectId={selectedId ?? undefined}
-              />
+                  <ChatInput
+                    roles={roles}
+                    defaultRole={selectedRole ?? roles[0]}
+                    disabled={!selectedId}
+                    onSend={handleSend}
+                    projectId={selectedId ?? undefined}
+                  />
+                </>
+              )}
             </>
           )}
 

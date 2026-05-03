@@ -471,7 +471,7 @@ interface TailEntry {
 }
 const chatTails = new Map<number, TailEntry[]>();
 
-function pushEvents(projectId: number, dedupedEvents: ChatEvent[]) {
+function pushEvents(projectId: number, dedupedEvents: ChatEvent[], firstRole?: string) {
   console.error(`[chat-ws] push project=${projectId} events=${dedupedEvents.length} t=${Date.now()}`);
   const projectMsg = JSON.stringify({ type: 'chat_events', events: dedupedEvents });
   const clients = chatSubscribers.get(projectId);
@@ -484,7 +484,10 @@ function pushEvents(projectId: number, dedupedEvents: ChatEvent[]) {
   for (const ws of firehoseClients) {
     if (ws.readyState === WebSocket.OPEN) ws.send(firehoseMsg);
   }
-  const msgEvents = dedupedEvents.filter((e) => e.kind === 'message');
+  // [394] Push only for first role (e.g. PO/ASSISTANT) — skip BOSS + DEV pane 2+
+  const msgEvents = dedupedEvents.filter((e) =>
+    e.kind === 'message' && e.role !== 'BOSS' && (!firstRole || e.role === firstRole)
+  );
   if (msgEvents.length > 0) {
     const project = storage.getProject(projectId);
     const lastMsg = msgEvents[msgEvents.length - 1];
@@ -502,6 +505,7 @@ function watchProject(projectId: number) {
   const roleInfos = getRoleInfos(project.working_directory);
   if (roleInfos.length === 0) return;
 
+  const firstRole = roleInfos[0]?.role; // [394] push only for first role
   const tails: TailEntry[] = [];
 
   for (const ri of roleInfos) {
@@ -533,7 +537,7 @@ function watchProject(projectId: number) {
 
       const seen = new Set<string>();
       const deduped = newEvents.filter((e) => { if (seen.has(e.id)) return false; seen.add(e.id); return true; });
-      if (deduped.length > 0) pushEvents(projectId, deduped);
+      if (deduped.length > 0) pushEvents(projectId, deduped, firstRole);
     });
 
     proc.on('exit', (code) => {

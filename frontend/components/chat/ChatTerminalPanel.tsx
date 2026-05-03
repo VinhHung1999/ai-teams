@@ -6,9 +6,10 @@ import type { Project } from "@/lib/types";
 interface ChatTerminalPanelProps {
   project: Project | null;
   selectedRole?: string | null; // kept for compat, not used in shell mode
-  onClose: () => void;
+  onClose?: () => void; // optional — not shown when used as tab
   initialWidth?: number;
   dragSide?: "left" | "right";
+  className?: string; // for flex-1 min-h-0 when used as tab
 }
 
 function getShellWsUrl(projectId: number, cwd: string, cols: number, rows: number): string {
@@ -29,6 +30,7 @@ export function ChatTerminalPanel({
   onClose,
   initialWidth = 360,
   dragSide = "left",
+  className = "",
 }: ChatTerminalPanelProps) {
   const termContainerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<any>(null);
@@ -151,17 +153,21 @@ export function ChatTerminalPanel({
 
   const statusColor = wsStatus === "connected" ? "#7ee787" : wsStatus === "connecting" ? "#e3b341" : "#6e7681";
 
+  // Tab mode: stretch to fill; panel mode: fixed width with drag handle
+  const isTabMode = !!className;
+
   return (
     <div
-      className="chat-terminal-panel flex flex-col flex-shrink-0"
+      className={`chat-terminal-panel flex flex-col ${isTabMode ? className : "flex-shrink-0"}`}
       style={{
-        width: panelWidth, position: "relative", background: "#0d1117",
-        borderLeft: dragSide === "left" ? "1px solid rgba(255,255,255,0.08)" : undefined,
-        borderRight: dragSide === "right" ? "1px solid rgba(255,255,255,0.08)" : undefined,
+        width: isTabMode ? undefined : panelWidth,
+        position: "relative", background: "#0d1117",
+        borderLeft: !isTabMode && dragSide === "left" ? "1px solid rgba(255,255,255,0.08)" : undefined,
+        borderRight: !isTabMode && dragSide === "right" ? "1px solid rgba(255,255,255,0.08)" : undefined,
       }}
     >
-      {/* Drag handle */}
-      <div
+      {/* Drag handle — panel mode only */}
+      {!isTabMode && <div
         onMouseDown={onDragMouseDown}
         style={{
           position: "absolute",
@@ -171,7 +177,7 @@ export function ChatTerminalPanel({
         }}
         onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(121,192,255,0.3)")}
         onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
-      />
+      />}
 
       {/* Header */}
       <div style={{
@@ -187,13 +193,15 @@ export function ChatTerminalPanel({
             {cwd.replace(/^\/Users\/[^/]+/, "~")}
           </span>
         )}
-        <button
-          onClick={onClose}
-          title="Close terminal"
-          style={{ width: 24, height: 24, borderRadius: 6, border: "none", background: "transparent", color: "#6e7681", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, flexShrink: 0 }}
-          onMouseEnter={(e) => (e.currentTarget.style.color = "#c9d1d9")}
-          onMouseLeave={(e) => (e.currentTarget.style.color = "#6e7681")}
-        >✕</button>
+        {!isTabMode && onClose && (
+          <button
+            onClick={onClose}
+            title="Close terminal"
+            style={{ width: 24, height: 24, borderRadius: 6, border: "none", background: "transparent", color: "#6e7681", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, flexShrink: 0 }}
+            onMouseEnter={(e) => (e.currentTarget.style.color = "#c9d1d9")}
+            onMouseLeave={(e) => (e.currentTarget.style.color = "#6e7681")}
+          >✕</button>
+        )}
       </div>
 
       {/* xterm */}
