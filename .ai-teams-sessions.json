@@ -1,7 +1,0 @@
-{
-  "session_name": "ai_teams",
-  "roles": {
-    "PO":  { "session_id": "ae3228cb-c45e-4de4-899b-849dc276d4b9",  "cwd": "/Users/hungphu/Documents/AI_Projects/ai-teams" },
-    "DEV": { "session_id": "031dc304-dfef-43b0-a09a-378be29afadb", "cwd": "/Users/hungphu/Documents/AI_Projects/ai-teams" }
-  }
-}

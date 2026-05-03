@@ -69,3 +69,11 @@ coverage/
 
 # PM2
 .pm2/
+
+# Sensitive / ephemeral — never commit
+archive/
+.observations/
+observation.md
+.ai-teams-sessions.json
+backend-node/data/push-subscriptions.json
+backend-node/data/*.json
