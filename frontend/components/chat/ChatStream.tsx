@@ -261,10 +261,11 @@ interface ChatStreamProps {
   hasMore?: boolean;
   onLoadMore?: () => void;
   filterRole?: string;
+  sendingMessage?: string | null;
   className?: string;
 }
 
-export function ChatStream({ events, loading, hasMore, onLoadMore, filterRole, className = "" }: ChatStreamProps) {
+export function ChatStream({ events, loading, hasMore, onLoadMore, filterRole, sendingMessage, className = "" }: ChatStreamProps) {
   const filtered = filterRole
     ? events.filter((e) => e.role === "BOSS" || e.role === filterRole)
     : events;
@@ -353,6 +354,14 @@ export function ChatStream({ events, loading, hasMore, onLoadMore, filterRole, c
             toolResultMap={toolResultMap}
           />
         ))}
+        {/* Ephemeral "sending…" indicator — dismissed when WS confirms arrival */}
+        {sendingMessage && (
+          <div className="flex items-end gap-2 justify-end" style={{ marginTop: 4, opacity: 0.55 }}>
+            <div style={{ fontSize: 12, color: "var(--c-fg-2)", padding: "4px 10px", borderRadius: 12, background: "rgba(0,0,0,0.04)" }}>
+              📤 Sending…
+            </div>
+          </div>
+        )}
         <div ref={bottomRef} />
       </div>
     </div>

@@ -80,8 +80,11 @@ import tmuxRouter from './routes/tmux';
 import filesRouter from './routes/files';
 import gitRouter from './routes/git';
 import notificationsRouter from './routes/notifications';
-import { chatRouter } from './routes/chat';
+import { chatRouter, createChatWss, createFirehoseWss } from './routes/chat';
 import voiceRouter from './routes/voice';
+import skillsRouter from './routes/skills';
+import attachmentsRouter from './routes/attachments';
+import pushRouter from './routes/push';
 
 app.use(projectsRouter);
 app.use(backlogRouter);
@@ -93,6 +96,9 @@ app.use(gitRouter);
 app.use(notificationsRouter);
 app.use(chatRouter);
 app.use(voiceRouter);
+app.use(skillsRouter);
+app.use(attachmentsRouter);
+app.use(pushRouter);
 
 // Terminal REST endpoints
 app.get('/api/terminal/sessions', (_req, res) => {

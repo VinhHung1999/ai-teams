@@ -8,6 +8,7 @@ import { createInterface } from 'readline';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import storage from '../lib/JsonStorage';
+import { pushNotify } from './push';
 
 const execAsync = promisify(exec);
 const router = Router();
@@ -58,7 +59,7 @@ function parseJsonlLine(
   line: string,
   fileRole: 'PO' | 'DEV',
   sessionId: string,
-  toolUseMap: Map<string, { name: string; input: any }>,
+  toolUseMap: Map<string, { name: string; input: any; hidden?: boolean }>,
 ): ChatEvent[] {
   let d: any;
   try { d = JSON.parse(line); } catch { return []; }
@@ -68,21 +69,34 @@ function parseJsonlLine(
 
   const events: ChatEvent[] = [];
 
-  // Strip '[via UI] BOSS:' prefix from any user text — legacy prefix used by UI send route
-  const BOSS_PREFIX_RE = /^\[via UI\]\s*BOSS:\s*/;
-  const stripBossPrefix = (t: string) => t.replace(BOSS_PREFIX_RE, '');
+  // [345] Role retag: only '[via UI] BOSS:' → BOSS; 'PO [HH:mm]:' → PO/DEV; else → fileRole
+  const BOSS_PREFIX_RE   = /^\[via UI\]\s*BOSS:\s*/;
+  const SENDER_PREFIX_RE = /^([A-Z]{2,})\s*\[\d{1,2}:\d{2}\]:\s*/;
+
+  function retagContent(text: string): { role: 'BOSS' | 'PO' | 'DEV'; text: string } {
+    if (BOSS_PREFIX_RE.test(text)) {
+      return { role: 'BOSS', text: text.replace(BOSS_PREFIX_RE, '') };
+    }
+    const m = text.match(SENDER_PREFIX_RE);
+    if (m) {
+      const senderRole = m[1] as 'PO' | 'DEV';
+      return { role: senderRole, text: text.replace(SENDER_PREFIX_RE, '') };
+    }
+    return { role: fileRole, text };
+  }
 
   if (d.type === 'user') {
     const content = d.message?.content;
 
     if (typeof content === 'string' && content.trim()) {
+      const retagged = retagContent(content);
       events.push({
         id: d.uuid || `${ts}-user`,
-        role: 'BOSS',
+        role: retagged.role,
         sessionId,
         timestamp: ts,
         kind: 'message',
-        text: stripBossPrefix(content),
+        text: retagged.text,
       });
     } else if (Array.isArray(content)) {
       const textParts = content
@@ -90,20 +104,22 @@ function parseJsonlLine(
         .map((c: any) => c.text as string)
         .join('');
       if (textParts.trim()) {
+        const retagged = retagContent(textParts);
         events.push({
           id: `${d.uuid}:text`,
-          role: 'BOSS',
+          role: retagged.role,
           sessionId,
           timestamp: ts,
           kind: 'message',
-          text: stripBossPrefix(textParts),
+          text: retagged.text,
         });
       }
       for (const c of content) {
         if (c.type !== 'tool_result') continue;
+        const prior = toolUseMap.get(c.tool_use_id);
+        if ((prior as any)?.hidden) continue; // [346] skip result for hidden tm-send tool_use
         const outputText =
           typeof c.content === 'string' ? c.content : JSON.stringify(c.content);
-        const prior = toolUseMap.get(c.tool_use_id);
         events.push({
           id: `result:${c.tool_use_id}`,
           role: fileRole,
@@ -135,19 +151,24 @@ function parseJsonlLine(
           text: c.text as string,
         });
       } else if (c.type === 'tool_use') {
-        toolUseMap.set(c.id, { name: c.name, input: c.input });
-        events.push({
-          id: c.id,
-          role: fileRole,
-          sessionId,
-          timestamp: ts,
-          kind: 'tool_use',
-          tool: {
-            name: c.name as string,
-            input: c.input,
-            toolUseId: c.id as string,
-          },
-        });
+        // [346] Skip tm-send / tmux send-keys Bash calls — internal plumbing, not content
+        const isTmSend = c.name === 'Bash' &&
+          /^(tm-send|tmux\s+send-keys)\b/.test(String(c.input?.command ?? ''));
+        toolUseMap.set(c.id, { name: c.name, input: c.input, hidden: isTmSend });
+        if (!isTmSend) {
+          events.push({
+            id: c.id,
+            role: fileRole,
+            sessionId,
+            timestamp: ts,
+            kind: 'tool_use',
+            tool: {
+              name: c.name as string,
+              input: c.input,
+              toolUseId: c.id as string,
+            },
+          });
+        }
       }
     }
   }
@@ -159,7 +180,7 @@ async function parseJsonlFile(
   filePath: string,
   fileRole: 'PO' | 'DEV',
   sessionId: string,
-  toolUseMap: Map<string, { name: string; input: any }>,
+  toolUseMap: Map<string, { name: string; input: any; hidden?: boolean }>,
 ): Promise<ChatEvent[]> {
   if (!fs.existsSync(filePath)) return [];
 
@@ -239,18 +260,37 @@ async function aggregateEvents(projectId: number): Promise<ChatEvent[]> {
   return allEvents;
 }
 
-// ── Helpers for last-events ──
+// ── Helpers for last-events [350] ──
+// Return {lastMessageAt, lastMessageText} based on kind=message events only (not tool cards).
 
-const lastEventsCache = new Map<number, { fetchedAt: number; timestamp: string | undefined }>();
+interface LastEventInfo { lastMessageAt: string; lastMessageText: string }
+
+const lastEventsCache = new Map<number, { fetchedAt: number; info: LastEventInfo | undefined }>();
 const LAST_EVENTS_TTL = 30_000;
 
-function getLastTimestamp(projectId: number): string | undefined {
+function extractMessageText(d: any): string | undefined {
+  if (d.type === 'user') {
+    const c = d.message?.content;
+    const raw = typeof c === 'string' ? c : Array.isArray(c)
+      ? c.filter((x: any) => x.type === 'text').map((x: any) => x.text).join('') : '';
+    return raw.trim() || undefined;
+  }
+  if (d.type === 'assistant') {
+    const c = d.message?.content;
+    if (!Array.isArray(c)) return undefined;
+    const text = c.filter((x: any) => x.type === 'text').map((x: any) => x.text).join('');
+    return text.trim() || undefined;
+  }
+  return undefined;
+}
+
+function getLastMessageInfo(projectId: number): LastEventInfo | undefined {
   const project = storage.getProject(projectId);
   if (!project?.working_directory) return undefined;
 
   const roleInfos = getRoleInfos(project.working_directory);
   const folders = new Set(roleInfos.map((ri) => ri.folder));
-  let latestTs: string | undefined;
+  let best: LastEventInfo | undefined;
 
   for (const folder of folders) {
     if (!fs.existsSync(folder)) continue;
@@ -259,7 +299,8 @@ function getLastTimestamp(projectId: number): string | undefined {
       try {
         const stat = fs.statSync(filePath);
         if (stat.size === 0) continue;
-        const readSize = Math.min(2048, stat.size);
+        // Read last 4KB to find the last user/assistant text message
+        const readSize = Math.min(4096, stat.size);
         const buf = Buffer.alloc(readSize);
         const fd = fs.openSync(filePath, 'r');
         fs.readSync(fd, buf, 0, readSize, stat.size - readSize);
@@ -268,8 +309,13 @@ function getLastTimestamp(projectId: number): string | undefined {
         for (let i = lines.length - 1; i >= 0; i--) {
           try {
             const d = JSON.parse(lines[i]);
-            if (d.timestamp) {
-              if (!latestTs || d.timestamp > latestTs) latestTs = d.timestamp;
+            if (!d.timestamp) continue;
+            const text = extractMessageText(d);
+            if (text) {
+              const stripped = text.replace(/^\[via UI\]\s*BOSS:\s*/, '').replace(/^([A-Z]{2,})\s*\[\d{1,2}:\d{2}\]:\s*/, '');
+              if (!best || d.timestamp > best.lastMessageAt) {
+                best = { lastMessageAt: d.timestamp, lastMessageText: stripped.slice(0, 80) };
+              }
               break;
             }
           } catch {}
@@ -277,27 +323,28 @@ function getLastTimestamp(projectId: number): string | undefined {
       } catch {}
     }
   }
-  return latestTs;
+  return best;
 }
 
-function getLastTimestampCached(projectId: number): string | undefined {
+function getLastMessageInfoCached(projectId: number): LastEventInfo | undefined {
   const cached = lastEventsCache.get(projectId);
-  if (cached && Date.now() - cached.fetchedAt < LAST_EVENTS_TTL) return cached.timestamp;
-  const ts = getLastTimestamp(projectId);
-  lastEventsCache.set(projectId, { fetchedAt: Date.now(), timestamp: ts });
-  return ts;
+  if (cached && Date.now() - cached.fetchedAt < LAST_EVENTS_TTL) return cached.info;
+  const info = getLastMessageInfo(projectId);
+  lastEventsCache.set(projectId, { fetchedAt: Date.now(), info });
+  return info;
 }
 
 // ── REST: GET /api/chat/last-events?projectIds=1,2,3 ──
+// Returns {[id]: {lastMessageAt, lastMessageText}} — only kind=message events
 
 router.get('/api/chat/last-events', async (req: Request, res: Response) => {
   const param = req.query.projectIds as string;
   if (!param) return res.json({});
   const ids = param.split(',').map(Number).filter((n) => !isNaN(n));
-  const result: Record<number, string> = {};
+  const result: Record<number, LastEventInfo> = {};
   for (const id of ids) {
-    const ts = getLastTimestampCached(id);
-    if (ts) result[id] = ts;
+    const info = getLastMessageInfoCached(id);
+    if (info) result[id] = info;
   }
   res.json(result);
 });
@@ -314,8 +361,12 @@ router.get('/api/chat/:projectId/history', async (req: Request, res: Response) =
   try {
     const all = await aggregateEvents(projectId);
     const filtered = before ? all.filter(e => e.timestamp < before) : all;
-    const events = filtered.slice(-limit);
-    res.json({ events, total: filtered.length });
+    // [347] Sort DESC → take newest N → sort ASC for frontend rendering
+    const newest = filtered
+      .sort((a, b) => b.timestamp.localeCompare(a.timestamp))
+      .slice(0, limit)
+      .sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+    res.json({ events: newest, total: filtered.length });
   } catch (e: any) {
     console.error(`[chat] history error project ${projectId}:`, e.message);
     res.status(500).json({ error: e.message });
@@ -379,6 +430,8 @@ export { router as chatRouter };
 // ── WebSocket: /ws/chat?projectId=N ──
 
 const chatSubscribers = new Map<number, Set<WebSocket>>();
+// [351] Firehose clients: receive events from all projects
+const firehoseClients = new Set<WebSocket>();
 const chatWatchers = new Map<number, fs.FSWatcher>();
 const fileOffsets = new Map<string, number>();
 
@@ -448,13 +501,31 @@ async function watchProject(projectId: number) {
 
       if (newEvents.length === 0) return;
 
+      // Push to per-project subscribers
       const clients = chatSubscribers.get(projectId);
-      if (!clients || clients.size === 0) return;
-
-      const msg = JSON.stringify({ type: 'chat_events', events: newEvents });
-      for (const ws of clients) {
-        if (ws.readyState === WebSocket.OPEN) ws.send(msg);
+      const projectMsg = JSON.stringify({ type: 'chat_events', events: newEvents });
+      if (clients) {
+        for (const ws of clients) {
+          if (ws.readyState === WebSocket.OPEN) ws.send(projectMsg);
+        }
       }
+
+      // [351] Firehose — push to all-projects subscribers with projectId field
+      const firehoseMsg = JSON.stringify({ type: 'chat_events', projectId, events: newEvents });
+      for (const ws of firehoseClients) {
+        if (ws.readyState === WebSocket.OPEN) ws.send(firehoseMsg);
+      }
+
+      // [352] Web Push notifications for message events
+      const msgEvents = newEvents.filter((e) => e.kind === 'message');
+      if (msgEvents.length > 0) {
+        const project = storage.getProject(projectId);
+        const lastMsg = msgEvents[msgEvents.length - 1];
+        pushNotify(projectId, project?.name ?? String(projectId), lastMsg.text ?? '', lastMsg.role).catch(() => {});
+      }
+
+      // Invalidate last-events cache for this project
+      lastEventsCache.delete(projectId);
     }, 100);
   });
 
@@ -495,6 +566,31 @@ export function createChatWss(): WebSocketServer {
       }
     });
 
+    ws.on('error', () => {});
+  });
+
+  return wss;
+}
+
+// ── [351] Firehose WebSocket: /ws/chat/firehose — events from ALL projects ──
+
+export function createFirehoseWss(): WebSocketServer {
+  const wss = new WebSocketServer({ noServer: true });
+
+  wss.on('connection', (ws: WebSocket) => {
+    firehoseClients.add(ws);
+
+    // Start watching all known projects so their fs.watch is active
+    const projects = storage.getProjects();
+    for (const p of projects) {
+      if (p.tmux_session_name) watchProject(p.id).catch(() => {});
+    }
+
+    const ping = setInterval(() => {
+      if (ws.readyState === WebSocket.OPEN) ws.ping();
+    }, 30000);
+
+    ws.on('close', () => { clearInterval(ping); firehoseClients.delete(ws); });
     ws.on('error', () => {});
   });
 
