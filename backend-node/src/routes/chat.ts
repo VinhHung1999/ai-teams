@@ -7,6 +7,7 @@ import http from 'http';
 import { createInterface } from 'readline';
 import { exec } from 'child_process';
 import { promisify } from 'util';
+import chokidar from 'chokidar';
 import storage from '../lib/JsonStorage';
 import { pushNotify } from './push';
 
@@ -53,6 +54,11 @@ function loadSessionsMap(workingDir: string): Record<string, { session_id: strin
   } catch {
     return {};
   }
+}
+
+// [378] Content-hash ID for pending events: attachment + queue-operation with same text → same id → dedup
+function contentKey(text: string): string {
+  return Buffer.from(text.trim().slice(0, 64)).toString('base64').replace(/[^a-zA-Z0-9]/g, '').slice(0, 24);
 }
 
 // Parses one JSONL line into zero or more ChatEvents.
@@ -181,8 +187,25 @@ function parseJsonlLine(
     const prompt = d.attachment.prompt as string | undefined;
     if (prompt?.trim()) {
       const retagged = retagContent(prompt);
+      // Use content-hash ID so queue-operation + attachment for same text dedup to same event
       events.push({
-        id: `pending:${d.uuid ?? d.attachment?.id ?? ts}`,
+        id: `pending:${contentKey(retagged.text)}`,
+        role: retagged.role,
+        ...(retagged.targetRole ? { targetRole: retagged.targetRole } : {}),
+        sessionId,
+        timestamp: ts,
+        kind: 'message',
+        text: retagged.text,
+        pending: true,
+      });
+    }
+  } else if (d.type === 'queue-operation' && d.operation === 'enqueue') {
+    // [378] Fallback: some sessions only write queue-operation (no attachment line)
+    const content = d.content as string | undefined;
+    if (content?.trim() && BOSS_PREFIX_RE.test(content)) {
+      const retagged = retagContent(content);
+      events.push({
+        id: `pending:${contentKey(retagged.text)}`,
         role: retagged.role,
         ...(retagged.targetRole ? { targetRole: retagged.targetRole } : {}),
         sessionId,
@@ -193,7 +216,6 @@ function parseJsonlLine(
       });
     }
   }
-  // queue-operation events are redundant with attachment — skip
 
   return events;
 }
@@ -464,7 +486,7 @@ export { router as chatRouter };
 const chatSubscribers = new Map<number, Set<WebSocket>>();
 // [351] Firehose clients: receive events from all projects
 const firehoseClients = new Set<WebSocket>();
-const chatWatchers = new Map<number, fs.FSWatcher>();
+const chatWatchers = new Map<number, { close: () => Promise<void> | void }>();
 const fileOffsets = new Map<string, number>();
 
 async function watchProject(projectId: number) {
@@ -498,13 +520,17 @@ async function watchProject(projectId: number) {
   if (!folder || !fs.existsSync(folder)) return;
 
   const roles = folderToRoles.get(folder)!;
-  let debounce: ReturnType<typeof setTimeout> | null = null;
 
-  const watcher = fs.watch(folder, (_, filename) => {
-    if (!filename || !filename.endsWith('.jsonl')) return;
-    if (debounce) clearTimeout(debounce);
-    debounce = setTimeout(() => {
-      const changedFile = path.join(folder, filename);
+  // [378] chokidar: more reliable than fs.watch on macOS (handles renames, no missed events)
+  const watcher = chokidar.watch(`${folder}/*.jsonl`, {
+    persistent: true, ignoreInitial: true, awaitWriteFinish: { stabilityThreshold: 80, pollInterval: 50 },
+  });
+
+  watcher.on('change', (filePath: string) => {
+    const filename = path.basename(filePath);
+    if (!filename.endsWith('.jsonl')) return;
+    {
+      const changedFile = filePath;
       const sid = path.basename(filename, '.jsonl');
 
       // Determine which role owns this file
@@ -533,6 +559,13 @@ async function watchProject(projectId: number) {
 
       if (newEvents.length === 0) return;
 
+      // [378] Debug log per WS push
+      for (const e of newEvents) {
+        if (e.kind === 'message') {
+          console.log(`[chat-ws] push project=${projectId} role=${e.role} kind=${e.kind} pending=${!!e.pending} text="${(e.text ?? '').slice(0, 60)}"`);
+        }
+      }
+
       // Push to per-project subscribers
       const clients = chatSubscribers.get(projectId);
       const projectMsg = JSON.stringify({ type: 'chat_events', events: newEvents });
@@ -558,7 +591,7 @@ async function watchProject(projectId: number) {
 
       // Invalidate last-events cache for this project
       lastEventsCache.delete(projectId);
-    }, 100);
+    }
   });
 
   chatWatchers.set(projectId, watcher);

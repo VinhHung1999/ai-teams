@@ -182,6 +182,12 @@ export function ChatInput({ roles, defaultRole, disabled, onSend, projectId }: C
     if (maxDurationTimerRef.current) clearTimeout(maxDurationTimerRef.current);
     if (durationIntervalRef.current) clearInterval(durationIntervalRef.current);
     const duration = Date.now() - voiceStartRef.current;
+
+    // [377] requestData() forces a dataavailable event with buffered samples BEFORE stop()
+    // prevents tail loss when browser hasn't emitted the last timeslice chunk yet
+    try { mr.requestData(); } catch {}
+    await new Promise<void>((r) => setTimeout(r, 120)); // let that chunk arrive
+
     mr.stop();
     if (cancelledRef.current || duration < 500) {
       chunksRef.current = [];
@@ -191,6 +197,7 @@ export function ChatInput({ roles, defaultRole, disabled, onSend, projectId }: C
       setVoiceDuration(0);
       return;
     }
+    // Wait for stop event — browser fires final dataavailable then stop (spec-guaranteed order)
     await new Promise<void>((resolve) => {
       mr.addEventListener("stop", () => resolve(), { once: true });
     });
@@ -233,7 +240,7 @@ export function ChatInput({ roles, defaultRole, disabled, onSend, projectId }: C
     const mr = new MediaRecorder(stream);
     mediaRecorderRef.current = mr;
     mr.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data); };
-    mr.start(100);
+    mr.start(250); // [377] 250ms timeslice — reduces chunk boundary gaps, cleaner tail
     voiceStartRef.current = Date.now();
     setVoiceState("recording");
     setVoiceDuration(0);

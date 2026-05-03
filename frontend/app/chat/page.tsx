@@ -99,6 +99,28 @@ export default function ChatPage() {
     return () => navigator.serviceWorker.removeEventListener("message", handler);
   }, []);
 
+  // [378c] Safety re-fetch: catch missed WS events every 30s + on tab focus
+  const selectedIdRef = useRef(selectedId);
+  selectedIdRef.current = selectedId;
+  useEffect(() => {
+    const refetch = async () => {
+      const id = selectedIdRef.current;
+      if (!id) return;
+      try {
+        const { events: hist } = await api.chatHistory(id, HISTORY_LIMIT);
+        setEvents((prev) => {
+          const existingIds = new Set(prev.map((e) => e.id));
+          const fresh = hist.filter((e) => !existingIds.has(e.id));
+          return fresh.length === 0 ? prev : [...prev, ...fresh].sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+        });
+      } catch {}
+    };
+    const interval = setInterval(refetch, 30_000);
+    const onVisible = () => { if (document.visibilityState === "visible") refetch(); };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => { clearInterval(interval); document.removeEventListener("visibilitychange", onVisible); };
+  }, []);
+
   const handleSelectProject = useCallback(async (id: number, ps?: Project[]) => {
     const list = ps ?? projects;
     const proj = list.find((p) => p.id === id) ?? null;
