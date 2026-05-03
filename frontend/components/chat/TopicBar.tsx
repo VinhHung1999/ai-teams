@@ -1,6 +1,33 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import type { Project } from "@/lib/types";
+
+// ── Circular context-usage ring ───────────────────────────────────────────────
+function ContextRing({ pct }: { pct: number }) {
+  const r = 7;
+  const circ = 2 * Math.PI * r; // ≈ 44
+  const filled = (pct / 100) * circ;
+  const color = pct >= 80 ? "#ef4444" : pct >= 50 ? "#f59e0b" : "#22c55e";
+  return (
+    <svg width="18" height="18" viewBox="0 0 18 18" style={{ flexShrink: 0 }}>
+      {/* Track */}
+      <circle cx="9" cy="9" r={r} fill="none" stroke="rgba(255,255,255,0.1)" strokeWidth="2" />
+      {/* Fill */}
+      <circle
+        cx="9" cy="9" r={r} fill="none"
+        stroke={color} strokeWidth="2"
+        strokeDasharray={`${filled} ${circ}`}
+        strokeLinecap="round"
+        transform="rotate(-90 9 9)"
+      />
+      {/* Pct label for high usage */}
+      {pct >= 70 && (
+        <text x="9" y="12" textAnchor="middle" fontSize="5.5" fontWeight="600" fill={color}>{pct}</text>
+      )}
+    </svg>
+  );
+}
 
 // Role color map matching the design CSS
 const ROLE_GRADIENT: Record<string, string> = {
@@ -41,6 +68,22 @@ interface TopicBarProps {
 
 export function TopicBar({ project, selectedRole, onSelectRole }: TopicBarProps) {
   const roles = project?.roles ?? [];
+
+  // [397] Poll context usage every 10s
+  const [contextUsage, setContextUsage] = useState<Record<string, number>>({});
+  useEffect(() => {
+    if (!project?.id) return;
+    const fetch10s = () => {
+      fetch(`/api/projects/${project.id}/context-usage`)
+        .then((r) => r.json())
+        .then((data) => setContextUsage(data))
+        .catch(() => {});
+    };
+    fetch10s();
+    const t = setInterval(fetch10s, 10_000);
+    return () => clearInterval(t);
+  }, [project?.id]);
+
   if (roles.length === 0) return null;
 
   return (
@@ -102,27 +145,26 @@ export function TopicBar({ project, selectedRole, onSelectRole }: TopicBarProps)
               />
             </div>
 
-            {/* Text: name + status — hidden on very small screens via parent overflow */}
+            {/* Text: name + status */}
             <div className="text-left leading-tight">
               <div
                 className="font-semibold whitespace-nowrap"
-                style={{
-                  fontSize: 13,
-                  color: isActive ? "var(--c-accent)" : "var(--c-fg-0)",
-                }}
+                style={{ fontSize: 13, color: isActive ? "var(--c-accent)" : "var(--c-fg-0)" }}
               >
                 {role}
               </div>
               <div
                 className="whitespace-nowrap topic-status-text"
-                style={{
-                  fontSize: 11,
-                  color: project?.tmux_active ? "var(--c-accent)" : "var(--c-fg-2)",
-                }}
+                style={{ fontSize: 11, color: project?.tmux_active ? "var(--c-accent)" : "var(--c-fg-2)" }}
               >
                 {project?.tmux_active ? "online" : "offline"}
               </div>
             </div>
+
+            {/* [397] Context usage ring */}
+            {contextUsage[role] !== undefined && (
+              <ContextRing pct={contextUsage[role]} />
+            )}
           </button>
         );
       })}

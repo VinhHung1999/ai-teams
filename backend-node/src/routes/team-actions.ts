@@ -157,4 +157,54 @@ router.post('/api/projects/:id/refresh', async (req: Request, res: Response) => 
   return res.status(202).json({ ok: true, sessionName, log_path: logPath, note: 'Session not yet visible — setup still running' });
 });
 
+// ── Context usage endpoint ─────────────────────────────────────────────────────
+// Cache: projectId → { data, expiry }
+const contextCache = new Map<number, { data: Record<string, number>; expiry: number }>();
+
+router.get('/api/projects/:id/context-usage', async (req: Request, res: Response) => {
+  const projectId = parseInt(req.params.id as string);
+  if (isNaN(projectId)) return res.status(400).json({ error: 'invalid id' });
+
+  const now = Date.now();
+  const cached = contextCache.get(projectId);
+  if (cached && now < cached.expiry) return res.json(cached.data);
+
+  const project = storage.getProject(projectId);
+  if (!project?.tmux_session_name) return res.json({});
+  const session = project.tmux_session_name;
+
+  try {
+    // List panes with role names
+    const { stdout: paneList } = await execAsync(
+      `tmux list-panes -t ${session} -F "#{pane_index} #{@role_name}"`,
+      { timeout: 3000, encoding: 'utf-8' },
+    );
+
+    const result: Record<string, number> = {};
+    for (const line of paneList.trim().split('\n')) {
+      const parts = line.trim().split(' ', 2);
+      if (parts.length !== 2 || !parts[1]) continue;
+      const [paneIdx, role] = parts;
+      try {
+        // Capture last 10 lines of pane — status bar is at the bottom
+        const { stdout: paneOutput } = await execAsync(
+          `tmux capture-pane -p -t ${session}:0.${paneIdx} -S -10`,
+          { timeout: 2000, encoding: 'utf-8' },
+        );
+        // Extract the LAST percentage in the output (Claude Code status bar format: "26% | $0.05 | 2m 30s")
+        const matches = paneOutput.match(/\b(\d{1,3})%/g);
+        if (matches && matches.length > 0) {
+          const lastPct = parseInt(matches[matches.length - 1]);
+          if (lastPct >= 0 && lastPct <= 100) result[role] = lastPct;
+        }
+      } catch {}
+    }
+
+    contextCache.set(projectId, { data: result, expiry: now + 5000 });
+    return res.json(result);
+  } catch (e: any) {
+    return res.json({});
+  }
+});
+
 export default router;
