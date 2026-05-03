@@ -136,50 +136,22 @@ export default function ChatPage() {
     }
   }, [selectedId, loadingHistory, hasMore]);
 
-  // [343] WS dedup: for BOSS message events, replace matching optimistic (5s window) to avoid dup.
-  // Backend now strips '[via UI] BOSS: ' prefix; this also handles legacy events that still have it.
-  const BOSS_PREFIX_RE = /^\[via UI\]\s*BOSS:\s*/;
-  const DEDUP_WINDOW_MS = 5000;
+  // [344] Simplified WS handler — JSONL is source of truth. No optimistic, no dedup.
+  const [sendingMessage, setSendingMessage] = useState<string | null>(null);
+  const sendingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const handleWsEvents = useCallback((newEvts: ChatEvent[]) => {
     setEvents((prev) => {
       const existingIds = new Set(prev.map((e) => e.id));
-      const result = [...prev];
-
-      for (const evt of newEvts) {
-        if (existingIds.has(evt.id)) continue;
-
-        if (evt.role === "BOSS" && evt.kind === "message") {
-          // Strip legacy prefix if backend hasn't stripped it yet
-          const cleanText = evt.text?.replace(BOSS_PREFIX_RE, "") ?? "";
-          const evtTime = new Date(evt.timestamp).getTime();
-          const optIdx = result.findIndex(
-            (e) =>
-              e.id.startsWith("optimistic-") &&
-              e.role === "BOSS" &&
-              e.text === cleanText &&
-              Math.abs(new Date(e.timestamp).getTime() - evtTime) < DEDUP_WINDOW_MS,
-          );
-          if (optIdx !== -1) {
-            result[optIdx] = { ...evt, text: cleanText };
-          } else {
-            result.push({ ...evt, text: cleanText });
-          }
-          existingIds.add(evt.id);
-          continue;
-        }
-
-        result.push(evt);
-        existingIds.add(evt.id);
-      }
-      return result;
+      const fresh = newEvts.filter((e) => !existingIds.has(e.id));
+      return fresh.length === 0 ? prev : [...prev, ...fresh];
     });
+    // Clear "sending…" ephemeral indicator when WS confirms arrival
+    if (newEvts.length > 0) setSendingMessage(null);
 
-    // Update preview + lastEventAt outside the updater
     const last = newEvts[newEvts.length - 1];
     if (last && selectedId) {
-      const cleanText = last.text?.replace(BOSS_PREFIX_RE, "") ?? last.tool?.name ?? "";
-      setLastEvents((p) => ({ ...p, [selectedId]: cleanText.slice(0, 60) }));
+      setLastEvents((p) => ({ ...p, [selectedId]: (last.text ?? last.tool?.name ?? "").slice(0, 60) }));
       setLastEventAt((p) => ({ ...p, [selectedId]: last.timestamp }));
     }
   }, [selectedId]);
@@ -188,18 +160,10 @@ export default function ChatPage() {
 
   const handleSend = useCallback(async (role: string, text: string) => {
     if (!selectedId) throw new Error("No team selected");
-
-    // Optimistic BOSS event
-    const optimistic: ChatEvent = {
-      id: `optimistic-${Date.now()}`,
-      role: "BOSS",
-      sessionId: "ui",
-      timestamp: new Date().toISOString(),
-      kind: "message",
-      text,
-    };
-    setEvents((prev) => [...prev, optimistic]);
-
+    // Show ephemeral indicator while waiting for WS roundtrip (~500ms-1s)
+    setSendingMessage(text);
+    if (sendingTimerRef.current) clearTimeout(sendingTimerRef.current);
+    sendingTimerRef.current = setTimeout(() => setSendingMessage(null), 5000);
     await api.chatSend(selectedId, role, text);
   }, [selectedId]);
 
@@ -275,6 +239,7 @@ export default function ChatPage() {
           hasMore={hasMore}
           onLoadMore={loadMore}
           filterRole={selectedRole ?? undefined}
+          sendingMessage={sendingMessage}
           className="flex-1 min-h-0"
         />
 

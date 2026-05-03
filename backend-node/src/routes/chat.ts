@@ -58,7 +58,7 @@ function parseJsonlLine(
   line: string,
   fileRole: 'PO' | 'DEV',
   sessionId: string,
-  toolUseMap: Map<string, { name: string; input: any }>,
+  toolUseMap: Map<string, { name: string; input: any; hidden?: boolean }>,
 ): ChatEvent[] {
   let d: any;
   try { d = JSON.parse(line); } catch { return []; }
@@ -68,21 +68,34 @@ function parseJsonlLine(
 
   const events: ChatEvent[] = [];
 
-  // Strip '[via UI] BOSS:' prefix from any user text — legacy prefix used by UI send route
-  const BOSS_PREFIX_RE = /^\[via UI\]\s*BOSS:\s*/;
-  const stripBossPrefix = (t: string) => t.replace(BOSS_PREFIX_RE, '');
+  // [345] Role retag: only '[via UI] BOSS:' → BOSS; 'PO [HH:mm]:' → PO/DEV; else → fileRole
+  const BOSS_PREFIX_RE   = /^\[via UI\]\s*BOSS:\s*/;
+  const SENDER_PREFIX_RE = /^([A-Z]{2,})\s*\[\d{1,2}:\d{2}\]:\s*/;
+
+  function retagContent(text: string): { role: 'BOSS' | 'PO' | 'DEV'; text: string } {
+    if (BOSS_PREFIX_RE.test(text)) {
+      return { role: 'BOSS', text: text.replace(BOSS_PREFIX_RE, '') };
+    }
+    const m = text.match(SENDER_PREFIX_RE);
+    if (m) {
+      const senderRole = m[1] as 'PO' | 'DEV';
+      return { role: senderRole, text: text.replace(SENDER_PREFIX_RE, '') };
+    }
+    return { role: fileRole, text };
+  }
 
   if (d.type === 'user') {
     const content = d.message?.content;
 
     if (typeof content === 'string' && content.trim()) {
+      const retagged = retagContent(content);
       events.push({
         id: d.uuid || `${ts}-user`,
-        role: 'BOSS',
+        role: retagged.role,
         sessionId,
         timestamp: ts,
         kind: 'message',
-        text: stripBossPrefix(content),
+        text: retagged.text,
       });
     } else if (Array.isArray(content)) {
       const textParts = content
@@ -90,20 +103,22 @@ function parseJsonlLine(
         .map((c: any) => c.text as string)
         .join('');
       if (textParts.trim()) {
+        const retagged = retagContent(textParts);
         events.push({
           id: `${d.uuid}:text`,
-          role: 'BOSS',
+          role: retagged.role,
           sessionId,
           timestamp: ts,
           kind: 'message',
-          text: stripBossPrefix(textParts),
+          text: retagged.text,
         });
       }
       for (const c of content) {
         if (c.type !== 'tool_result') continue;
+        const prior = toolUseMap.get(c.tool_use_id);
+        if ((prior as any)?.hidden) continue; // [346] skip result for hidden tm-send tool_use
         const outputText =
           typeof c.content === 'string' ? c.content : JSON.stringify(c.content);
-        const prior = toolUseMap.get(c.tool_use_id);
         events.push({
           id: `result:${c.tool_use_id}`,
           role: fileRole,
@@ -135,19 +150,24 @@ function parseJsonlLine(
           text: c.text as string,
         });
       } else if (c.type === 'tool_use') {
-        toolUseMap.set(c.id, { name: c.name, input: c.input });
-        events.push({
-          id: c.id,
-          role: fileRole,
-          sessionId,
-          timestamp: ts,
-          kind: 'tool_use',
-          tool: {
-            name: c.name as string,
-            input: c.input,
-            toolUseId: c.id as string,
-          },
-        });
+        // [346] Skip tm-send / tmux send-keys Bash calls — internal plumbing, not content
+        const isTmSend = c.name === 'Bash' &&
+          /^(tm-send|tmux\s+send-keys)\b/.test(String(c.input?.command ?? ''));
+        toolUseMap.set(c.id, { name: c.name, input: c.input, hidden: isTmSend });
+        if (!isTmSend) {
+          events.push({
+            id: c.id,
+            role: fileRole,
+            sessionId,
+            timestamp: ts,
+            kind: 'tool_use',
+            tool: {
+              name: c.name as string,
+              input: c.input,
+              toolUseId: c.id as string,
+            },
+          });
+        }
       }
     }
   }
@@ -159,7 +179,7 @@ async function parseJsonlFile(
   filePath: string,
   fileRole: 'PO' | 'DEV',
   sessionId: string,
-  toolUseMap: Map<string, { name: string; input: any }>,
+  toolUseMap: Map<string, { name: string; input: any; hidden?: boolean }>,
 ): Promise<ChatEvent[]> {
   if (!fs.existsSync(filePath)) return [];
 
@@ -314,8 +334,12 @@ router.get('/api/chat/:projectId/history', async (req: Request, res: Response) =
   try {
     const all = await aggregateEvents(projectId);
     const filtered = before ? all.filter(e => e.timestamp < before) : all;
-    const events = filtered.slice(-limit);
-    res.json({ events, total: filtered.length });
+    // [347] Sort DESC → take newest N → sort ASC for frontend rendering
+    const newest = filtered
+      .sort((a, b) => b.timestamp.localeCompare(a.timestamp))
+      .slice(0, limit)
+      .sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+    res.json({ events: newest, total: filtered.length });
   } catch (e: any) {
     console.error(`[chat] history error project ${projectId}:`, e.message);
     res.status(500).json({ error: e.message });

@@ -10,20 +10,11 @@ interface ChatInputProps {
   projectId?: number;
 }
 
-const SLASH_CMDS = [
-  ["/status", "Show current status"],
-  ["/assign", "Assign task to role"],
-  ["/move", "Move task to column"],
-  ["/sprint", "Sprint summary"],
-];
-
-const ATTACH_ITEMS = [
-  { label: "File", color: "#3b82f6" },
-  { label: "Photo", color: "#10b981" },
-  { label: "Task card", color: "#a78bfa" },
-  { label: "Poll", color: "#f59e0b" },
-  { label: "Link / PR", color: "#ec4899" },
-];
+interface Skill {
+  name: string;
+  description: string;
+  folder: string;
+}
 
 // ── Voice recording state ─────────────────────────────────────────────────────
 type VoiceState = "idle" | "recording" | "uploading";
@@ -43,6 +34,14 @@ export function ChatInput({ roles, defaultRole, disabled, onSend, projectId }: C
   const [showAttach, setShowAttach] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const photoInputRef = useRef<HTMLInputElement>(null);
+
+  // [348] Skills picker state
+  const [showSkills, setShowSkills] = useState(false);
+  const [skills, setSkills] = useState<Skill[]>([]);
+  const [skillsLoaded, setSkillsLoaded] = useState(false);
+  const [skillSearch, setSkillSearch] = useState("");
 
   // Voice state
   const [voiceState, setVoiceState] = useState<VoiceState>("idle");
@@ -59,9 +58,21 @@ export function ChatInput({ roles, defaultRole, disabled, onSend, projectId }: C
     if (defaultRole && roles.includes(defaultRole)) setRole(defaultRole);
   }, [defaultRole, roles]);
 
+  // Load skills when menu opens
+  useEffect(() => {
+    if (!showSkills || skillsLoaded) return;
+    fetch("/api/skills")
+      .then((r) => r.json())
+      .then((data) => { setSkills(data); setSkillsLoaded(true); })
+      .catch(() => setSkillsLoaded(true));
+  }, [showSkills, skillsLoaded]);
+
   useEffect(() => {
     const handler = (e: MouseEvent) => {
-      if (!containerRef.current?.contains(e.target as Node)) setShowAttach(false);
+      if (!containerRef.current?.contains(e.target as Node)) {
+        setShowAttach(false);
+        setShowSkills(false);
+      }
     };
     document.addEventListener("click", handler);
     return () => document.removeEventListener("click", handler);
@@ -103,27 +114,62 @@ export function ChatInput({ roles, defaultRole, disabled, onSend, projectId }: C
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      send();
-    }
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
   };
 
-  // ── Voice: press-and-hold ─────────────────────────────────────────────────
+  // ── [348] Skills picker ───────────────────────────────────────────────────────
+
+  const filteredSkills = skills.filter((s) =>
+    s.name.toLowerCase().includes(skillSearch.toLowerCase()) ||
+    s.description.toLowerCase().includes(skillSearch.toLowerCase())
+  );
+
+  const insertSkill = (skillName: string) => {
+    const prefix = `/${skillName} `;
+    setText((prev) => prefix + prev.replace(/^\/\S*\s?/, ""));
+    setShowSkills(false);
+    setSkillSearch("");
+    setTimeout(() => textareaRef.current?.focus(), 0);
+  };
+
+  // ── [349] File/image attach ───────────────────────────────────────────────────
+
+  const uploadFile = useCallback(async (file: File, isImage: boolean) => {
+    if (!projectId) { setError("No team selected"); return; }
+    setError(null);
+    const form = new FormData();
+    form.append("role", role);
+    form.append("file", file, file.name);
+    try {
+      const res = await fetch(`/api/chat/${projectId}/attach`, { method: "POST", body: form });
+      if (res.status === 413) { setError("File too large (max 20MB)"); return; }
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        setError(d.error ?? "Attach failed");
+        return;
+      }
+    } catch (e: any) {
+      setError(e.message ?? "Attach failed");
+    }
+  }, [projectId, role]);
+
+  const handleFileInput = useCallback((e: React.ChangeEvent<HTMLInputElement>, isImage: boolean) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    uploadFile(file, isImage);
+    e.target.value = "";
+  }, [uploadFile]);
+
+  // ── Voice ─────────────────────────────────────────────────────────────────────
 
   const stopRecordingAndUpload = useCallback(async () => {
     const mr = mediaRecorderRef.current;
     if (!mr) return;
-
     if (maxDurationTimerRef.current) clearTimeout(maxDurationTimerRef.current);
     if (durationIntervalRef.current) clearInterval(durationIntervalRef.current);
-
     const duration = Date.now() - voiceStartRef.current;
-
     mr.stop();
-
     if (cancelledRef.current || duration < 500) {
-      // Too short or cancelled — discard
       chunksRef.current = [];
       mr.stream.getTracks().forEach((t) => t.stop());
       mediaRecorderRef.current = null;
@@ -131,37 +177,25 @@ export function ChatInput({ roles, defaultRole, disabled, onSend, projectId }: C
       setVoiceDuration(0);
       return;
     }
-
-    // Wait for dataavailable
     await new Promise<void>((resolve) => {
       mr.addEventListener("stop", () => resolve(), { once: true });
     });
-
     const blob = new Blob(chunksRef.current, { type: mr.mimeType || "audio/webm" });
     chunksRef.current = [];
     mr.stream.getTracks().forEach((t) => t.stop());
     mediaRecorderRef.current = null;
-
-    if (!projectId) {
-      setVoiceState("idle");
-      setVoiceDuration(0);
-      return;
-    }
-
+    if (!projectId) { setVoiceState("idle"); setVoiceDuration(0); return; }
     setVoiceState("uploading");
     try {
       const form = new FormData();
       form.append("role", role);
       form.append("audio", blob, "voice.webm");
-
       const res = await fetch(`/api/chat/${projectId}/voice`, { method: "POST", body: form });
       if (res.status === 413) { setError("Recording too large (max 5MB)"); return; }
       if (!res.ok) {
         const d = await res.json().catch(() => ({}));
         setError(d.error ?? "Voice upload failed");
-        return;
       }
-      // Success — transcript arrives via tm-send, WS will push it
     } catch (e: any) {
       setError(e.message ?? "Voice upload failed");
     } finally {
@@ -175,7 +209,6 @@ export function ChatInput({ roles, defaultRole, disabled, onSend, projectId }: C
     setError(null);
     cancelledRef.current = false;
     chunksRef.current = [];
-
     let stream: MediaStream;
     try {
       stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -183,24 +216,17 @@ export function ChatInput({ roles, defaultRole, disabled, onSend, projectId }: C
       setError("Cần quyền microphone");
       return;
     }
-
     const mr = new MediaRecorder(stream);
     mediaRecorderRef.current = mr;
     mr.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data); };
-    mr.start(100); // collect chunks every 100ms
-
+    mr.start(100);
     voiceStartRef.current = Date.now();
     setVoiceState("recording");
     setVoiceDuration(0);
-
     durationIntervalRef.current = setInterval(() => {
       setVoiceDuration(Date.now() - voiceStartRef.current);
     }, 100);
-
-    // Auto-stop at 60s
-    maxDurationTimerRef.current = setTimeout(() => {
-      stopRecordingAndUpload();
-    }, 60000);
+    maxDurationTimerRef.current = setTimeout(() => stopRecordingAndUpload(), 60000);
   }, [voiceState, disabled, stopRecordingAndUpload]);
 
   const cancelRecording = useCallback(() => {
@@ -208,7 +234,6 @@ export function ChatInput({ roles, defaultRole, disabled, onSend, projectId }: C
     stopRecordingAndUpload();
   }, [stopRecordingAndUpload]);
 
-  // Drag-cancel: if pointer leaves the mic button area while recording → cancel
   const handlePointerLeave = useCallback(() => {
     if (voiceState === "recording") cancelRecording();
   }, [voiceState, cancelRecording]);
@@ -219,8 +244,67 @@ export function ChatInput({ roles, defaultRole, disabled, onSend, projectId }: C
 
   return (
     <div ref={containerRef} className="flex-shrink-0" style={{ position: "relative" }}>
-      {/* Slash command hints */}
-      {showSlash && (
+      {/* Hidden file inputs */}
+      <input ref={fileInputRef} type="file" style={{ display: "none" }} onChange={(e) => handleFileInput(e, false)} />
+      <input ref={photoInputRef} type="file" accept="image/*" capture="environment" style={{ display: "none" }} onChange={(e) => handleFileInput(e, true)} />
+
+      {/* [348] Skills picker dropdown */}
+      {showSkills && (
+        <div
+          className="absolute left-0 z-10"
+          style={{
+            bottom: "calc(100% + 4px)",
+            minWidth: 280, maxWidth: 360,
+            background: "var(--c-bg-list)",
+            border: "1px solid var(--c-line)",
+            borderRadius: 14,
+            boxShadow: "0 8px 32px rgba(0,0,0,0.12)",
+            overflow: "hidden",
+          }}
+        >
+          <div style={{ padding: "8px 12px", borderBottom: "1px solid var(--c-line)" }}>
+            <input
+              autoFocus
+              value={skillSearch}
+              onChange={(e) => setSkillSearch(e.target.value)}
+              placeholder="Search skills…"
+              style={{
+                width: "100%", border: "none", outline: "none",
+                background: "transparent", fontSize: 13, color: "var(--c-fg-0)",
+                fontFamily: "inherit",
+              }}
+            />
+          </div>
+          <div style={{ maxHeight: 240, overflowY: "auto" }}>
+            {!skillsLoaded && (
+              <div style={{ padding: "12px 16px", fontSize: 13, color: "var(--c-fg-2)" }}>Loading…</div>
+            )}
+            {skillsLoaded && filteredSkills.length === 0 && (
+              <div style={{ padding: "12px 16px", fontSize: 13, color: "var(--c-fg-2)" }}>No skills found</div>
+            )}
+            {filteredSkills.map((s) => (
+              <button
+                key={s.name}
+                onClick={() => insertSkill(s.name)}
+                className="w-full text-left"
+                style={{ padding: "8px 14px", background: "transparent", display: "block" }}
+                onMouseEnter={(e) => (e.currentTarget.style.background = "var(--c-bg-hover)")}
+                onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+              >
+                <div style={{ fontSize: 13, fontWeight: 600, color: "var(--c-fg-0)" }}>/{s.name}</div>
+                {s.description && (
+                  <div style={{ fontSize: 11, color: "var(--c-fg-2)", marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {s.description.slice(0, 80)}
+                  </div>
+                )}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Slash command hints (kept for manual / typing) */}
+      {showSlash && !showSkills && (
         <div
           className="absolute left-4 right-4 z-10"
           style={{
@@ -232,23 +316,23 @@ export function ChatInput({ roles, defaultRole, disabled, onSend, projectId }: C
             overflow: "hidden",
           }}
         >
-          {SLASH_CMDS.filter(([cmd]) => cmd.startsWith(text) || text === "/").map(([cmd, desc]) => (
+          {skills.filter((s) => `/${s.name}`.startsWith(text) || text === "/").slice(0, 6).map((s) => (
             <button
-              key={cmd}
-              onClick={() => { setText(cmd + " "); setShowSlash(false); textareaRef.current?.focus(); }}
+              key={s.name}
+              onClick={() => { insertSkill(s.name); }}
               className="w-full text-left flex items-center gap-3 px-4 py-2.5 transition-colors"
               style={{ background: "transparent" }}
               onMouseEnter={(e) => (e.currentTarget.style.background = "var(--c-bg-hover)")}
               onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
             >
-              <span className="font-mono font-medium" style={{ color: "var(--c-accent)", fontSize: 14 }}>{cmd}</span>
-              <span style={{ color: "var(--c-fg-1)", fontSize: 13 }}>{desc}</span>
+              <span className="font-mono font-medium" style={{ color: "var(--c-accent)", fontSize: 14 }}>/{s.name}</span>
+              <span style={{ color: "var(--c-fg-1)", fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.description.slice(0, 60)}</span>
             </button>
           ))}
         </div>
       )}
 
-      {/* Attach menu */}
+      {/* Attach menu — only File + Photo wired; others removed per [349] spec */}
       {showAttach && (
         <div
           className="absolute z-10"
@@ -258,13 +342,16 @@ export function ChatInput({ roles, defaultRole, disabled, onSend, projectId }: C
             border: "1px solid var(--c-line)",
             borderRadius: 14,
             boxShadow: "0 8px 32px rgba(0,0,0,0.16)",
-            padding: 6, minWidth: 200,
+            padding: 6, minWidth: 180,
           }}
         >
-          {ATTACH_ITEMS.map(({ label, color }) => (
+          {[
+            { label: "File", color: "#3b82f6", action: () => fileInputRef.current?.click() },
+            { label: "Photo", color: "#10b981", action: () => photoInputRef.current?.click() },
+          ].map(({ label, color, action }) => (
             <button
               key={label}
-              onClick={() => setShowAttach(false)}
+              onClick={() => { action(); setShowAttach(false); }}
               className="w-full text-left flex items-center gap-3 px-3 py-2 rounded-lg transition-colors"
               style={{ background: "transparent", fontSize: 14, color: "var(--c-fg-0)" }}
               onMouseEnter={(e) => (e.currentTarget.style.background = "var(--c-bg-hover)")}
@@ -286,12 +373,10 @@ export function ChatInput({ roles, defaultRole, disabled, onSend, projectId }: C
         </div>
       )}
 
-      {/* Voice recording status bar */}
+      {/* Voice status bar */}
       {(isRecording || isUploading) && (
-        <div
-          className="flex items-center gap-2 mx-3 mb-1 px-3 py-1.5 rounded-xl"
-          style={{ background: isRecording ? "rgba(239,68,68,0.08)" : "rgba(51,144,236,0.08)", fontSize: 13 }}
-        >
+        <div className="flex items-center gap-2 mx-3 mb-1 px-3 py-1.5 rounded-xl"
+          style={{ background: isRecording ? "rgba(239,68,68,0.08)" : "rgba(51,144,236,0.08)", fontSize: 13 }}>
           <span style={{ color: isRecording ? "#ef4444" : "var(--c-accent)", animation: isRecording ? "status-pulse 1.2s ease-in-out infinite" : "none" }}>
             {isRecording ? "🎤" : "📝"}
           </span>
@@ -299,10 +384,7 @@ export function ChatInput({ roles, defaultRole, disabled, onSend, projectId }: C
             {isRecording ? `Recording… ${formatDuration(voiceDuration)}` : "Transcribing…"}
           </span>
           {isRecording && (
-            <button
-              onClick={cancelRecording}
-              style={{ marginLeft: "auto", color: "var(--c-fg-2)", fontSize: 12, background: "transparent", border: "none", cursor: "pointer" }}
-            >
+            <button onClick={cancelRecording} style={{ marginLeft: "auto", color: "var(--c-fg-2)", fontSize: 12, background: "transparent", border: "none", cursor: "pointer" }}>
               Cancel
             </button>
           )}
@@ -311,15 +393,16 @@ export function ChatInput({ roles, defaultRole, disabled, onSend, projectId }: C
 
       {/* ── 4-frame composer ── */}
       <div className="flex items-center gap-2 px-3 py-2" style={{ background: "transparent" }}>
-        {/* Frame 1: Menu pill */}
+        {/* Frame 1: Menu pill → skills picker */}
         <button
-          onClick={() => setShowSlash((s) => !s)}
+          onClick={(e) => { e.stopPropagation(); setShowSkills((s) => !s); setShowAttach(false); }}
           className="flex items-center gap-1.5 flex-shrink-0 font-medium"
           style={{
             height: 40, padding: "0 16px 0 14px",
             background: "var(--c-accent)", color: "white",
             borderRadius: 20, border: "none", fontSize: 15,
           }}
+          title="Skills picker"
         >
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
             <path d="M3 6h18M3 12h18M3 18h18"/>
@@ -329,10 +412,10 @@ export function ChatInput({ roles, defaultRole, disabled, onSend, projectId }: C
 
         {/* Frame 2: Attach */}
         <button
-          onClick={(e) => { e.stopPropagation(); setShowAttach((s) => !s); }}
+          onClick={(e) => { e.stopPropagation(); setShowAttach((s) => !s); setShowSkills(false); }}
           className="glass-composer-btn flex-shrink-0 flex items-center justify-center rounded-full"
           style={{ width: 40, height: 40, color: "var(--c-fg-1)" }}
-          title="Attach"
+          title="Attach file"
         >
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
             <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
@@ -340,10 +423,8 @@ export function ChatInput({ roles, defaultRole, disabled, onSend, projectId }: C
         </button>
 
         {/* Frame 3: Input pill */}
-        <div
-          className="glass-input-pill flex-1 flex items-center gap-1"
-          style={{ borderRadius: 20, padding: "0 6px 0 16px", minHeight: 40 }}
-        >
+        <div className="glass-input-pill flex-1 flex items-center gap-1"
+          style={{ borderRadius: 20, padding: "0 6px 0 16px", minHeight: 40 }}>
           <textarea
             ref={textareaRef}
             value={text}
@@ -360,11 +441,9 @@ export function ChatInput({ roles, defaultRole, disabled, onSend, projectId }: C
               padding: 0, alignSelf: "center",
             }}
           />
-          <button
-            className="flex-shrink-0 flex items-center justify-center rounded-full"
+          <button className="flex-shrink-0 flex items-center justify-center rounded-full"
             style={{ width: 32, height: 32, color: "var(--c-fg-2)", background: "transparent" }}
-            title="Schedule (coming soon)"
-          >
+            title="Schedule (coming soon)">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
               <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
             </svg>
@@ -373,17 +452,10 @@ export function ChatInput({ roles, defaultRole, disabled, onSend, projectId }: C
 
         {/* Frame 4: Mic / Send swap */}
         {hasText ? (
-          <button
-            onClick={send}
-            disabled={disabled || sending}
+          <button onClick={send} disabled={disabled || sending}
             className="flex-shrink-0 flex items-center justify-center rounded-full"
-            style={{
-              width: 40, height: 40,
-              background: "var(--c-accent)", color: "white",
-              border: "none", transition: "background 0.12s, transform 0.12s",
-            }}
-            title="Send"
-          >
+            style={{ width: 40, height: 40, background: "var(--c-accent)", color: "white", border: "none" }}
+            title="Send">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
               <path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4 20-7z"/>
             </svg>
@@ -401,11 +473,9 @@ export function ChatInput({ roles, defaultRole, disabled, onSend, projectId }: C
               background: isRecording ? "#ef4444" : undefined,
               color: isRecording ? "white" : isUploading ? "var(--c-accent)" : "var(--c-fg-1)",
               border: isRecording ? "none" : undefined,
-              transition: "background 0.12s, color 0.12s",
               animation: isRecording ? "status-pulse 1.2s ease-in-out infinite" : "none",
             }}
-            title={isRecording ? "Release to send" : isUploading ? "Transcribing…" : "Hold to record"}
-          >
+            title={isRecording ? "Release to send" : isUploading ? "Transcribing…" : "Hold to record"}>
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
               <rect x="9" y="2" width="6" height="12" rx="3"/>
               <path d="M5 11a7 7 0 0 0 14 0"/>

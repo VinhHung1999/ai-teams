@@ -82,6 +82,8 @@ import gitRouter from './routes/git';
 import notificationsRouter from './routes/notifications';
 import { chatRouter } from './routes/chat';
 import voiceRouter from './routes/voice';
+import skillsRouter from './routes/skills';
+import attachmentsRouter from './routes/attachments';
 
 app.use(projectsRouter);
 app.use(backlogRouter);
@@ -93,6 +95,8 @@ app.use(gitRouter);
 app.use(notificationsRouter);
 app.use(chatRouter);
 app.use(voiceRouter);
+app.use(skillsRouter);
+app.use(attachmentsRouter);
 
 // Terminal REST endpoints
 app.get('/api/terminal/sessions', (_req, res) => {
