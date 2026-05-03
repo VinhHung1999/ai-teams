@@ -152,6 +152,8 @@ function MessageBubble({ event, prevRole }: { event: ChatEvent; prevRole?: strin
             boxShadow: "0 1px 2px rgba(0,0,0,0.08)",
             color: "var(--c-fg-0)",
             position: "relative",
+            overflow: "hidden",
+            maxWidth: "100%",
           }}
         >
           {event.text && (
@@ -333,9 +335,9 @@ export function ChatStream({ events, loading, hasMore, onLoadMore, filterRole, s
       ref={containerRef}
       onScroll={handleScroll}
       className={`flex-1 overflow-y-auto chat-scroll ${className}`}
-      style={{ padding: "12px 0" }}
+      style={{ padding: "12px 0", overflowX: "hidden" }}
     >
-      <div style={{ maxWidth: 760, margin: "0 auto", padding: "0 16px", display: "flex", flexDirection: "column", gap: 0 }}>
+      <div style={{ maxWidth: 760, margin: "0 auto", padding: "0 16px", display: "flex", flexDirection: "column", gap: 0, width: "100%", boxSizing: "border-box" }}>
         {loading && (
           <div style={{ textAlign: "center", fontSize: 12, color: "var(--c-fg-2)", padding: "8px 0" }}>
             Loading older messages…

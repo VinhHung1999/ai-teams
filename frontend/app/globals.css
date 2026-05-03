@@ -352,8 +352,8 @@ html, body {
 html, body { overflow-x: hidden; }
 
 /* ── Bubble + tool card column widths ── */
-.chat-bubble-col   { max-width: 70%; }
-.chat-tool-card-col { max-width: 65%; }
+.chat-bubble-col   { max-width: 70%; min-width: 0; overflow: hidden; }
+.chat-tool-card-col { max-width: 65%; min-width: 0; overflow: hidden; }
 
 /* ── Composer: hide menu label on mobile, hide topic status text ── */
 @media (max-width: 767px) {
@@ -370,7 +370,7 @@ html, body { overflow-x: hidden; }
 }
 @media (max-width: 767px) {
   .chat-composer-wrap {
-    padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px));
+    padding-bottom: 6px;
   }
 }
 
