@@ -392,7 +392,7 @@ export function ChatInput({ roles, defaultRole, disabled, onSend, projectId }: C
       )}
 
       {/* ── 4-frame composer ── */}
-      <div className="flex items-center gap-2 px-3 py-2" style={{ background: "transparent" }}>
+      <div className="flex items-end gap-2 px-3 py-2" style={{ background: "transparent" }}>
         {/* Frame 1: Menu pill → skills picker */}
         <button
           onClick={(e) => { e.stopPropagation(); setShowSkills((s) => !s); setShowAttach(false); }}

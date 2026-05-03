@@ -370,7 +370,7 @@ html, body { overflow-x: hidden; }
 }
 @media (max-width: 767px) {
   .chat-composer-wrap {
-    padding-bottom: 6px;
+    padding-bottom: env(safe-area-inset-bottom, 2px);
   }
 }
 
