@@ -10,6 +10,7 @@ import { ChatInput } from "@/components/chat/ChatInput";
 import { InfoPanel } from "@/components/chat/InfoPanel";
 import { ChatTerminalPanel } from "@/components/chat/ChatTerminalPanel";
 import { api } from "@/lib/api";
+import { useChatWs, getCachedChatEvents, seedChatCache } from "@/lib/useChatWs";
 import { useFirehoseWs } from "@/lib/useFirehoseWs";
 import { usePushNotifications } from "@/lib/usePushNotifications";
 import type { Project } from "@/lib/types";
@@ -130,7 +131,8 @@ export default function ChatPage() {
 
     setSelectedId(id);
     setSelectedProject(proj);
-    setEvents([]);
+    // [388] Restore from cache instantly; history fetch below will update/seed
+    setEvents(getCachedChatEvents(id));
     oldestTsRef.current = undefined;
     setHasMore(false);
     setMobileView("chat");
@@ -161,6 +163,7 @@ export default function ChatPage() {
     setLoadingHistory(true);
     try {
       const { events: hist, total } = await api.chatHistory(id, HISTORY_LIMIT);
+      seedChatCache(id, hist); // [388] seed module cache with authoritative history
       setEvents(hist);
       setHasMore(total > hist.length);
       if (hist.length > 0) {
@@ -195,22 +198,22 @@ export default function ChatPage() {
     }
   }, [selectedId, loadingHistory, hasMore]);
 
-  // [387] 500ms history polling — replaces WS for active project rendering.
-  // Simple, deterministic, no dedup/optimistic complexity.
-  useEffect(() => {
-    if (!selectedId) return;
-    const poll = async () => {
-      try {
-        const { events: hist } = await api.chatHistory(selectedId, HISTORY_LIMIT);
-        setEvents((prev) => {
-          const prevIds = new Set(prev.map((e) => e.id));
-          return hist.some((e) => !prevIds.has(e.id)) ? hist : prev;
-        });
-      } catch {}
-    };
-    const interval = setInterval(poll, 500);
-    return () => clearInterval(interval);
+  // [388] Singleton WS handler — appends fresh events from per-project WS
+  const handleWsEvents = useCallback((fresh: ChatEvent[]) => {
+    setEvents((prev) => {
+      const existingIds = new Set(prev.map((e) => e.id));
+      const toAdd = fresh.filter((e) => !existingIds.has(e.id));
+      if (toAdd.length === 0) return prev;
+      return [...prev, ...toAdd];
+    });
+    const last = fresh[fresh.length - 1];
+    if (last && selectedId) {
+      setLastEvents((p) => ({ ...p, [selectedId]: (last.text ?? last.tool?.name ?? "").slice(0, 60) }));
+      setLastEventAt((p) => ({ ...p, [selectedId]: last.timestamp }));
+    }
   }, [selectedId]);
+
+  useChatWs(selectedId, handleWsEvents);
 
   // [351] Firehose — inbox preview only (lastEventAt + lastEvents for sidebar sort/badge)
   useFirehoseWs(useCallback((projectId, events) => {
@@ -228,7 +231,6 @@ export default function ChatPage() {
   const handleSend = useCallback(async (role: string, text: string) => {
     if (!selectedId) return;
     await api.chatSend(selectedId, role, text);
-    // [387] No post-send fetch needed — 500ms interval handles it
   }, [selectedId]);
 
   const openInfo = useCallback((tab: "overview" | "files" | "agents" = "overview") => {
