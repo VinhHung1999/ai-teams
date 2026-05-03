@@ -210,11 +210,12 @@ export function ChatInput({ roles, defaultRole, disabled, onSend, projectId }: C
     const kbps = blob.size > 0 ? (blob.size * 8) / 1000 / expectedSeconds : 0;
     console.log(`[voice] mimeType=${mimeType} duration=${expectedSeconds.toFixed(1)}s blob=${(blob.size/1024).toFixed(1)}KB bitrate≈${kbps.toFixed(0)}kbps isIOS=${isIOS}`);
 
-    // [403] Guard: blob empty = iOS MediaRecorder emitted no data
+    // [403] Guard: blob empty = no audio captured
     if (blob.size === 0) {
+      console.log(`[voice] blob empty, chunks=${chunksRef.current.length} duration=${expectedSeconds.toFixed(1)}s`);
       setVoiceState("idle");
       setVoiceDuration(0);
-      setError("Recording empty — please hold mic button for at least 1 second before releasing");
+      setError("Tap mic → speak 1+ sec → tap again to send");
       return;
     }
 
@@ -254,18 +255,14 @@ export function ChatInput({ roles, defaultRole, disabled, onSend, projectId }: C
       setError("Cần quyền microphone");
       return;
     }
-    // [403] iOS Safari ignores timeslice and emits 0-byte chunks; use no-timeslice on iOS
-    const isIOS2 = /iPad|iPhone|iPod/.test(navigator.userAgent);
-    const mr = isIOS2
-      ? new MediaRecorder(stream)                                            // iOS: no options, no timeslice
-      : new MediaRecorder(stream, { mimeType: "audio/webm", audioBitsPerSecond: 96000 });
+    // [404] Revert iOS-specific path — start(250) works on both iOS and non-iOS
+    const mr = new MediaRecorder(stream);
     mediaRecorderRef.current = mr;
-    mr.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data); };
-    if (isIOS2) {
-      mr.start(); // iOS: single chunk emitted on stop()
-    } else {
-      mr.start(250); // non-iOS: 250ms timeslice
-    }
+    mr.ondataavailable = (e) => {
+      console.log(`[voice] chunk size=${e.data.size}`);
+      if (e.data.size > 0) chunksRef.current.push(e.data);
+    };
+    mr.start(250);
     voiceStartRef.current = Date.now();
     setVoiceState("recording");
     setVoiceDuration(0);
