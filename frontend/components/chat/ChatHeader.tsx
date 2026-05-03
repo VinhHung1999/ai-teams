@@ -59,7 +59,7 @@ export function ChatHeader({ project, onOpenInfo, onBack, terminalOpen, onToggle
       {/* Team avatar */}
       {project ? (
         <button
-          onClick={onOpenInfo}
+          onClick={() => onOpenInfo()}
           className="flex-shrink-0 rounded-full flex items-center justify-center text-white font-semibold text-lg"
           style={{ width: 36, height: 36, background: teamGradient(project.id), border: "none", cursor: "pointer" }}
         />
@@ -68,7 +68,7 @@ export function ChatHeader({ project, onOpenInfo, onBack, terminalOpen, onToggle
       )}
 
       {/* Name + status */}
-      <button className="flex flex-col flex-1 min-w-0 text-left" style={{ border: "none", background: "transparent", cursor: "pointer" }} onClick={onOpenInfo}>
+      <button className="flex flex-col flex-1 min-w-0 text-left" style={{ border: "none", background: "transparent", cursor: "pointer" }} onClick={() => onOpenInfo()}>
         <span className="font-semibold truncate" style={{ fontSize: 16, color: "var(--c-fg-0)" }}>
           {project ? project.name : "Select a team"}
         </span>
@@ -97,7 +97,7 @@ export function ChatHeader({ project, onOpenInfo, onBack, terminalOpen, onToggle
         >
           Board
         </Link>
-        <IconBtn onClick={onOpenInfo} title="Team info">
+        <IconBtn onClick={() => onOpenInfo()} title="Team info">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
             <circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/>
           </svg>
