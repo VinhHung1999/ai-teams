@@ -254,19 +254,6 @@ export default function ChatPage() {
         className="glass-sidebar flex flex-col overflow-hidden chat-mobile-list"
         style={{ borderRight: "1px solid var(--c-line)", gridColumn: 1, gridRow: 1, minWidth: 0, overflowX: "hidden" }}
       >
-        <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 12px", borderBottom: "1px solid var(--c-line)", flexShrink: 0, background: "var(--c-bg-list-glass)", backdropFilter: "blur(24px) saturate(180%)" }}>
-          <button style={{ width: 36, height: 36, borderRadius: "50%", border: "none", background: "transparent", color: "var(--c-fg-1)", display: "grid", placeItems: "center", cursor: "pointer" }}>
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M3 6h18M3 12h18M3 18h18"/>
-            </svg>
-          </button>
-          <div style={{ flex: 1, height: 36, background: "rgba(0,0,0,0.04)", borderRadius: 18, display: "flex", alignItems: "center", gap: 8, padding: "0 14px", color: "var(--c-fg-2)", fontSize: 14 }}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-              <circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/>
-            </svg>
-            Search
-          </div>
-        </div>
         <div className="flex-1 overflow-y-auto chat-scroll">
           <TeamList
             projects={projects}
