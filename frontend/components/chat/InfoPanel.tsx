@@ -294,8 +294,8 @@ export function InfoPanel({ open, tab, project, roles, onClose, onTabChange, onS
         style={{
           position: "absolute",
           top: 0, right: 0, bottom: 0,
-          // [406] Files tab expands panel to full width
-          ...(tab === "files" ? { left: 0 } : {}),
+          // [406] Files tab expands panel to full width (overrides .info-panel CSS width)
+          ...(tab === "files" ? { left: 0, width: "100%", maxWidth: "none" } : {}),
           display: "flex",
           flexDirection: "column",
           zIndex: 50,

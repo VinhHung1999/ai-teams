@@ -38,6 +38,51 @@ export default function ChatPage() {
   // Mobile single-view state: 'list' | 'chat'
   const [mobileView, setMobileView] = useState<"list" | "chat">("list");
 
+  // [407] Swipe-to-back gesture: touch near left edge → slide to list
+  const chatColRef = useRef<HTMLDivElement>(null);
+  const swipeOrigin = useRef<{ x: number; y: number } | null>(null);
+  const swipeActive = useRef(false);
+
+  const onTouchStart = useCallback((e: React.TouchEvent) => {
+    if (mobileView !== "chat") return;
+    const t = e.touches[0];
+    if (t.clientX > 40) return; // only detect from left edge ≤40px
+    swipeOrigin.current = { x: t.clientX, y: t.clientY };
+    swipeActive.current = false;
+  }, [mobileView]);
+
+  const onTouchMove = useCallback((e: React.TouchEvent) => {
+    if (!swipeOrigin.current) return;
+    const t = e.touches[0];
+    const dx = t.clientX - swipeOrigin.current.x;
+    const dy = Math.abs(t.clientY - swipeOrigin.current.y);
+    if (!swipeActive.current) {
+      if (dy > dx) { swipeOrigin.current = null; return; } // vertical scroll wins
+      if (dx > 8) swipeActive.current = true;
+    }
+    if (swipeActive.current && dx > 0 && chatColRef.current) {
+      chatColRef.current.style.transform = `translateX(${dx}px)`;
+    }
+  }, []);
+
+  const onTouchEnd = useCallback((e: React.TouchEvent) => {
+    if (!swipeOrigin.current || !swipeActive.current) { swipeOrigin.current = null; return; }
+    const dx = e.changedTouches[0].clientX - swipeOrigin.current.x;
+    swipeOrigin.current = null;
+    swipeActive.current = false;
+    const el = chatColRef.current;
+    if (!el) return;
+    if (dx > window.innerWidth / 3) {
+      el.style.transition = "transform 180ms ease";
+      el.style.transform = `translateX(${window.innerWidth}px)`;
+      setTimeout(() => { setMobileView("list"); el.style.transition = ""; el.style.transform = ""; }, 185);
+    } else {
+      el.style.transition = "transform 180ms ease";
+      el.style.transform = "translateX(0)";
+      setTimeout(() => { el.style.transition = ""; }, 185);
+    }
+  }, []);
+
   // Last event preview per project
   const [lastEvents, setLastEvents] = useState<Record<number, string>>({});
   // Inbox: last event timestamp per project (for sort + unread detection)
@@ -268,8 +313,14 @@ export default function ChatPage() {
 
       {/* ── Main chat area ── */}
       <main className="chat-wallpaper flex flex-row min-w-0 overflow-hidden chat-mobile-chat" style={{ gridColumn: 2, gridRow: 1 }}>
-        {/* Chat column (flex-1) */}
-        <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
+        {/* Chat column (flex-1) — [407] swipe-to-back gesture */}
+        <div
+          ref={chatColRef}
+          className="flex flex-col flex-1 min-w-0 overflow-hidden"
+          onTouchStart={onTouchStart}
+          onTouchMove={onTouchMove}
+          onTouchEnd={onTouchEnd}
+        >
           {/* [359] No team selected — show placeholder on desktop */}
           {!selectedId ? (
             <div className="flex-1 flex flex-col items-center justify-center chat-no-team-placeholder" style={{ color: "var(--c-fg-2)", gap: 12 }}>
