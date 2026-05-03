@@ -10,7 +10,6 @@ import { ChatInput } from "@/components/chat/ChatInput";
 import { InfoPanel } from "@/components/chat/InfoPanel";
 import { ChatTerminalPanel } from "@/components/chat/ChatTerminalPanel";
 import { api } from "@/lib/api";
-import { useChatWs } from "@/lib/useChatWs";
 import { useFirehoseWs } from "@/lib/useFirehoseWs";
 import { usePushNotifications } from "@/lib/usePushNotifications";
 import type { Project } from "@/lib/types";
@@ -196,26 +195,24 @@ export default function ChatPage() {
     }
   }, [selectedId, loadingHistory, hasMore]);
 
-  // [384] Pure WS render — id dedup only, no pending logic
-  const handleWsEvents = useCallback((newEvts: ChatEvent[]) => {
-    setEvents((prev) => {
-      const existingIds = new Set(prev.map((e) => e.id));
-      const fresh = newEvts.filter((e) => !existingIds.has(e.id));
-      if (fresh.length === 0) return prev;
-      return [...prev, ...fresh];
-    });
-    const last = newEvts[newEvts.length - 1];
-    if (last && selectedId) {
-      setLastEvents((p) => ({ ...p, [selectedId]: (last.text ?? last.tool?.name ?? "").slice(0, 60) }));
-      setLastEventAt((p) => ({ ...p, [selectedId]: last.timestamp }));
-    }
+  // [387] 500ms history polling — replaces WS for active project rendering.
+  // Simple, deterministic, no dedup/optimistic complexity.
+  useEffect(() => {
+    if (!selectedId) return;
+    const poll = async () => {
+      try {
+        const { events: hist } = await api.chatHistory(selectedId, HISTORY_LIMIT);
+        setEvents((prev) => {
+          const prevIds = new Set(prev.map((e) => e.id));
+          return hist.some((e) => !prevIds.has(e.id)) ? hist : prev;
+        });
+      } catch {}
+    };
+    const interval = setInterval(poll, 500);
+    return () => clearInterval(interval);
   }, [selectedId]);
 
-  useChatWs(selectedId, handleWsEvents);
-
-  // [351] Firehose — update lastEventAt/lastEvents for all teams live (inbox preview only)
-  // [382] Do NOT forward to handleWsEvents for the active project — per-project WS already handles it.
-  //       Forwarding both was the root cause of duplicate bubbles.
+  // [351] Firehose — inbox preview only (lastEventAt + lastEvents for sidebar sort/badge)
   useFirehoseWs(useCallback((projectId, events) => {
     const last = events[events.length - 1];
     if (!last) return;
@@ -231,20 +228,7 @@ export default function ChatPage() {
   const handleSend = useCallback(async (role: string, text: string) => {
     if (!selectedId) return;
     await api.chatSend(selectedId, role, text);
-    // [385] Poll history until sent text appears (max 5 × 100ms = 500ms)
-    for (let i = 0; i < 5; i++) {
-      await new Promise<void>((r) => setTimeout(r, 100));
-      try {
-        const { events: hist } = await api.chatHistory(selectedId, HISTORY_LIMIT);
-        setEvents(hist);
-        // [386] Force scroll to bottom after replace — isAtBottomRef may be stale
-        requestAnimationFrame(() => {
-          const el = document.querySelector<HTMLElement>("main .chat-scroll");
-          if (el) el.scrollTop = el.scrollHeight;
-        });
-        if (hist.some((e) => e.role === "BOSS" && e.text?.trim() === text.trim())) break;
-      } catch { break; }
-    }
+    // [387] No post-send fetch needed — 500ms interval handles it
   }, [selectedId]);
 
   const openInfo = useCallback((tab: "overview" | "files" | "agents" = "overview") => {
