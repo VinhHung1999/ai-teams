@@ -152,10 +152,16 @@ function PromptCard({ event, projectId }: { event: ChatEvent; projectId?: number
                 );
               })}
               {!answered && (
-                <button onClick={() => respond(selected.join(", "))} disabled={selected.length === 0}
-                  style={{ marginTop: 4, padding: "7px 14px", borderRadius: 10, background: "var(--c-accent)", color: "white", border: "none", fontSize: 13, cursor: selected.length ? "pointer" : "default", opacity: selected.length ? 1 : 0.4 }}>
-                  Submit ({selected.length} selected)
-                </button>
+                <>
+                  <button onClick={() => respond(selected.join(", "))} disabled={selected.length === 0}
+                    style={{ marginTop: 4, padding: "7px 14px", borderRadius: 10, background: "var(--c-accent)", color: "white", border: "none", fontSize: 13, cursor: selected.length ? "pointer" : "default", opacity: selected.length ? 1 : 0.4 }}>
+                    Submit ({selected.length} selected)
+                  </button>
+                  {/* [413] Multi-select pane hint — Space/Enter navigation needed in pane */}
+                  <div style={{ fontSize: 11, color: "var(--c-fg-2)", marginTop: 4, fontStyle: "italic" }}>
+                    Nếu không nhận: dùng ↑↓ Space trong tmux pane
+                  </div>
+                </>
               )}
             </>
           ) : (
