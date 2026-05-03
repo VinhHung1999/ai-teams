@@ -559,8 +559,17 @@ async function watchProject(projectId: number) {
 
       if (newEvents.length === 0) return;
 
+      // [378] Dedup events in batch by id (queue-operation + attachment may share content-hash id)
+      const seenIds = new Set<string>();
+      const dedupedEvents = newEvents.filter((e) => {
+        if (seenIds.has(e.id)) return false;
+        seenIds.add(e.id);
+        return true;
+      });
+      if (dedupedEvents.length === 0) return;
+
       // [378] Debug log per WS push
-      for (const e of newEvents) {
+      for (const e of dedupedEvents) {
         if (e.kind === 'message') {
           console.log(`[chat-ws] push project=${projectId} role=${e.role} kind=${e.kind} pending=${!!e.pending} text="${(e.text ?? '').slice(0, 60)}"`);
         }
@@ -568,7 +577,7 @@ async function watchProject(projectId: number) {
 
       // Push to per-project subscribers
       const clients = chatSubscribers.get(projectId);
-      const projectMsg = JSON.stringify({ type: 'chat_events', events: newEvents });
+      const projectMsg = JSON.stringify({ type: 'chat_events', events: dedupedEvents });
       if (clients) {
         for (const ws of clients) {
           if (ws.readyState === WebSocket.OPEN) ws.send(projectMsg);
@@ -576,13 +585,13 @@ async function watchProject(projectId: number) {
       }
 
       // [351] Firehose — push to all-projects subscribers with projectId field
-      const firehoseMsg = JSON.stringify({ type: 'chat_events', projectId, events: newEvents });
+      const firehoseMsg = JSON.stringify({ type: 'chat_events', projectId, events: dedupedEvents });
       for (const ws of firehoseClients) {
         if (ws.readyState === WebSocket.OPEN) ws.send(firehoseMsg);
       }
 
       // [352] Web Push notifications for message events
-      const msgEvents = newEvents.filter((e) => e.kind === 'message');
+      const msgEvents = dedupedEvents.filter((e) => e.kind === 'message');
       if (msgEvents.length > 0) {
         const project = storage.getProject(projectId);
         const lastMsg = msgEvents[msgEvents.length - 1];

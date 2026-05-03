@@ -110,7 +110,11 @@ export default function ChatPage() {
         const { events: hist } = await api.chatHistory(id, HISTORY_LIMIT);
         setEvents((prev) => {
           const existingIds = new Set(prev.map((e) => e.id));
-          const fresh = hist.filter((e) => !existingIds.has(e.id));
+          const seen = new Set<string>();
+          const fresh = hist.filter((e) => {
+            if (existingIds.has(e.id) || seen.has(e.id)) return false;
+            seen.add(e.id); return true;
+          });
           return fresh.length === 0 ? prev : [...prev, ...fresh].sort((a, b) => a.timestamp.localeCompare(b.timestamp));
         });
       } catch {}
@@ -199,7 +203,13 @@ export default function ChatPage() {
   const handleWsEvents = useCallback((newEvts: ChatEvent[]) => {
     setEvents((prev) => {
       const existingIds = new Set(prev.map((e) => e.id));
-      const fresh = newEvts.filter((e) => !existingIds.has(e.id));
+      // [378] Dedup within the batch itself (queue-operation + attachment may share same content-hash id)
+      const seenInBatch = new Set<string>();
+      const fresh = newEvts.filter((e) => {
+        if (existingIds.has(e.id) || seenInBatch.has(e.id)) return false;
+        seenInBatch.add(e.id);
+        return true;
+      });
       if (fresh.length === 0) return prev;
       // [367] When confirmed BOSS events arrive, remove matching pending ones
       const confirmedTexts = new Set(
