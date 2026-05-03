@@ -229,8 +229,17 @@ export default function ChatPage() {
   usePushNotifications();
 
   const handleSend = useCallback(async (role: string, text: string) => {
-    if (!selectedId) throw new Error("No team selected");
+    if (!selectedId) return;
     await api.chatSend(selectedId, role, text);
+    // [385] Poll history until sent text appears (max 5 × 100ms = 500ms)
+    for (let i = 0; i < 5; i++) {
+      await new Promise<void>((r) => setTimeout(r, 100));
+      try {
+        const { events: hist } = await api.chatHistory(selectedId, HISTORY_LIMIT);
+        setEvents(hist);
+        if (hist.some((e) => e.role === "BOSS" && e.text?.trim() === text.trim())) break;
+      } catch { break; }
+    }
   }, [selectedId]);
 
   const openInfo = useCallback((tab: "overview" | "files" | "agents" = "overview") => {
