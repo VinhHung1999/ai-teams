@@ -110,11 +110,12 @@ const mdComponents: Record<string, any> = {
 function PromptCard({ event, projectId }: { event: ChatEvent; projectId?: number }) {
   const [answered, setAnswered] = useState<string | null>(null);
   const [custom, setCustom] = useState("");
+  const [showCustom, setShowCustom] = useState(false);
   const q = event.question;
   if (!q) return null;
 
   const respond = async (value: string) => {
-    if (!projectId || answered) return;
+    if (!projectId || answered || !value.trim()) return;
     setAnswered(value);
     try {
       await fetch(`/api/chat/${projectId}/respond`, {
@@ -125,45 +126,46 @@ function PromptCard({ event, projectId }: { event: ChatEvent; projectId?: number
     } catch {}
   };
 
+  const btnBase: React.CSSProperties = { textAlign: "left", padding: "7px 12px", borderRadius: 10, border: "none", cursor: answered ? "default" : "pointer", fontSize: 13 };
+
   return (
     <div style={{ margin: "8px 0 8px auto", maxWidth: 340, background: "rgba(255,255,255,0.96)", borderRadius: 16, padding: "12px 14px", boxShadow: "0 1px 4px rgba(0,0,0,0.10)", borderLeft: "3px solid var(--c-accent)" }}>
       <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 8, color: "var(--c-fg-0)" }}>{q.text}</div>
-      {q.options.length > 0 ? (
+      {q.options.length > 0 && !showCustom && (
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
           {q.options.map((opt, idx) => (
-            <button
-              key={idx}
-              onClick={() => respond(String(idx + 1))}
-              disabled={!!answered}
-              style={{
-                textAlign: "left", padding: "7px 12px", borderRadius: 10,
-                background: answered === String(idx + 1) ? "var(--c-accent)" : "rgba(0,0,0,0.05)",
-                color: answered === String(idx + 1) ? "white" : "var(--c-fg-0)",
-                border: "none", cursor: answered ? "default" : "pointer", fontSize: 13,
-              }}
-            >
+            <button key={idx} onClick={() => respond(String(idx + 1))} disabled={!!answered}
+              style={{ ...btnBase, background: answered === String(idx + 1) ? "var(--c-accent)" : "rgba(0,0,0,0.05)", color: answered === String(idx + 1) ? "white" : "var(--c-fg-0)" }}>
               <span style={{ fontWeight: 600, marginRight: 6 }}>{idx + 1}.</span>{opt}
             </button>
           ))}
+          {/* [410] Other… toggle */}
+          {!answered && (
+            <button onClick={() => setShowCustom(true)} style={{ ...btnBase, background: "transparent", color: "var(--c-fg-2)", fontStyle: "italic" }}>
+              Other…
+            </button>
+          )}
         </div>
-      ) : (
-        <div style={{ display: "flex", gap: 6 }}>
+      )}
+      {/* [410] Free-text input — shown when no options OR Other… selected */}
+      {(q.options.length === 0 || showCustom) && (
+        <div style={{ display: "flex", gap: 6, marginTop: showCustom ? 6 : 0 }}>
           <input
+            autoFocus={showCustom}
             value={custom}
             onChange={(e) => setCustom(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && respond(custom)}
             disabled={!!answered}
-            placeholder="Type your answer…"
+            placeholder="Custom answer…"
             style={{ flex: 1, padding: "6px 10px", borderRadius: 8, border: "1px solid var(--c-line)", fontSize: 13, background: "var(--c-bg-list)" }}
           />
-          <button
-            onClick={() => respond(custom)}
-            disabled={!custom || !!answered}
-            style={{ padding: "6px 14px", borderRadius: 8, background: "var(--c-accent)", color: "white", border: "none", fontSize: 13, cursor: "pointer" }}
-          >Send</button>
+          <button onClick={() => respond(custom)} disabled={!custom.trim() || !!answered}
+            style={{ padding: "6px 14px", borderRadius: 8, background: "var(--c-accent)", color: "white", border: "none", fontSize: 13, cursor: "pointer" }}>
+            Send
+          </button>
         </div>
       )}
-      {answered && <div style={{ fontSize: 11, color: "var(--c-accent)", marginTop: 6 }}>✓ Answered: {answered}</div>}
+      {answered && <div style={{ fontSize: 11, color: "var(--c-accent)", marginTop: 6 }}>✓ {answered}</div>}
     </div>
   );
 }
