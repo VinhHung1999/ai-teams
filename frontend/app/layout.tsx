@@ -1,11 +1,11 @@
 import type { Metadata, Viewport } from "next";
-import { JetBrains_Mono } from "next/font/google";
+import { Be_Vietnam_Pro, JetBrains_Mono } from "next/font/google";
 import { Providers } from "@/components/Providers";
 import "./globals.css";
 
-const jetbrainsMono = JetBrains_Mono({
+const beVietnamPro = Be_Vietnam_Pro({
   variable: "--font-sans",
-  subsets: ["latin", "latin-ext"],
+  subsets: ["vietnamese", "latin"],
   weight: ["400", "500", "600", "700"],
 });
 
@@ -34,17 +34,9 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" data-theme="light">
-      {/* Inline script: apply saved theme before first paint to avoid flash */}
-      <head>
-        <script
-          dangerouslySetInnerHTML={{
-            __html: `(function(){var t=localStorage.getItem('chat-theme');if(t==='dark')document.documentElement.setAttribute('data-theme','dark');})();`,
-          }}
-        />
-      </head>
+    <html lang="en">
       <body
-        className={`${jetbrainsMono.variable} ${jetbrainsMonoCode.variable} antialiased`}
+        className={`${beVietnamPro.variable} ${jetbrainsMonoCode.variable} antialiased`}
       >
         <Providers>{children}</Providers>
       </body>

@@ -235,6 +235,69 @@ async function aggregateEvents(projectId: number): Promise<ChatEvent[]> {
   return allEvents;
 }
 
+// ── Helpers for last-events ──
+
+const lastEventsCache = new Map<number, { fetchedAt: number; timestamp: string | undefined }>();
+const LAST_EVENTS_TTL = 30_000;
+
+function getLastTimestamp(projectId: number): string | undefined {
+  const project = storage.getProject(projectId);
+  if (!project?.working_directory) return undefined;
+
+  const roleInfos = getRoleInfos(project.working_directory);
+  const folders = new Set(roleInfos.map((ri) => ri.folder));
+  let latestTs: string | undefined;
+
+  for (const folder of folders) {
+    if (!fs.existsSync(folder)) continue;
+    for (const f of fs.readdirSync(folder).filter((f) => f.endsWith('.jsonl'))) {
+      const filePath = path.join(folder, f);
+      try {
+        const stat = fs.statSync(filePath);
+        if (stat.size === 0) continue;
+        const readSize = Math.min(2048, stat.size);
+        const buf = Buffer.alloc(readSize);
+        const fd = fs.openSync(filePath, 'r');
+        fs.readSync(fd, buf, 0, readSize, stat.size - readSize);
+        fs.closeSync(fd);
+        const lines = buf.toString('utf-8').split('\n').filter((l) => l.trim());
+        for (let i = lines.length - 1; i >= 0; i--) {
+          try {
+            const d = JSON.parse(lines[i]);
+            if (d.timestamp) {
+              if (!latestTs || d.timestamp > latestTs) latestTs = d.timestamp;
+              break;
+            }
+          } catch {}
+        }
+      } catch {}
+    }
+  }
+  return latestTs;
+}
+
+function getLastTimestampCached(projectId: number): string | undefined {
+  const cached = lastEventsCache.get(projectId);
+  if (cached && Date.now() - cached.fetchedAt < LAST_EVENTS_TTL) return cached.timestamp;
+  const ts = getLastTimestamp(projectId);
+  lastEventsCache.set(projectId, { fetchedAt: Date.now(), timestamp: ts });
+  return ts;
+}
+
+// ── REST: GET /api/chat/last-events?projectIds=1,2,3 ──
+
+router.get('/api/chat/last-events', async (req: Request, res: Response) => {
+  const param = req.query.projectIds as string;
+  if (!param) return res.json({});
+  const ids = param.split(',').map(Number).filter((n) => !isNaN(n));
+  const result: Record<number, string> = {};
+  for (const id of ids) {
+    const ts = getLastTimestampCached(id);
+    if (ts) result[id] = ts;
+  }
+  res.json(result);
+});
+
 // ── REST: GET /api/chat/:projectId/history ──
 
 router.get('/api/chat/:projectId/history', async (req: Request, res: Response) => {

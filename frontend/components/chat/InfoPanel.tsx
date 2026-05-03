@@ -222,7 +222,7 @@ function FilesTab({ project }: { project: Project | null }) {
     if (!project?.working_directory) return;
     fetch(`/api/files/tree?path=${encodeURIComponent(`${project.working_directory}/docs`)}`)
       .then((r) => r.json())
-      .then((d) => setTree(d.tree ?? d ?? []))
+      .then((d) => setTree(d.entries ?? []))
       .catch(() => setTree([]));
   }, [project?.working_directory]);
 
@@ -365,12 +365,12 @@ export function InfoPanel({ open, tab, project, roles, onClose, onTabChange, onS
         }}
       />
 
-      {/* Panel — 380px desktop, full-width mobile (via parent width) */}
+      {/* Panel — 50vw desktop, full-screen mobile */}
       <div
+        className="info-panel"
         style={{
           position: "absolute",
           top: 0, right: 0, bottom: 0,
-          width: "min(380px, 100%)",
           display: "flex",
           flexDirection: "column",
           zIndex: 50,
@@ -390,12 +390,31 @@ export function InfoPanel({ open, tab, project, roles, onClose, onTabChange, onS
             flexShrink: 0,
           }}
         >
+          {/* ← back (mobile) */}
           <button
             onClick={onClose}
+            className="info-panel-back"
             style={{
               width: 38, height: 38, borderRadius: "50%", border: "none",
               background: "transparent", color: "var(--c-fg-1)",
-              display: "grid", placeItems: "center", cursor: "pointer",
+              placeItems: "center", cursor: "pointer",
+            }}
+            onMouseEnter={(e) => (e.currentTarget.style.background = "var(--c-bg-hover)")}
+            onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+            title="Back"
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/>
+            </svg>
+          </button>
+          {/* ✕ close (desktop) */}
+          <button
+            onClick={onClose}
+            className="info-panel-close"
+            style={{
+              width: 38, height: 38, borderRadius: "50%", border: "none",
+              background: "transparent", color: "var(--c-fg-1)",
+              placeItems: "center", cursor: "pointer",
             }}
             onMouseEnter={(e) => (e.currentTarget.style.background = "var(--c-bg-hover)")}
             onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
