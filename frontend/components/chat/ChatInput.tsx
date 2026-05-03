@@ -255,8 +255,15 @@ export function ChatInput({ roles, defaultRole, disabled, onSend, projectId }: C
       setError("Cần quyền microphone");
       return;
     }
-    // [404] Revert iOS-specific path — start(250) works on both iOS and non-iOS
-    const mr = new MediaRecorder(stream);
+    // [405] mimeType detection — log what browser supports, pick first supported
+    const candidateTypes = ["audio/mp4", "audio/aac", "audio/webm;codecs=opus", "audio/webm", "audio/ogg"];
+    const supported = candidateTypes.map((t) => ({ t, ok: MediaRecorder.isTypeSupported(t) }));
+    console.log("[voice] isTypeSupported:", supported.map((s) => `${s.t}:${s.ok}`).join(" | "));
+    const pickedMime = supported.find((s) => s.ok)?.t;
+    console.log("[voice] picked mimeType:", pickedMime ?? "(none — using browser default)");
+
+    const mrOptions = pickedMime ? { mimeType: pickedMime } : {};
+    const mr = new MediaRecorder(stream, mrOptions);
     mediaRecorderRef.current = mr;
     mr.ondataavailable = (e) => {
       console.log(`[voice] chunk size=${e.data.size}`);
