@@ -3,6 +3,7 @@ import http from 'http';
 import { WebSocketServer, WebSocket } from 'ws';
 import { URL } from 'url';
 import { createBoardWss } from './board-ws';
+import { createChatWss } from './chat';
 
 const MAX_SCROLLBACK = 50_000;
 
@@ -112,6 +113,7 @@ export function registerTerminalWs(server: http.Server) {
   const wss = new WebSocketServer({ noServer: true });
   const tmuxWss = new WebSocketServer({ noServer: true });
   const boardWss = createBoardWss();
+  const chatWss = createChatWss();
 
   // Handle upgrade manually
   server.on('upgrade', (req, socket, head) => {
@@ -128,6 +130,10 @@ export function registerTerminalWs(server: http.Server) {
     } else if (url.pathname === '/ws/board') {
       boardWss.handleUpgrade(req, socket, head, (ws) => {
         boardWss.emit('connection', ws, req);
+      });
+    } else if (url.pathname === '/ws/chat') {
+      chatWss.handleUpgrade(req, socket, head, (ws) => {
+        chatWss.emit('connection', ws, req);
       });
     } else {
       socket.destroy();
