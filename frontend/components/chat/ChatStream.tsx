@@ -106,6 +106,45 @@ const mdComponents: Record<string, any> = {
 
 // ── Message bubble ────────────────────────────────────────────────────────────
 
+// [408] Attachment card — image thumbnail or file chip
+function AttachmentCard({ attachment }: { attachment: NonNullable<ChatEvent["attachment"]> }) {
+  const [expanded, setExpanded] = useState(false);
+  if (attachment.isImage) {
+    return (
+      <>
+        <img
+          src={attachment.url}
+          alt={attachment.filename}
+          onClick={() => setExpanded(true)}
+          style={{ maxWidth: 220, maxHeight: 180, borderRadius: 10, cursor: "zoom-in", display: "block", objectFit: "cover" }}
+        />
+        <div style={{ fontSize: 11, color: "var(--c-fg-2)", marginTop: 2 }}>{attachment.filename}</div>
+        {expanded && (
+          <div
+            onClick={() => setExpanded(false)}
+            style={{ position: "fixed", inset: 0, zIndex: 999, background: "rgba(0,0,0,0.85)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "zoom-out" }}
+          >
+            <img src={attachment.url} alt={attachment.filename} style={{ maxWidth: "90vw", maxHeight: "90vh", borderRadius: 8, objectFit: "contain" }} />
+          </div>
+        )}
+      </>
+    );
+  }
+  return (
+    <a
+      href={attachment.url}
+      target="_blank"
+      rel="noopener noreferrer"
+      style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", borderRadius: 10, background: "rgba(0,0,0,0.05)", textDecoration: "none", color: "var(--c-fg-0)" }}
+    >
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--c-accent)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
+      </svg>
+      <span style={{ fontSize: 13, fontWeight: 500 }}>{attachment.filename}</span>
+    </a>
+  );
+}
+
 function MessageBubble({ event, prevRole }: { event: ChatEvent; prevRole?: string }) {
   const isBoss = event.role === "BOSS";
   const sameAuthor = prevRole === event.role;
@@ -157,7 +196,10 @@ function MessageBubble({ event, prevRole }: { event: ChatEvent; prevRole?: strin
             opacity: event.pending ? 0.6 : 1,
           }}
         >
-          {event.text && (
+          {/* [408] Attachment card — replaces raw text for attachment messages */}
+          {event.attachment ? (
+            <AttachmentCard attachment={event.attachment} />
+          ) : event.text && (
             <div style={{ fontSize: 14, lineHeight: 1.45, wordBreak: "break-word", overflowWrap: "anywhere", minWidth: 0 }}>
               <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>
                 {event.text}

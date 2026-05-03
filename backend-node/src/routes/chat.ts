@@ -25,6 +25,7 @@ export type ChatEvent = {
   kind: 'message' | 'tool_use' | 'tool_result';
   text?: string;
   pending?: boolean; // [367] queued_command attachment, agent hasn't processed yet
+  attachment?: { filename: string; url: string; isImage: boolean }; // [408]
   tool?: {
     name: string;
     input?: any;
@@ -99,6 +100,9 @@ function parseJsonlLine(
 
     if (typeof content === 'string' && content.trim()) {
       const retagged = retagContent(content);
+      // [408] Detect attachment pattern: "📷 Image attached: <name> → /api/attachments/<uuid>"
+      const ATTACH_RE = /^(?:📷 Image|📎 File) attached: (.+) → (\/api\/attachments\/.+)$/;
+      const attachMatch = retagged.text?.match(ATTACH_RE);
       events.push({
         id: d.uuid || `${ts}-user`,
         role: retagged.role,
@@ -107,6 +111,11 @@ function parseJsonlLine(
         timestamp: ts,
         kind: 'message',
         text: retagged.text,
+        ...(attachMatch ? { attachment: {
+          filename: attachMatch[1],
+          url: attachMatch[2],
+          isImage: retagged.text!.startsWith('📷'),
+        }} : {}),
       });
     } else if (Array.isArray(content)) {
       const textParts = content

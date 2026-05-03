@@ -10,6 +10,7 @@ export interface ChatEvent {
   kind: ChatKind;
   text?: string;
   pending?: boolean; // [367] queued but not yet processed by agent
+  attachment?: { filename: string; url: string; isImage: boolean }; // [408]
   tool?: {
     name: string;
     input?: any;
