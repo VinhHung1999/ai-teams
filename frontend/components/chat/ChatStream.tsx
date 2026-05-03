@@ -96,7 +96,7 @@ const mdComponents: Record<string, any> = {
       margin: "6px 0 4px", padding: "10px 12px", borderRadius: 8,
       background: "rgba(0,0,0,0.06)", fontFamily: "var(--font-geist-mono, monospace)",
       fontSize: 12.5, lineHeight: 1.55, overflowX: "auto", whiteSpace: "pre",
-      color: "var(--c-fg-0)",
+      color: "var(--c-fg-0)", maxWidth: "100%", boxSizing: "border-box",
     }}>
       {children}
     </pre>

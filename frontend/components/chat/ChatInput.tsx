@@ -243,7 +243,7 @@ export function ChatInput({ roles, defaultRole, disabled, onSend, projectId }: C
   const isUploading = voiceState === "uploading";
 
   return (
-    <div ref={containerRef} className="flex-shrink-0" style={{ position: "relative" }}>
+    <div ref={containerRef} className="flex-shrink-0 chat-composer-wrap" style={{ position: "relative" }}>
       {/* Hidden file inputs */}
       <input ref={fileInputRef} type="file" style={{ display: "none" }} onChange={(e) => handleFileInput(e, false)} />
       <input ref={photoInputRef} type="file" accept="image/*" capture="environment" style={{ display: "none" }} onChange={(e) => handleFileInput(e, true)} />
