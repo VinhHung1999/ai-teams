@@ -178,8 +178,15 @@ function parseJsonlLine(
         toolUseMap.set(c.id, { name: c.name, input: c.input, hidden: isTmSend });
         if (isTmSend) {
           // no-op: hidden
-        } else if (c.name === 'ask_followup_question') {
-          // [409] Phase 1: structured ask → PromptCard in chat UI
+        } else if (c.name === 'ask_followup_question' || c.name === 'AskUserQuestion') {
+          // [409] Phase 1 — handle both Cline (ask_followup_question) and Claude Code (AskUserQuestion)
+          // AskUserQuestion: input.questions[0].{question, options:[{label}]}
+          // ask_followup_question: input.{question, options:string[]}
+          const q0 = c.input?.questions?.[0];
+          const questionText = q0?.question ?? c.input?.question ?? 'Question';
+          const optionLabels: string[] = q0?.options
+            ? (q0.options as any[]).map((o: any) => o.label ?? String(o))
+            : (c.input?.options ?? []) as string[];
           events.push({
             id: c.id,
             role: fileRole,
@@ -187,8 +194,8 @@ function parseJsonlLine(
             timestamp: ts,
             kind: 'ask_question' as any,
             question: {
-              text: c.input?.question ?? 'Question',
-              options: (c.input?.options ?? []) as string[],
+              text: questionText,
+              options: optionLabels,
               toolUseId: c.id as string,
             },
           });
