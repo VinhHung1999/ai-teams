@@ -364,9 +364,14 @@ html, body { overflow-x: hidden; }
   .chat-tool-card-col { max-width: calc(100% - 24px); }
 }
 
-/* ── [356] Composer padding-bottom: safe-area only, no base ── */
+/* ── [356/363] Composer padding-bottom: 12px desktop, safe-area-only mobile ── */
 .chat-composer-wrap {
   padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+@media (min-width: 768px) {
+  .chat-composer-wrap {
+    padding-bottom: 12px;
+  }
 }
 
 /* ── [355] Sidebar TeamList — clamp to prevent any flex child from overflowing ── */
