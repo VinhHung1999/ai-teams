@@ -2,9 +2,8 @@ import { Router, Request, Response } from 'express';
 import multer from 'multer';
 import fs from 'fs';
 import path from 'path';
-import { exec, spawn } from 'child_process';
+import { exec } from 'child_process';
 import { promisify } from 'util';
-import { WebSocket } from 'ws';
 import storage from '../lib/JsonStorage';
 
 const execAsync = promisify(exec);
@@ -49,94 +48,61 @@ async function tmSend(sessionName: string, role: string, text: string): Promise<
   await execAsync(`tmux send-keys -t ${sessionName}:0.${paneIdx} C-m`);
 }
 
-// Transcribe audio file via Soniox WebSocket + ffmpeg PCM conversion.
-// Protocol (from sibling project + Soniox docs):
-//   1. Connect to wss://stt-rt.soniox.com/transcribe-websocket
-//   2. Send JSON config as first text frame
-//   3. Stream PCM 16kHz mono s16le binary frames via ffmpeg pipe
-//   4. Close WebSocket after ffmpeg finishes → Soniox flushes + closes
-//   5. Collect is_final tokens → joined transcript
+// [377] Transcribe audio via Soniox async batch HTTP API (stt-async-v4).
+// More accurate than real-time WS for pre-recorded clips; no token-drop issue.
+// Flow: convert WebM → OGG → upload file → submit transcription → poll → fetch transcript.
+// Note: Soniox rejects WebM directly ("invalid audio file") — OGG conversion required.
 async function transcribeWithSoniox(audioFilePath: string, apiKey: string): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const ws = new WebSocket('wss://stt-rt.soniox.com/transcribe-websocket');
-    let finalText = '';
-    let done = false;
+  const authHeader = { 'Authorization': `Bearer ${apiKey}` };
 
-    const finish = (err?: Error) => {
-      if (done) return;
-      done = true;
-      clearTimeout(timer);
-      try { ws.terminate(); } catch {}
-      if (err) reject(err);
-      else resolve(finalText.trim());
-    };
+  // Step 1: Convert to OGG (Soniox rejects .webm from browser MediaRecorder)
+  const oggPath = `${audioFilePath}.ogg`;
+  try {
+    await execAsync(`ffmpeg -y -i "${audioFilePath}" -c:a libvorbis -q:a 4 "${oggPath}"`, { timeout: 30_000 });
+  } catch (e: any) {
+    throw new Error(`ffmpeg convert: ${e.message}`);
+  }
 
-    const timer = setTimeout(() => finish(new Error('Soniox STT timeout (30s)')), 30_000);
+  try {
+    // Step 2: Upload audio file
+    const audioBlob = new Blob([fs.readFileSync(oggPath)], { type: 'audio/ogg' });
+    const uploadForm = new FormData();
+    uploadForm.append('file', audioBlob, 'audio.ogg');
 
-    ws.on('open', () => {
-      // Step 1: JSON config frame (must be first — Soniox protocol requirement)
-      ws.send(JSON.stringify({
-        api_key: apiKey,
-        model: 'stt-rt-v4',
-        sample_rate: 16000,
-        num_channels: 1,
-        audio_format: 'pcm_s16le',
-        language_hints: ['vi', 'en'],
-        language_hints_strict: false,
-      }));
-
-      // Step 2: stream audio → PCM 16kHz mono via ffmpeg
-      const ff = spawn('ffmpeg', [
-        '-i', audioFilePath,
-        '-ar', '16000', '-ac', '1', '-f', 's16le', 'pipe:1',
-      ], { stdio: ['ignore', 'pipe', 'ignore'] });
-
-      // Track bytes to estimate audio duration for dynamic flush window
-      let totalBytesSent = 0;
-
-      ff.stdout.on('data', (chunk: Buffer) => {
-        if (ws.readyState === WebSocket.OPEN) {
-          ws.send(chunk);
-          totalBytesSent += chunk.length;
-        }
-      });
-
-      ff.stdout.on('end', () => {
-        // [371] Send empty binary frame as potential EOS hint (binary-only protocol after config)
-        try { if (ws.readyState === WebSocket.OPEN) ws.send(Buffer.alloc(0)); } catch {}
-
-        // [371] Dynamic flush window: stt-rt-v4 processes ~real-time.
-        // PCM 16kHz s16le = 32000 bytes/s. Give Soniox 35% of clip duration + 2s base.
-        // Minimum 3000ms (was 2500ms), max 12000ms.
-        const audioDurationMs = (totalBytesSent / 32000) * 1000;
-        const flushMs = Math.min(12000, Math.max(3000, Math.round(audioDurationMs * 0.35 + 2000)));
-
-        setTimeout(() => {
-          if (ws.readyState === WebSocket.OPEN) ws.close();
-        }, flushMs);
-      });
-
-      ff.on('error', (e) => finish(new Error(`ffmpeg: ${e.message}`)));
+    const upRes = await fetch('https://api.soniox.com/v1/files', {
+      method: 'POST', headers: authHeader, body: uploadForm,
     });
+    if (!upRes.ok) throw new Error(`Soniox upload: ${await upRes.text()}`);
+    const { id: fileId } = await upRes.json() as { id: string };
 
-    ws.on('message', (data) => {
-      try {
-        const msg = JSON.parse(data.toString()) as {
-          tokens?: Array<{ text: string; is_final: boolean }>;
-          error_message?: string;
-        };
-        if (msg.error_message) { finish(new Error(`Soniox: ${msg.error_message}`)); return; }
-        if (msg.tokens && msg.tokens.length > 0) {
-          // Soniox sends the FULL accumulated token list in each message (not deltas).
-          // The last non-empty message has the most complete transcript — use all tokens.
-          finalText = msg.tokens.map((t) => t.text).join('');
-        }
-      } catch {}
+    // Step 3: Submit async transcription
+    const txRes = await fetch('https://api.soniox.com/v1/transcriptions', {
+      method: 'POST',
+      headers: { ...authHeader, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ file_id: fileId, model: 'stt-async-v4', language_hints: ['vi', 'en'] }),
     });
+    if (!txRes.ok) throw new Error(`Soniox submit: ${await txRes.text()}`);
+    const { id: txId } = await txRes.json() as { id: string };
 
-    ws.on('close', () => finish());
-    ws.on('error', (e) => finish(e));
-  });
+    // Step 4: Poll until completed (max 2 min, 1.5s interval)
+    const deadline = Date.now() + 120_000;
+    while (Date.now() < deadline) {
+      await new Promise<void>((r) => setTimeout(r, 1500));
+      const pollRes = await fetch(`https://api.soniox.com/v1/transcriptions/${txId}`, { headers: authHeader });
+      if (!pollRes.ok) throw new Error(`Soniox poll: ${pollRes.status}`);
+      const poll = await pollRes.json() as { status: string; error_message?: string };
+      if (poll.status === 'error') throw new Error(`Soniox: ${poll.error_message ?? 'unknown error'}`);
+      if (poll.status === 'completed') break;
+    }
+
+    // Step 5: Fetch transcript text
+    const tRes = await fetch(`https://api.soniox.com/v1/transcriptions/${txId}/transcript`, { headers: authHeader });
+    if (!tRes.ok) throw new Error(`Soniox transcript: ${tRes.status}`);
+    const { text } = await tRes.json() as { text: string };
+    return text.trim();
+  } finally {
+    try { fs.unlinkSync(oggPath); } catch {}
+  }
 }
 
 // POST /api/chat/:projectId/voice — multipart: role (string), audio (blob ≤5MB)
