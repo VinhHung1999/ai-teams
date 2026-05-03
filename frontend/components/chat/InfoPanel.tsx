@@ -222,7 +222,7 @@ function FilesTab({ project }: { project: Project | null }) {
     if (!project?.working_directory) return;
     fetch(`/api/files/tree?path=${encodeURIComponent(`${project.working_directory}/docs`)}`)
       .then((r) => r.json())
-      .then((d) => setTree(d.tree ?? d ?? []))
+      .then((d) => setTree(d.entries ?? []))
       .catch(() => setTree([]));
   }, [project?.working_directory]);
 

@@ -254,8 +254,8 @@ function MessageBubble({ event, prevRole }: { event: ChatEvent; prevRole?: strin
 
       {/* Bubble column */}
       <div
+        className="chat-bubble-col"
         style={{
-          maxWidth: "70%",
           display: "flex",
           flexDirection: "column",
           alignItems: isBoss ? "flex-end" : "flex-start",

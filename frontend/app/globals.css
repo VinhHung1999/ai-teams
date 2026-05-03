@@ -208,31 +208,6 @@ html[data-theme="light"] {
   --c-wallpaper-pattern-opacity: 0.6;
 }
 
-html[data-theme="dark"] {
-  --c-bg-app:          #17212b;
-  --c-bg-list:         #17212b;
-  --c-bg-list-glass:   rgba(23,33,43,0.72);
-  --c-bg-chat:         #0e1621;
-  --c-bg-hover:        rgba(255,255,255,0.06);
-  --c-bg-active:       #2b5278;
-  --c-bg-bubble-them:  rgba(24,37,51,0.92);
-  --c-bg-bubble-me:    #2b5278;
-  --c-line:            rgba(255,255,255,0.06);
-  --c-line-soft:       rgba(255,255,255,0.04);
-  --c-fg-0:            #ffffff;
-  --c-fg-1:            #aebac8;
-  --c-fg-2:            #708499;
-  --c-fg-3:            #4a5d75;
-  --c-accent:          #6ab3f3;
-  --c-accent-soft:     #2b5278;
-  --c-bubble-shadow:   0 1px 2px rgba(0,0,0,0.24);
-
-  --c-wallpaper-gradient:
-    radial-gradient(ellipse at 20% 30%, #2d4a3a 0%, transparent 55%),
-    radial-gradient(ellipse at 80% 70%, #1e3a2b 0%, transparent 60%),
-    linear-gradient(160deg, #1a2e25 0%, #0f1e16 100%);
-  --c-wallpaper-pattern-opacity: 0.18;
-}
 
 /* ── Glass utilities ── */
 @layer utilities {
@@ -261,19 +236,11 @@ html[data-theme="dark"] {
     -webkit-backdrop-filter: blur(8px);
     border: 1px solid rgba(255,255,255,0.4);
   }
-  html[data-theme="dark"] .glass-composer-btn {
-    background: rgba(255,255,255,0.06);
-    border-color: rgba(255,255,255,0.06);
-  }
   .glass-input-pill {
     background: rgba(255,255,255,0.55);
     backdrop-filter: blur(8px);
     -webkit-backdrop-filter: blur(8px);
     border: 1px solid rgba(255,255,255,0.4);
-  }
-  html[data-theme="dark"] .glass-input-pill {
-    background: rgba(255,255,255,0.06);
-    border-color: rgba(255,255,255,0.06);
   }
 }
 
@@ -302,9 +269,6 @@ html[data-theme="dark"] {
   z-index: 0;
   opacity: var(--c-wallpaper-pattern-opacity);
 }
-html[data-theme="dark"] .chat-wallpaper::after {
-  filter: invert(1);
-}
 /* All direct children of wallpaper container stay above the pseudo-elements */
 .chat-wallpaper > * {
   position: relative;
@@ -319,12 +283,15 @@ html[data-theme="dark"] .chat-wallpaper::after {
 
 /* ── Theme persistence helper ── */
 html { color-scheme: light; }
-html[data-theme="dark"] { color-scheme: dark; }
+
+/* ── Bubble column width: 70% desktop, 92% mobile ── */
+.chat-bubble-col { max-width: 70%; }
 
 /* ── Composer: hide menu label on mobile, hide topic status text ── */
 @media (max-width: 767px) {
   .composer-menu-label { display: none; }
   .topic-status-text { display: none; }
+  .chat-bubble-col { max-width: 92%; }
 }
 
 /* ── Mobile single-view layout (<768px) ── */

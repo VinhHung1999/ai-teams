@@ -34,15 +34,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" data-theme="light">
-      {/* Inline script: apply saved theme before first paint to avoid flash */}
-      <head>
-        <script
-          dangerouslySetInnerHTML={{
-            __html: `(function(){var t=localStorage.getItem('chat-theme');if(t==='dark')document.documentElement.setAttribute('data-theme','dark');})();`,
-          }}
-        />
-      </head>
+    <html lang="en">
       <body
         className={`${jetbrainsMono.variable} ${jetbrainsMonoCode.variable} antialiased`}
       >
