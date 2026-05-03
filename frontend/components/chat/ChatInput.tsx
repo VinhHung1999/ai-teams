@@ -37,11 +37,10 @@ export function ChatInput({ roles, defaultRole, disabled, onSend, projectId }: C
   const fileInputRef = useRef<HTMLInputElement>(null);
   const photoInputRef = useRef<HTMLInputElement>(null);
 
-  // [348] Skills picker state
-  const [showSkills, setShowSkills] = useState(false);
+  // [376] Slash skills dropdown state
   const [skills, setSkills] = useState<Skill[]>([]);
   const [skillsLoaded, setSkillsLoaded] = useState(false);
-  const [skillSearch, setSkillSearch] = useState("");
+  const [selectedSkillIdx, setSelectedSkillIdx] = useState(0);
 
   // [362] Multi-line pill padding state
   const [isMultiline, setIsMultiline] = useState(false);
@@ -61,20 +60,20 @@ export function ChatInput({ roles, defaultRole, disabled, onSend, projectId }: C
     if (defaultRole && roles.includes(defaultRole)) setRole(defaultRole);
   }, [defaultRole, roles]);
 
-  // Load skills when menu opens
+  // Load skills on first slash trigger
   useEffect(() => {
-    if (!showSkills || skillsLoaded) return;
+    if (!showSlash || skillsLoaded) return;
     fetch("/api/skills")
       .then((r) => r.json())
       .then((data) => { setSkills(data); setSkillsLoaded(true); })
       .catch(() => setSkillsLoaded(true));
-  }, [showSkills, skillsLoaded]);
+  }, [showSlash, skillsLoaded]);
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (!containerRef.current?.contains(e.target as Node)) {
         setShowAttach(false);
-        setShowSkills(false);
+        setShowSlash(false);
       }
     };
     document.addEventListener("click", handler);
@@ -94,6 +93,7 @@ export function ChatInput({ roles, defaultRole, disabled, onSend, projectId }: C
     setText(val);
     setError(null);
     setShowSlash(val.startsWith("/"));
+    setSelectedSkillIdx(0);
     adjustHeight();
   };
 
@@ -118,22 +118,32 @@ export function ChatInput({ roles, defaultRole, disabled, onSend, projectId }: C
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (showSlash && slashSkills.length > 0) {
+      if (e.key === "ArrowDown") { e.preventDefault(); setSelectedSkillIdx((i) => Math.min(i + 1, slashSkills.length - 1)); return; }
+      if (e.key === "ArrowUp") { e.preventDefault(); setSelectedSkillIdx((i) => Math.max(i - 1, 0)); return; }
+      if (e.key === "Escape") { e.preventDefault(); setShowSlash(false); return; }
+      if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); insertSkill(slashSkills[selectedSkillIdx].name); return; }
+    }
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
   };
 
-  // ── [348] Skills picker ───────────────────────────────────────────────────────
+  // ── [376] Slash skills dropdown ───────────────────────────────────────────────
 
-  const filteredSkills = skills.filter((s) =>
-    s.name.toLowerCase().includes(skillSearch.toLowerCase()) ||
-    s.description.toLowerCase().includes(skillSearch.toLowerCase())
-  );
+  const slashQuery = text.startsWith("/") ? text.slice(1).toLowerCase() : "";
+  const slashSkills = skills.filter((s) =>
+    slashQuery === "" ||
+    s.name.toLowerCase().includes(slashQuery) ||
+    s.description.toLowerCase().includes(slashQuery)
+  ).slice(0, 8);
 
   const insertSkill = (skillName: string) => {
-    const prefix = `/${skillName} `;
-    setText((prev) => prefix + prev.replace(/^\/\S*\s?/, ""));
-    setShowSkills(false);
-    setSkillSearch("");
-    setTimeout(() => textareaRef.current?.focus(), 0);
+    setText(`/${skillName} `);
+    setShowSlash(false);
+    setSelectedSkillIdx(0);
+    setTimeout(() => {
+      textareaRef.current?.focus();
+      adjustHeight();
+    }, 0);
   };
 
   // ── [349] File/image attach ───────────────────────────────────────────────────
@@ -254,63 +264,8 @@ export function ChatInput({ roles, defaultRole, disabled, onSend, projectId }: C
       <input ref={fileInputRef} type="file" style={{ display: "none" }} onChange={(e) => handleFileInput(e, false)} />
       <input ref={photoInputRef} type="file" accept="image/*" capture="environment" style={{ display: "none" }} onChange={(e) => handleFileInput(e, true)} />
 
-      {/* [348] Skills picker dropdown */}
-      {showSkills && (
-        <div
-          className="absolute left-0 z-10"
-          style={{
-            bottom: "calc(100% + 4px)",
-            minWidth: 280, maxWidth: 360,
-            background: "var(--c-bg-list)",
-            border: "1px solid var(--c-line)",
-            borderRadius: 14,
-            boxShadow: "0 8px 32px rgba(0,0,0,0.12)",
-            overflow: "hidden",
-          }}
-        >
-          <div style={{ padding: "8px 12px", borderBottom: "1px solid var(--c-line)" }}>
-            <input
-              autoFocus
-              value={skillSearch}
-              onChange={(e) => setSkillSearch(e.target.value)}
-              placeholder="Search skills…"
-              style={{
-                width: "100%", border: "none", outline: "none",
-                background: "transparent", fontSize: 13, color: "var(--c-fg-0)",
-                fontFamily: "inherit",
-              }}
-            />
-          </div>
-          <div style={{ maxHeight: 240, overflowY: "auto" }}>
-            {!skillsLoaded && (
-              <div style={{ padding: "12px 16px", fontSize: 13, color: "var(--c-fg-2)" }}>Loading…</div>
-            )}
-            {skillsLoaded && filteredSkills.length === 0 && (
-              <div style={{ padding: "12px 16px", fontSize: 13, color: "var(--c-fg-2)" }}>No skills found</div>
-            )}
-            {filteredSkills.map((s) => (
-              <button
-                key={s.name}
-                onClick={() => insertSkill(s.name)}
-                className="w-full text-left"
-                style={{ padding: "8px 14px", background: "transparent", display: "block" }}
-                onMouseEnter={(e) => (e.currentTarget.style.background = "var(--c-bg-hover)")}
-                onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
-              >
-                <div style={{ fontSize: 13, fontWeight: 600, color: "var(--c-fg-0)" }}>/{s.name}</div>
-                {s.description && (
-                  <div style={{ fontSize: 11, color: "var(--c-fg-2)", marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                    {s.description.slice(0, 80)}
-                  </div>
-                )}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Slash command hints (kept for manual / typing) */}
-      {showSlash && !showSkills && (
+      {/* [376] Unified slash skills dropdown — shown when text starts with / */}
+      {showSlash && slashSkills.length > 0 && (
         <div
           className="absolute left-4 right-4 z-10"
           style={{
@@ -322,17 +277,21 @@ export function ChatInput({ roles, defaultRole, disabled, onSend, projectId }: C
             overflow: "hidden",
           }}
         >
-          {skills.filter((s) => `/${s.name}`.startsWith(text) || text === "/").slice(0, 6).map((s) => (
+          {!skillsLoaded && (
+            <div style={{ padding: "12px 16px", fontSize: 13, color: "var(--c-fg-2)" }}>Loading skills…</div>
+          )}
+          {slashSkills.map((s, idx) => (
             <button
               key={s.name}
-              onClick={() => { insertSkill(s.name); }}
-              className="w-full text-left flex items-center gap-3 px-4 py-2.5 transition-colors"
-              style={{ background: "transparent" }}
-              onMouseEnter={(e) => (e.currentTarget.style.background = "var(--c-bg-hover)")}
-              onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+              onClick={() => insertSkill(s.name)}
+              className="w-full text-left flex items-center gap-3 px-4 py-2.5"
+              style={{ background: idx === selectedSkillIdx ? "var(--c-bg-hover)" : "transparent" }}
+              onMouseEnter={() => setSelectedSkillIdx(idx)}
             >
               <span className="font-mono font-medium" style={{ color: "var(--c-accent)", fontSize: 14 }}>/{s.name}</span>
-              <span style={{ color: "var(--c-fg-1)", fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.description.slice(0, 60)}</span>
+              <span style={{ color: "var(--c-fg-1)", fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>
+                {s.description.slice(0, 60)}
+              </span>
             </button>
           ))}
         </div>
@@ -397,28 +356,11 @@ export function ChatInput({ roles, defaultRole, disabled, onSend, projectId }: C
         </div>
       )}
 
-      {/* ── 4-frame composer ── */}
+      {/* ── 3-frame composer ── */}
       <div className="flex items-end gap-2 px-3 pt-2" style={{ background: "transparent" }}>
-        {/* Frame 1: Menu pill → skills picker */}
+        {/* Frame 1: Attach */}
         <button
-          onClick={(e) => { e.stopPropagation(); setShowSkills((s) => !s); setShowAttach(false); }}
-          className="flex items-center gap-1.5 flex-shrink-0 font-medium"
-          style={{
-            height: 40, padding: "0 16px 0 14px",
-            background: "var(--c-accent)", color: "white",
-            borderRadius: 20, border: "none", fontSize: 15,
-          }}
-          title="Skills picker"
-        >
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M3 6h18M3 12h18M3 18h18"/>
-          </svg>
-          <span className="composer-menu-label">{role}</span>
-        </button>
-
-        {/* Frame 2: Attach */}
-        <button
-          onClick={(e) => { e.stopPropagation(); setShowAttach((s) => !s); setShowSkills(false); }}
+          onClick={(e) => { e.stopPropagation(); setShowAttach((s) => !s); }}
           className="glass-composer-btn flex-shrink-0 flex items-center justify-center rounded-full"
           style={{ width: 40, height: 40, color: "var(--c-fg-1)" }}
           title="Attach file"
