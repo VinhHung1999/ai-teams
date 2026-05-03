@@ -238,9 +238,11 @@ export function ChatInput({ roles, defaultRole, disabled, onSend, projectId }: C
     stopRecordingAndUpload();
   }, [stopRecordingAndUpload]);
 
-  const handlePointerLeave = useCallback(() => {
-    if (voiceState === "recording") cancelRecording();
-  }, [voiceState, cancelRecording]);
+  // [370] Toggle tap: idle→start, recording→stop+send
+  const toggleRecording = useCallback(() => {
+    if (voiceState === "idle") startRecording();
+    else if (voiceState === "recording") stopRecordingAndUpload();
+  }, [voiceState, startRecording, stopRecordingAndUpload]);
 
   const hasText = text.trim().length > 0;
   const isRecording = voiceState === "recording";
@@ -458,28 +460,49 @@ export function ChatInput({ roles, defaultRole, disabled, onSend, projectId }: C
             </svg>
           </button>
         ) : (
-          <button
-            ref={micBtnRef}
-            disabled={disabled || isUploading}
-            onPointerDown={startRecording}
-            onPointerUp={stopRecordingAndUpload}
-            onPointerLeave={handlePointerLeave}
-            className="flex-shrink-0 flex items-center justify-center rounded-full glass-composer-btn"
-            style={{
-              width: 40, height: 40,
-              background: isRecording ? "#ef4444" : undefined,
-              color: isRecording ? "white" : isUploading ? "var(--c-accent)" : "var(--c-fg-1)",
-              border: isRecording ? "none" : undefined,
-              animation: isRecording ? "status-pulse 1.2s ease-in-out infinite" : "none",
-            }}
-            title={isRecording ? "Release to send" : isUploading ? "Transcribing…" : "Hold to record"}>
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-              <rect x="9" y="2" width="6" height="12" rx="3"/>
-              <path d="M5 11a7 7 0 0 0 14 0"/>
-              <line x1="12" y1="18" x2="12" y2="22"/>
-              <line x1="8" y1="22" x2="16" y2="22"/>
-            </svg>
-          </button>
+          <>
+            {/* [370] Cancel button — only visible while recording */}
+            {isRecording && (
+              <button
+                onClick={cancelRecording}
+                className="flex-shrink-0 flex items-center justify-center rounded-full"
+                style={{ width: 36, height: 36, background: "rgba(239,68,68,0.1)", color: "#ef4444", border: "none", cursor: "pointer" }}
+                title="Cancel recording"
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                  <path d="M18 6L6 18M6 6l12 12"/>
+                </svg>
+              </button>
+            )}
+            {/* [370] Mic toggle: tap to start, tap again to send */}
+            <button
+              ref={micBtnRef}
+              disabled={disabled || isUploading}
+              onClick={toggleRecording}
+              className="flex-shrink-0 flex items-center justify-center rounded-full glass-composer-btn"
+              style={{
+                width: 40, height: 40,
+                background: isRecording ? "#ef4444" : undefined,
+                color: isRecording ? "white" : isUploading ? "var(--c-accent)" : "var(--c-fg-1)",
+                border: isRecording ? "none" : undefined,
+                animation: isRecording ? "status-pulse 1.2s ease-in-out infinite" : "none",
+              }}
+              title={isRecording ? "Tap to send" : isUploading ? "Transcribing…" : "Tap to record"}
+            >
+              {isUploading ? (
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" style={{ animation: "spin 1s linear infinite" }}>
+                  <path d="M12 2v4"/><path d="M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" opacity="0.3"/>
+                </svg>
+              ) : (
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="9" y="2" width="6" height="12" rx="3"/>
+                  <path d="M5 11a7 7 0 0 0 14 0"/>
+                  <line x1="12" y1="18" x2="12" y2="22"/>
+                  <line x1="8" y1="22" x2="16" y2="22"/>
+                </svg>
+              )}
+            </button>
+          </>
         )}
       </div>
     </div>

@@ -9,6 +9,7 @@ export interface ChatEvent {
   timestamp: string;
   kind: ChatKind;
   text?: string;
+  pending?: boolean; // [367] queued but not yet processed by agent
   tool?: {
     name: string;
     input?: any;

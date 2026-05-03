@@ -152,7 +152,16 @@ export default function ChatPage() {
     setEvents((prev) => {
       const existingIds = new Set(prev.map((e) => e.id));
       const fresh = newEvts.filter((e) => !existingIds.has(e.id));
-      return fresh.length === 0 ? prev : [...prev, ...fresh];
+      if (fresh.length === 0) return prev;
+      // [367] When confirmed BOSS events arrive, remove matching pending ones
+      const confirmedTexts = new Set(
+        fresh.filter(e => e.role === "BOSS" && e.kind === "message" && !e.pending)
+          .map(e => e.text?.trim() ?? "").filter(Boolean)
+      );
+      const base = confirmedTexts.size > 0
+        ? prev.filter(e => !(e.pending && confirmedTexts.has(e.text?.trim() ?? "")))
+        : prev;
+      return [...base, ...fresh];
     });
     // Clear "sending…" ephemeral indicator when WS confirms arrival
     if (newEvts.length > 0) setSendingMessage(null);
@@ -230,7 +239,6 @@ export default function ChatPage() {
             projects={projects}
             activeId={selectedId}
             onSelect={(id) => handleSelectProject(id)}
-            onRefreshProjects={loadProjects}
             lastEvents={lastEvents}
             lastEventAt={lastEventAt}
             lastReadAt={lastReadAt}
@@ -254,6 +262,7 @@ export default function ChatPage() {
               project={selectedProject}
               onOpenInfo={openInfo}
               onBack={() => setMobileView("list")}
+              onRefreshProjects={loadProjects}
             />
 
             <TopicBar

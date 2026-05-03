@@ -154,6 +154,7 @@ function MessageBubble({ event, prevRole }: { event: ChatEvent; prevRole?: strin
             position: "relative",
             overflow: "hidden",
             maxWidth: "100%",
+            opacity: event.pending ? 0.6 : 1,
           }}
         >
           {event.text && (
@@ -161,6 +162,13 @@ function MessageBubble({ event, prevRole }: { event: ChatEvent; prevRole?: strin
               <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>
                 {event.text}
               </ReactMarkdown>
+              {event.pending && (
+                <span style={{ display: "inline-flex", alignItems: "center", marginLeft: 4, verticalAlign: "middle", color: "var(--c-fg-2)" }}>
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                    <circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>
+                  </svg>
+                </span>
+              )}
             </div>
           )}
           <span style={{ float: "right", fontSize: 11, color: "var(--c-fg-2)", marginLeft: 8, marginTop: 4, userSelect: "none" }}>

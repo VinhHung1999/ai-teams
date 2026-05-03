@@ -381,10 +381,8 @@ html, body { overflow-x: hidden; }
   width: 100%;
 }
 
-/* ── [366] Team action buttons: always visible on mobile ── */
-@media (max-width: 767px) {
-  .team-actions { opacity: 1 !important; }
-}
+/* ── [368] Spinner keyframe for team action buttons in ChatHeader ── */
+@keyframes spin { to { transform: rotate(360deg); } }
 
 /* ── Mobile single-view layout (<768px) ── */
 @media (max-width: 767px) {

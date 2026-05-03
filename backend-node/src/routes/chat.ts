@@ -23,6 +23,7 @@ export type ChatEvent = {
   timestamp: string;
   kind: 'message' | 'tool_use' | 'tool_result';
   text?: string;
+  pending?: boolean; // [367] queued_command attachment, agent hasn't processed yet
   tool?: {
     name: string;
     input?: any;
@@ -175,7 +176,24 @@ function parseJsonlLine(
         }
       }
     }
+  } else if (d.type === 'attachment' && d.attachment?.type === 'queued_command') {
+    // [367] Queued BOSS message — agent busy, prompt waiting in queue
+    const prompt = d.attachment.prompt as string | undefined;
+    if (prompt?.trim()) {
+      const retagged = retagContent(prompt);
+      events.push({
+        id: `pending:${d.uuid ?? d.attachment?.id ?? ts}`,
+        role: retagged.role,
+        ...(retagged.targetRole ? { targetRole: retagged.targetRole } : {}),
+        sessionId,
+        timestamp: ts,
+        kind: 'message',
+        text: retagged.text,
+        pending: true,
+      });
+    }
   }
+  // queue-operation events are redundant with attachment — skip
 
   return events;
 }
@@ -261,7 +279,17 @@ async function aggregateEvents(projectId: number): Promise<ChatEvent[]> {
 
   // Sort ascending by timestamp
   allEvents.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
-  return allEvents;
+
+  // [367] Dedup: remove pending events where a confirmed BOSS message with same text exists
+  const confirmedBossTexts = new Set(
+    allEvents
+      .filter(e => e.role === 'BOSS' && e.kind === 'message' && !e.pending)
+      .map(e => e.text?.trim() ?? '')
+      .filter(Boolean),
+  );
+  return confirmedBossTexts.size > 0
+    ? allEvents.filter(e => !(e.pending && confirmedBossTexts.has(e.text?.trim() ?? '')))
+    : allEvents;
 }
 
 // ── Helpers for last-events [350] ──
