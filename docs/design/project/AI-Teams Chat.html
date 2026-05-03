@@ -1,0 +1,560 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI-Teams · Chat</title>
+  <link rel="stylesheet" href="chat-styles.css" />
+  <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel" src="tweaks-panel.jsx"></script>
+  <script type="text/babel">
+const { useState: uS, useEffect: uE, useRef: uR } = React;
+
+const Ic = ({ d, size = 22, className = '' }) => (
+  <svg className={className} width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" dangerouslySetInnerHTML={{ __html: d }}/>
+);
+const I = {
+  menu: '<path d="M3 6h18M3 12h18M3 18h18"/>',
+  search: '<circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/>',
+  more: '<circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/>',
+  paperclip: '<path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>',
+  smile: '<circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/>',
+  send: '<path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4 20-7z"/>',
+  mic: '<rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="8" y1="22" x2="16" y2="22"/>',
+  clock: '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>',
+  pin: '<path d="M12 17v5"/><path d="M9 10.76V6a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v4.76l2 2.24v2H7v-2l2-2.24z"/>',
+  doubleCheck: '<path d="M2 12l5 5 11-11"/><path d="M12 12l5 5 5-5"/>',
+  x: '<path d="M18 6L6 18M6 6l12 12"/>',
+  layers: '<path d="M12 2l9 5-9 5-9-5 9-5z"/><path d="M3 12l9 5 9-5"/>',
+  edit: '<path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>',
+  file: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>',
+  image: '<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/>',
+  link: '<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>',
+  poll: '<line x1="12" y1="20" x2="12" y2="10"/><line x1="18" y1="20" x2="18" y2="4"/><line x1="6" y1="20" x2="6" y2="16"/>',
+  task: '<polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>',
+  download: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>',
+};
+
+const ROLES = ['PO', 'TL', 'BE', 'FE', 'QA'];
+const ROLE = { PO: 'Product Owner', TL: 'Tech Lead', BE: 'Backend', FE: 'Frontend', QA: 'QA', SM: 'Scrum Master' };
+
+// ── Mock teams ──
+const TEAMS = [
+  {
+    id: 'team-aiteams',
+    name: 'ai-teams · Team',
+    sub: '5 agents · 4 active',
+    last: 'BE: Pushed commit a1b2c3d',
+    from: 'BE',
+    time: '10:42',
+    unread: 7,
+    pinned: true,
+    sprint: 'Sprint #14 · 21/42 pts',
+    sprintSub: 'Ship board polish: drag, hotkeys, burndown · ends in 2 days',
+    agents: {
+      PO: { status: 'thinking', sub: 'thinking…' },
+      TL: { status: 'online', sub: 'online' },
+      BE: { status: 'online', sub: 'online' },
+      FE: { status: 'thinking', sub: 'thinking…' },
+      QA: { status: 'idle', sub: 'last seen 1h ago' },
+    },
+  },
+  {
+    id: 'team-composer',
+    name: 'composer-revamp',
+    sub: '4 agents',
+    last: 'PO: Updated brief in docs/',
+    from: 'PO',
+    time: 'Yesterday',
+    unread: 0,
+    sprint: 'Sprint #3 · 8/30 pts',
+    sprintSub: 'Discovery phase · interviews + wireframes',
+    agents: {
+      PO: { status: 'online', sub: 'online' },
+      TL: { status: 'idle', sub: 'last seen 2h' },
+      BE: { status: 'idle', sub: 'last seen 1d' },
+      FE: { status: 'thinking', sub: 'thinking…' },
+    },
+  },
+  {
+    id: 'team-mcp',
+    name: 'mcp-bridge',
+    sub: '3 agents',
+    last: 'You: Move AT-12 to next sprint',
+    from: 'me',
+    time: 'Mon',
+    unread: 0,
+    read: true,
+    sprint: 'Sprint #7 · 14/24 pts',
+    sprintSub: 'Stabilize protocol layer',
+    agents: {
+      TL: { status: 'online', sub: 'online' },
+      BE: { status: 'online', sub: 'online' },
+      QA: { status: 'idle', sub: 'last seen 4h' },
+    },
+  },
+  {
+    id: 'assistant',
+    name: 'Assistant',
+    sub: 'bot',
+    last: 'Sprint 14 looks balanced — FE has 13pt…',
+    from: 'bot',
+    time: 'Sun',
+    unread: 0,
+    isBot: true,
+  },
+];
+
+// Messages tagged by team + topic (role or 'all')
+const MESSAGES = {
+  'team-aiteams': {
+    all: [
+      { kind: 'day', text: 'Today' },
+      { from: 'PO', text: 'I refined acceptance criteria for AT-218 (drag handle on column header). Three criteria added — needs FE review.', time: '10:18' },
+      { from: 'PO', same: true, kind: 'task', task: { id: 'AT-218', title: 'Drag handle on column header', prio: 'P1', pts: 3, role: 'FE' }, time: '10:18' },
+      { from: 'FE', text: "Got it. Quick question though — should the drag reorder *columns*, or *cards within a column*?", time: '10:22', reactions: [{ emo: '🤔', n: 1 }] },
+      { from: 'PO', text: 'Columns. Cards within a column already work via AT-198.', time: '10:24' },
+      { from: 'FE', text: 'Perfect, wiring up @dnd-kit on BoardColumn header now.', time: '10:25' },
+      { from: 'me', text: 'Looks like FE is heavy this sprint. BE, can you pair with FE on AT-218?', time: '10:30' },
+      { from: 'BE', text: "Sure. I'll wrap up the burndown endpoint first — tests are running now.", time: '10:32' },
+      { from: 'BE', same: true, kind: 'code', lang: 'shell', code: '$ npm run test -- burndown\nPASS  test/sprints.spec.ts\n  burndown\n    ✓ aggregates points per day (24ms)\n    ✓ excludes weekends (8ms)\n    ✓ handles empty sprint (3ms)\nTests: 3 passed, 3 total', time: '10:40' },
+      { from: 'BE', same: true, text: 'Pushed commit a1b2c3d ✓', time: '10:42', reactions: [{ emo: '🚀', n: 2 }, { emo: '👍', n: 1 }] },
+      { kind: 'sys', text: 'Sprint 14 progress · 21/42 pts' },
+      { from: 'TL', text: 'Reviewing PR #142 now. One concern with useMemo deps — will leave a comment.', time: '10:44', typing: true },
+    ],
+    PO: [
+      { kind: 'day', text: 'Today' },
+      { from: 'me', text: 'PO, what\'s the priority order for the next sprint?', time: '09:50' },
+      { from: 'PO', text: 'I\'d push these three first based on user feedback from last week:', time: '09:51' },
+      { from: 'PO', same: true, kind: 'task', task: { id: 'AT-230', title: 'Multi-select cards', prio: 'P0', pts: 5, role: 'FE' }, time: '09:51' },
+      { from: 'PO', same: true, kind: 'task', task: { id: 'AT-231', title: 'Bulk move/archive', prio: 'P0', pts: 3, role: 'FE' }, time: '09:51' },
+      { from: 'PO', same: true, kind: 'task', task: { id: 'AT-232', title: 'Saved filters', prio: 'P1', pts: 5, role: 'BE' }, time: '09:52' },
+      { from: 'PO', text: 'Refined acceptance for AT-218 ✓ — three criteria added.', time: '10:38' },
+    ],
+    TL: [
+      { kind: 'day', text: 'Today' },
+      { from: 'TL', text: 'Heads up — PR #142 has a useMemo dep issue. Will leave a review.', time: '10:35' },
+      { from: 'me', text: 'What\'s the architecture call on saved filters? Server-side or client-side?', time: '10:36' },
+      { from: 'TL', text: 'Server-side. Filter state lives in URL too, but persistence belongs in `user_filters` table. Cleaner for sharing.', time: '10:37' },
+      { from: 'TL', same: true, kind: 'code', lang: 'sql', code: 'CREATE TABLE user_filters (\n  id uuid PRIMARY KEY,\n  user_id uuid REFERENCES users,\n  name text NOT NULL,\n  query jsonb NOT NULL,\n  created_at timestamptz DEFAULT now()\n);', time: '10:37' },
+    ],
+    BE: [
+      { kind: 'day', text: 'Today' },
+      { from: 'me', text: '/status burndown', time: '10:35' },
+      { from: 'BE', text: 'Working on `/sprints/:id/burndown`. Tests are green:', time: '10:36' },
+      { from: 'BE', same: true, kind: 'code', lang: 'shell', code: '✓ aggregates points per day\n✓ excludes weekends\n✓ handles empty sprint', time: '10:36' },
+      { from: 'BE', text: 'Want me to add an "ideal vs actual" overlay, or keep it bare?', time: '10:40', actions: ['Add overlay', 'Keep bare'] },
+    ],
+    FE: [
+      { kind: 'day', text: 'Today' },
+      { from: 'FE', text: 'Quick question — should drag reorder columns, or cards within a column?', time: '10:22' },
+      { from: 'me', text: 'Columns.', time: '10:23' },
+      { from: 'FE', text: 'On it. Wiring up @dnd-kit. Should the drop zone preview the new order, or just snap on release?', time: '10:25' },
+      { from: 'me', text: 'Live preview, please.', time: '10:26' },
+      { from: 'FE', text: '✓ Will use `<DragOverlay>` with translate transform. ETA 30min.', time: '10:27' },
+    ],
+    QA: [
+      { kind: 'day', text: 'Today' },
+      { from: 'QA', text: 'Waiting for build artifact from PR #142.', time: '09:15' },
+      { from: 'me', text: 'BE just pushed. Try again now.', time: '10:43' },
+    ],
+  },
+  'team-composer': {
+    all: [
+      { kind: 'day', text: 'Yesterday' },
+      { from: 'PO', text: 'Updated brief in docs/composer-revamp.md. Added findings from 5 user interviews.', time: '16:20' },
+      { from: 'me', text: 'TL, when can you size the technical work?', time: '16:25' },
+      { from: 'TL', text: 'Tomorrow morning. Need to finish the migration first.', time: '16:30' },
+    ],
+    PO: [{ kind: 'day', text: 'Yesterday' }, { from: 'PO', text: 'Brief updated. Want a walkthrough?', time: '16:20', actions: ['Walkthrough', 'Send summary'] }],
+    TL: [], BE: [], FE: [],
+  },
+  'team-mcp': {
+    all: [
+      { kind: 'day', text: 'Monday' },
+      { from: 'me', text: 'Move AT-12 to next sprint — too much in flight already.', time: '14:00' },
+      { from: 'TL', text: 'Done. ✓', time: '14:01' },
+    ],
+    TL: [], BE: [], QA: [],
+  },
+  assistant: {
+    all: [
+      { kind: 'day', text: 'Sunday' },
+      { from: 'me', text: 'Look at sprint 14 — does the load look balanced?', time: '14:22' },
+      { from: 'bot', text: 'Sprint 14 has 42 pts total. FE: 13pt across 4 cards. BE: 11pt. PO: 1pt. That\'s consistent with sprint 13 (12 vs 10), so it\'s balanced — but FE is the bottleneck.\n\nIf you want to rebalance: AT-218 (drag handle, 3pt) hasn\'t started. I could move it to sprint 15 or have BE pair on it.', time: '14:23', actions: ['Move AT-218 → Sprint 15', 'Pair BE on AT-218'] },
+    ],
+  },
+};
+
+const BOARD_MINI = {
+  Todo: [{ id: 'AT-218', title: 'Drag handle on header', prio: 'P1', role: 'FE' }, { id: 'AT-219', title: 'J/K hotkeys', prio: 'P2', role: 'FE' }],
+  'In Progress': [{ id: 'AT-201', title: 'Sprint completion modal', prio: 'P0', role: 'FE' }, { id: 'AT-220', title: 'Burndown endpoint', prio: 'P1', role: 'BE' }],
+  Review: [{ id: 'AT-198', title: 'Card drag between cols', prio: 'P0', role: 'FE' }],
+};
+
+const FILES_MOCK = [
+  { name: 'sprint-14-brief.md', size: '12.4 KB', kind: 'doc', from: 'PO', time: 'Today, 10:18' },
+  { name: 'burndown-endpoint.png', size: '284 KB', kind: 'image', from: 'BE', time: 'Today, 10:40' },
+  { name: 'PR-142.diff', size: '8.1 KB', kind: 'code', from: 'BE', time: 'Today, 10:42' },
+  { name: 'user-filters-schema.sql', size: '1.2 KB', kind: 'code', from: 'TL', time: 'Today, 10:37' },
+  { name: 'design-handoff.fig', size: '3.4 MB', kind: 'design', from: 'PO', time: 'Yesterday' },
+  { name: 'release-notes-v2.1.pdf', size: '420 KB', kind: 'doc', from: 'PO', time: 'Yesterday' },
+];
+
+const PRIO_C = { P0: '#ef4444', P1: '#f59e0b', P2: '#eab308', P3: '#71717a' };
+
+// ── Components ──
+const Avatar = ({ kind, sm, status, large }) => (
+  <div className={`avatar avatar-${kind} ${sm ? 'avatar-sm' : ''} ${large ? 'avatar-lg' : ''}`}>
+    {kind === 'team' ? <Ic d={I.layers} size={sm ? 16 : large ? 36 : 22}/> :
+     kind === 'ME' ? 'H' : kind}
+    {status && <span className={`online-dot ${status === 'thinking' ? 'thinking' : ''}`}/>}
+  </div>
+);
+
+const ChatItem = ({ c, active, onClick }) => {
+  const avatarKind = c.isBot ? 'ME' : 'team';
+  return (
+    <button className={`chat-item ${active ? 'active' : ''}`} onClick={onClick}>
+      <Avatar kind={avatarKind}/>
+      <div className="chat-meta">
+        <div className="chat-row1">
+          <span className="chat-name">{c.name}</span>
+          {c.read && <Ic d={I.doubleCheck} size={14} className="read-tick"/>}
+          <span className="chat-time">{c.time}</span>
+        </div>
+        <div className="chat-row2">
+          <span className="preview">
+            {c.from && c.from !== 'me' && c.from !== 'bot' && <span className="from">{c.from}: </span>}{c.last}
+          </span>
+          {c.pinned && !c.unread ? <Ic d={I.pin} size={14} className="pin-icon"/> : null}
+          {c.unread > 0 && <span className="badge-count">{c.unread}</span>}
+        </div>
+      </div>
+    </button>
+  );
+};
+
+const Bubble = ({ m, mine }) => {
+  const tail = mine ? 'tail-me' : (!m.same ? 'tail-them' : '');
+  return (
+    <div className={`msg-row ${mine ? 'me' : ''} ${m.same ? 'same' : ''}`}>
+      {!mine && <Avatar kind={m.from} sm/>}
+      <div className={`bubble ${tail}`}>
+        {!mine && !m.same && <div className="bubble-author" style={{color: `var(--role-${m.from})`}}>{ROLE[m.from] || m.from}</div>}
+        {m.text && <div className="bubble-text">{m.text}</div>}
+        {m.kind === 'code' && (
+          <div className="code-block">
+            {m.lang && <div className="lang">{m.lang}</div>}
+            {m.code}
+          </div>
+        )}
+        {m.kind === 'task' && (
+          <div className="task-card-inline">
+            <div className="id-row">
+              <span style={{background: PRIO_C[m.task.prio], color: 'white', padding: '0 6px', borderRadius: 4, fontWeight: 600}}>{m.task.prio}</span>
+              <span className="id">{m.task.id}</span>
+              <span>{m.task.pts}pt</span>
+            </div>
+            <div className="title">{m.task.title}</div>
+            <div className="meta">
+              <span className="status-chip" style={{background: `var(--role-${m.task.role})22`, color: `var(--role-${m.task.role})`}}>{m.task.role}</span>
+            </div>
+          </div>
+        )}
+        {m.actions && (
+          <div className="bubble-actions">
+            {m.actions.map((a, i) => <button key={i} className={`action-btn ${i === 0 ? 'primary' : ''}`}>{a}</button>)}
+          </div>
+        )}
+        {m.reactions && (
+          <div className="reactions">
+            {m.reactions.map((r, i) => <span key={i} className="reaction">{r.emo} {r.n}</span>)}
+          </div>
+        )}
+        <span className="bubble-meta">
+          {m.time}
+          {mine && <Ic d={I.doubleCheck} size={14} className="tick"/>}
+        </span>
+      </div>
+    </div>
+  );
+};
+
+const FileIcon = ({ kind }) => {
+  const colors = { doc: '#3b82f6', image: '#10b981', code: '#a78bfa', design: '#f472b6' };
+  return (
+    <div className="file-thumb" style={{background: colors[kind] || '#71717a'}}>
+      <Ic d={I.file} size={20}/>
+    </div>
+  );
+};
+
+function App() {
+  const [t, setT] = useTweaks(/*EDITMODE-BEGIN*/{"theme":"light"}/*EDITMODE-END*/);
+  uE(() => { document.documentElement.setAttribute('data-theme', t.theme); }, [t.theme]);
+
+  const [activeId, setActiveId] = uS('team-aiteams');
+  const [topic, setTopic] = uS('TL'); // 'PO' | 'TL' | 'BE' | 'FE' | 'QA'
+  const [composer, setComposer] = uS('');
+  const [showInfo, setShowInfo] = uS(false);
+  const [showAttach, setShowAttach] = uS(false);
+  const [infoTab, setInfoTab] = uS('overview');
+  const [mobileView, setMobileView] = uS('list'); // 'list' | 'chat'
+  const messagesRef = uR(null);
+
+  const active = TEAMS.find(c => c.id === activeId);
+  const teamMsgs = MESSAGES[activeId] || {};
+  const msgs = teamMsgs[topic] || teamMsgs.all || [];
+
+  uE(() => {
+    if (messagesRef.current) messagesRef.current.scrollTop = messagesRef.current.scrollHeight;
+  }, [activeId, topic]);
+
+  uE(() => {
+    const onClick = (e) => {
+      if (!e.target.closest('.attach-menu') && !e.target.closest('.attach-trigger')) setShowAttach(false);
+    };
+    document.addEventListener('click', onClick);
+    return () => document.removeEventListener('click', onClick);
+  }, []);
+
+  const showSlash = composer.startsWith('/');
+  const isTeam = active && !active.isBot;
+  const composeTarget = isTeam ? ROLE[topic] : active?.name;
+  // First agent for default topic when switching teams
+  const firstAgent = (team) => team && team.agents ? Object.keys(team.agents)[0] : null;
+
+  return (
+    <div className="app" data-mobile-view={mobileView}>
+      <aside className="list">
+        <div className="list-head">
+          <button className="menu-btn"><Ic d={I.menu}/></button>
+          <div className="search-box">
+            <Ic d={I.search} size={18}/>
+            <input placeholder="Search"/>
+          </div>
+        </div>
+        <div className="chats">
+          {TEAMS.map(c => <ChatItem key={c.id} c={c} active={activeId===c.id} onClick={()=>{
+            setActiveId(c.id);
+            setTopic(firstAgent(c) || 'all');
+            setShowInfo(false);
+            setMobileView('chat');
+          }}/>)}
+        </div>
+      </aside>
+
+      <main className="chat">
+        {active && (
+          <>
+            <div className="chat-header">
+              <button className="back-btn" onClick={()=>setMobileView('list')}>
+                <Ic d={I.back || '<path d=\"M19 12H5\"/><path d=\"M12 19l-7-7 7-7\"/>'} size={22}/>
+              </button>
+              <Avatar kind={active.isBot ? 'ME' : 'team'} sm/>
+              <div className="who" onClick={()=>setShowInfo(!showInfo)}>
+                <div className="name">{active.name}</div>
+                <div className="sub">{active.sub}</div>
+              </div>
+              <button className="icon-btn" title="Search"><Ic d={I.search} size={20}/></button>
+              <button className="icon-btn" title="Info" onClick={()=>setShowInfo(!showInfo)}><Ic d={I.more} size={20}/></button>
+            </div>
+
+            {/* Topic switcher: pick which agent to talk to */}
+            {isTeam && (
+              <div className="topic-bar">
+                {ROLES.filter(r => active.agents && active.agents[r]).map(r => {
+                  const a = active.agents[r];
+                  return (
+                    <button key={r} className={`topic ${topic===r?'active':''}`} onClick={()=>setTopic(r)}>
+                      <Avatar kind={r} sm status={a.status === 'online' || a.status === 'thinking' ? a.status : null}/>
+                      <div className="topic-meta">
+                        <div className="topic-name">{ROLE[r]}</div>
+                        <div className={`topic-sub ${a.status === 'online' || a.status === 'thinking' ? 'online' : ''}`}>{a.sub}</div>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            {isTeam && (
+              <div className="pin-strip" onClick={()=>setShowInfo(true)}>
+                <div className="pin-strip-bar"/>
+                <div className="pin-strip-content">
+                  <div className="pin-strip-title">{active.sprint}</div>
+                  <div className="pin-strip-text">{active.sprintSub}</div>
+                </div>
+                <Ic d={I.pin} size={18} className="pin-icon"/>
+              </div>
+            )}
+
+            <div className="messages" ref={messagesRef}>
+              <div className="messages-inner">
+                {msgs.length === 0 ? (
+                  <div className="empty-topic">
+                    <Avatar kind={topic} large/>
+                    <div className="empty-title">No messages yet</div>
+                    <div className="empty-sub">Start a conversation with {ROLE[topic]}</div>
+                  </div>
+                ) : msgs.map((m, i) => {
+                  if (m.kind === 'day') return <div key={i} className="day-sep">{m.text}</div>;
+                  if (m.kind === 'sys') return <div key={i} className="sys-msg">{m.text}</div>;
+                  return <Bubble key={i} m={m} mine={m.from === 'me'}/>;
+                })}
+              </div>
+            </div>
+
+            {showSlash && (
+              <div className="slash-hints">
+                {[['/status','Show current status'],['/assign','Assign task'],['/move','Move task to column'],['/sprint','Sprint summary']].map(([c,d]) => (
+                  <div key={c} className="slash-hint" onClick={()=>setComposer(c+' ')}>
+                    <span className="cmd">{c}</span>
+                    <span className="desc">{d}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {showAttach && (
+              <div className="attach-menu">
+                {[
+                  ['file', 'File', I.file, '#3b82f6'],
+                  ['image', 'Photo or video', I.image, '#10b981'],
+                  ['task', 'Task card', I.task, '#a78bfa'],
+                  ['poll', 'Poll', I.poll, '#f59e0b'],
+                  ['link', 'Link / PR', I.link, '#ec4899'],
+                ].map(([k, label, icon, color]) => (
+                  <button key={k} className="attach-item" onClick={()=>setShowAttach(false)}>
+                    <span className="attach-icon" style={{background: color}}><Ic d={icon} size={18}/></span>
+                    <span>{label}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+
+            <div className="composer">
+              <button className="comp-menu-pill">
+                <Ic d={I.menu} size={20}/>
+                <span>Menu</span>
+              </button>
+              <button className="comp-side-btn attach-trigger" onClick={(e)=>{e.stopPropagation(); setShowAttach(s=>!s);}}>
+                <Ic d={I.paperclip} size={20}/>
+              </button>
+              <div className="composer-field">
+                <textarea
+                  value={composer}
+                  onChange={e=>{
+                    setComposer(e.target.value);
+                    e.target.style.height = 'auto';
+                    e.target.style.height = Math.min(e.target.scrollHeight, 160) + 'px';
+                  }}
+                  placeholder="Tin nhắn"
+                  rows={1}
+                />
+                <button className="field-icon-btn"><Ic d={I.clock} size={20}/></button>
+              </div>
+              <button className={`comp-side-btn ${composer.trim() ? 'send-active' : ''}`}>
+                <Ic d={composer.trim() ? I.send : I.mic} size={composer.trim() ? 20 : 22}/>
+              </button>
+            </div>
+
+            <div className={`info-panel ${showInfo ? 'open' : ''}`} style={{display: showInfo ? 'flex' : 'none'}}>
+              <div className="info-head">
+                <button className="icon-btn" onClick={()=>setShowInfo(false)}><Ic d={I.x} size={20}/></button>
+                <div className="title">Project Info</div>
+                <button className="icon-btn"><Ic d={I.edit} size={18}/></button>
+              </div>
+
+              <div className="info-hero">
+                <Avatar kind={active.isBot ? 'ME' : 'team'} large/>
+                <div className="info-name">{active.name}</div>
+                <div className="info-sub">{active.sub}</div>
+              </div>
+
+              <div className="info-tabs">
+                {[['overview','Overview'],['files','Files'],['members','Agents']].map(([k,l]) => (
+                  <button key={k} className={`info-tab ${infoTab===k?'active':''}`} onClick={()=>setInfoTab(k)}>{l}</button>
+                ))}
+              </div>
+
+              <div className="info-body">
+                {infoTab === 'overview' && isTeam && (
+                  <>
+                    <div className="info-section">
+                      <div className="lbl">Sprint Board</div>
+                      {Object.entries(BOARD_MINI).map(([col, items]) => (
+                        <div key={col} className="mini-col">
+                          <div className="mini-col-head">{col} <span className="count">{items.length}</span></div>
+                          {items.map(it => (
+                            <div key={it.id} className="mini-card">
+                              <div className="mini-card-row">
+                                <span className="mono mini-id">{it.id}</span>
+                                <span className="prio-tag" style={{background: PRIO_C[it.prio]}}>{it.prio}</span>
+                              </div>
+                              <div>{it.title}</div>
+                              <div className="meta">
+                                <span className="status-chip" style={{background:`var(--role-${it.role})22`, color:`var(--role-${it.role})`}}>{it.role}</span>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                )}
+
+                {infoTab === 'files' && (
+                  <div className="info-section">
+                    <div className="lbl">Files · {FILES_MOCK.length}</div>
+                    {FILES_MOCK.map((f, i) => (
+                      <div key={i} className="file-row">
+                        <FileIcon kind={f.kind}/>
+                        <div className="file-meta">
+                          <div className="file-name">{f.name}</div>
+                          <div className="file-sub">{f.size} · from {f.from} · {f.time}</div>
+                        </div>
+                        <button className="icon-btn"><Ic d={I.download} size={16}/></button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {infoTab === 'members' && isTeam && (
+                  <div className="info-section">
+                    <div className="lbl">Agents · {Object.keys(active.agents || {}).length}</div>
+                    {Object.entries(active.agents || {}).map(([r, a]) => (
+                      <button key={r} className="member-row" onClick={()=>{setTopic(r); setShowInfo(false);}}>
+                        <Avatar kind={r} sm status={a.status === 'online' || a.status === 'thinking' ? a.status : null}/>
+                        <div style={{flex:1, textAlign:'left'}}>
+                          <div className="name">{ROLE[r]}</div>
+                          <div className={`role-sub ${a.status === 'online' || a.status === 'thinking' ? 'online' : ''}`}>{a.sub}</div>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </>
+        )}
+      </main>
+
+      <TweaksPanel>
+        <TweakSection label="Theme"/>
+        <TweakRadio label="Mode" value={t.theme} options={['light','dark']} onChange={v=>setT('theme',v)}/>
+      </TweaksPanel>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+  </script>
+</body>
+</html>

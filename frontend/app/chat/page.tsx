@@ -8,6 +8,7 @@ import { PinStrip } from "@/components/chat/PinStrip";
 import { ChatStream } from "@/components/chat/ChatStream";
 import { ChatInput } from "@/components/chat/ChatInput";
 import { InfoPanel } from "@/components/chat/InfoPanel";
+import { ChatTerminalPanel } from "@/components/chat/ChatTerminalPanel";
 import { api } from "@/lib/api";
 import { useChatWs } from "@/lib/useChatWs";
 import { useFirehoseWs } from "@/lib/useFirehoseWs";
@@ -31,6 +32,9 @@ export default function ChatPage() {
   const [infoPanelOpen, setInfoPanelOpen] = useState(false);
   const [infoPanelTab, setInfoPanelTab] = useState<"overview" | "files" | "agents">("overview");
   const [selectedRole, setSelectedRole] = useState<string | null>(null);
+
+  // [369] Terminal panel (desktop ≥1024px only)
+  const [terminalOpen, setTerminalOpen] = useState(true);
 
   // Mobile single-view state: 'list' | 'chat'
   const [mobileView, setMobileView] = useState<"list" | "chat">("list");
@@ -247,65 +251,81 @@ export default function ChatPage() {
       </aside>
 
       {/* ── Main chat area ── */}
-      <main className="chat-wallpaper flex flex-col min-w-0 overflow-hidden chat-mobile-chat" style={{ gridColumn: 2, gridRow: 1 }}>
-        {/* [359] No team selected — show placeholder on desktop */}
-        {!selectedId ? (
-          <div className="flex-1 flex flex-col items-center justify-center chat-no-team-placeholder" style={{ color: "var(--c-fg-2)", gap: 12 }}>
-            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.4 }}>
-              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
-            </svg>
-            <span style={{ fontSize: 15 }}>Select a team to start chatting</span>
-          </div>
-        ) : (
-          <>
-            <ChatHeader
-              project={selectedProject}
-              onOpenInfo={openInfo}
-              onBack={() => setMobileView("list")}
-              onRefreshProjects={loadProjects}
-            />
+      <main className="chat-wallpaper flex flex-row min-w-0 overflow-hidden chat-mobile-chat" style={{ gridColumn: 2, gridRow: 1 }}>
+        {/* Chat column (flex-1) */}
+        <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
+          {/* [359] No team selected — show placeholder on desktop */}
+          {!selectedId ? (
+            <div className="flex-1 flex flex-col items-center justify-center chat-no-team-placeholder" style={{ color: "var(--c-fg-2)", gap: 12 }}>
+              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.4 }}>
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+              </svg>
+              <span style={{ fontSize: 15 }}>Select a team to start chatting</span>
+            </div>
+          ) : (
+            <>
+              <ChatHeader
+                project={selectedProject}
+                onOpenInfo={openInfo}
+                onBack={() => setMobileView("list")}
+                onRefreshProjects={loadProjects}
+                terminalOpen={terminalOpen}
+                onToggleTerminal={() => setTerminalOpen((v) => !v)}
+              />
 
-            <TopicBar
+              <TopicBar
+                project={selectedProject}
+                selectedRole={selectedRole}
+                onSelectRole={setSelectedRole}
+              />
+
+              <PinStrip
+                projectId={selectedId}
+                onClick={() => openInfo("overview")}
+              />
+
+              <ChatStream
+                events={events}
+                loading={loadingHistory}
+                hasMore={hasMore}
+                onLoadMore={loadMore}
+                filterRole={selectedRole ?? undefined}
+                sendingMessage={sendingMessage}
+                className="flex-1 min-h-0"
+              />
+
+              <ChatInput
+                roles={roles}
+                defaultRole={selectedRole ?? roles[0]}
+                disabled={!selectedId}
+                onSend={handleSend}
+                projectId={selectedId ?? undefined}
+              />
+            </>
+          )}
+
+          {/* Info panel (snap open/close) */}
+          <InfoPanel
+            open={infoPanelOpen}
+            tab={infoPanelTab}
+            project={selectedProject}
+            roles={roles}
+            onClose={() => setInfoPanelOpen(false)}
+            onTabChange={setInfoPanelTab}
+            onSelectRole={(role) => { setSelectedRole(role); setInfoPanelOpen(false); }}
+          />
+        </div>
+
+        {/* [369] Terminal panel — desktop ≥1024px only */}
+        {terminalOpen && selectedProject && (
+          <div className="chat-terminal-wrap">
+            <ChatTerminalPanel
               project={selectedProject}
               selectedRole={selectedRole}
-              onSelectRole={setSelectedRole}
+              onClose={() => setTerminalOpen(false)}
             />
-
-            <PinStrip
-              projectId={selectedId}
-              onClick={() => openInfo("overview")}
-            />
-
-            <ChatStream
-              events={events}
-              loading={loadingHistory}
-              hasMore={hasMore}
-              onLoadMore={loadMore}
-              filterRole={selectedRole ?? undefined}
-              sendingMessage={sendingMessage}
-              className="flex-1 min-h-0"
-            />
-
-            <ChatInput
-              roles={roles}
-              defaultRole={selectedRole ?? roles[0]}
-              disabled={!selectedId}
-              onSend={handleSend}
-              projectId={selectedId ?? undefined}
-            />
-          </>
+          </div>
         )}
-
-        {/* Info panel (snap open/close, no animation per design) */}
-        <InfoPanel
-          open={infoPanelOpen}
-          tab={infoPanelTab}
-          project={selectedProject}
-          roles={roles}
-          onClose={() => setInfoPanelOpen(false)}
-          onTabChange={setInfoPanelTab}
-          onSelectRole={(role) => { setSelectedRole(role); setInfoPanelOpen(false); }}
-        />
       </main>
     </div>
   );

@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark" data-density="balanced">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI-Teams</title>
+  <link rel="stylesheet" href="styles.css" />
+  <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel" src="tweaks-panel.jsx"></script>
+  <script type="text/babel" src="icons.jsx"></script>
+  <script type="text/babel" src="shell.jsx"></script>
+  <script type="text/babel" src="page-dashboard.jsx"></script>
+  <script type="text/babel" src="page-project.jsx"></script>
+  <script type="text/babel" src="page-assistant.jsx"></script>
+  <script type="text/babel" src="page-files.jsx"></script>
+  <script type="text/babel" src="page-login.jsx"></script>
+
+  <script type="text/babel" data-presets="react">
+    const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
+      "theme": "light",
+      "density": "spacious",
+      "accent": "indigo",
+      "personality": true
+    }/*EDITMODE-END*/;
+
+    const ACCENT_PRESETS = {
+      indigo:    { dark: '#818cf8', light: '#4f46e5' },
+      monochrome:{ dark: '#f4f4f5', light: '#18181b' },
+      emerald:   { dark: '#6ee7b7', light: '#059669' },
+      amber:     { dark: '#fbbf24', light: '#d97706' },
+      fuchsia:   { dark: '#f0abfc', light: '#c026d3' },
+    };
+    const ACCENT_LINE = {
+      indigo:    'rgba(129,140,248,0.35)',
+      monochrome:'rgba(244,244,245,0.35)',
+      emerald:   'rgba(110,231,183,0.35)',
+      amber:     'rgba(251,191,36,0.35)',
+      fuchsia:   'rgba(240,171,252,0.35)',
+    };
+    const ACCENT_SOFT = {
+      indigo:    'rgba(129,140,248,0.12)',
+      monochrome:'rgba(244,244,245,0.10)',
+      emerald:   'rgba(110,231,183,0.12)',
+      amber:     'rgba(251,191,36,0.12)',
+      fuchsia:   'rgba(240,171,252,0.12)',
+    };
+
+    function App() {
+      const [t, setTweak] = useTweaks(TWEAK_DEFAULTS);
+      const [route, setRoute] = React.useState('dashboard'); // dashboard | project | assistant | files | login
+      const [project, setProject] = React.useState(PROJECTS[1]); // ai-teams
+
+      // Apply tweak attributes to <html>
+      React.useEffect(() => {
+        const html = document.documentElement;
+        html.setAttribute('data-theme', t.theme);
+        html.setAttribute('data-density', t.density);
+        const isDark = t.theme === 'dark';
+        const a = ACCENT_PRESETS[t.accent] || ACCENT_PRESETS.indigo;
+        html.style.setProperty('--accent', isDark ? a.dark : a.light);
+        html.style.setProperty('--accent-line', ACCENT_LINE[t.accent] || ACCENT_LINE.indigo);
+        html.style.setProperty('--accent-soft', ACCENT_SOFT[t.accent] || ACCENT_SOFT.indigo);
+      }, [t]);
+
+      const navigate = (r, opts = {}) => {
+        if (opts.project) setProject(opts.project);
+        setRoute(r);
+      };
+
+      const crumbs = (() => {
+        switch (route) {
+          case 'dashboard': return ['~', 'projects'];
+          case 'project': return ['~', 'projects', project.name, 'sprint #14'];
+          case 'assistant': return ['~', 'assistant'];
+          case 'files': return ['~', 'projects', project.name, 'files'];
+          case 'login': return ['login'];
+        }
+      })();
+
+      const right = route === 'dashboard' ? (
+        <>
+          <div className="search">
+            <Icon name="search" />
+            <input placeholder="Search projects, tasks, files…" />
+            <span className="kbd mono">⌘K</span>
+          </div>
+          <Btn size="sm" kind="ghost" icon="settings" title="Settings" />
+        </>
+      ) : route === 'project' ? (
+        <>
+          <Btn size="sm" kind="ghost" icon="folderOpen" onClick={() => navigate('files')}>Files</Btn>
+          <Btn size="sm" kind="ghost" icon="message" onClick={() => navigate('assistant')}>Assistant</Btn>
+          <Btn size="sm" kind="primary" icon="plus">Add task</Btn>
+        </>
+      ) : (
+        <Btn size="sm" kind="ghost" icon="settings" title="Settings" />
+      );
+
+      // Login is full-bleed without sidebar
+      if (route === 'login') {
+        return (
+          <>
+            <div style={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
+              <div style={{
+                padding: '8px 14px', borderBottom: '1px solid var(--line)', background: 'var(--bg-1)',
+                display: 'flex', alignItems: 'center', gap: 10,
+              }}>
+                <Btn size="sm" kind="ghost" icon="arrowLeft" onClick={() => navigate('dashboard')}>Back to app</Btn>
+              </div>
+              <div style={{ flex: 1, minHeight: 0 }}>
+                <LoginPage onSignIn={() => navigate('dashboard')} />
+              </div>
+            </div>
+            <TweaksUI t={t} setTweak={setTweak} />
+          </>
+        );
+      }
+
+      return (
+        <>
+          <div className="app">
+            <Sidebar route={route} project={project} projects={PROJECTS} onNavigate={navigate} />
+            <main className="main">
+              <Topbar crumbs={crumbs} right={right} />
+              <div className="body">
+                {route === 'dashboard' && <DashboardPage onNavigate={navigate} />}
+                {route === 'project' && <ProjectPage project={project} tweaks={t} />}
+                {route === 'assistant' && <AssistantPage project={project} />}
+                {route === 'files' && <FilesPage project={project} />}
+              </div>
+            </main>
+          </div>
+          <TweaksUI t={t} setTweak={setTweak} />
+        </>
+      );
+    }
+
+    function TweaksUI({ t, setTweak }) {
+      return (
+        <TweaksPanel>
+          <TweakSection label="Theme" />
+          <TweakRadio label="Mode" value={t.theme}
+            options={['dark', 'light']}
+            onChange={v => setTweak('theme', v)} />
+          <TweakSelect label="Accent" value={t.accent}
+            options={['indigo', 'monochrome', 'emerald', 'amber', 'fuchsia']}
+            onChange={v => setTweak('accent', v)} />
+
+          <TweakSection label="Density" />
+          <TweakRadio label="Spacing" value={t.density}
+            options={['compact', 'balanced', 'spacious']}
+            onChange={v => setTweak('density', v)} />
+
+          <TweakSection label="Agents" />
+          <TweakToggle label="Show role names + status text" value={t.personality}
+            onChange={v => setTweak('personality', v)} />
+        </TweaksPanel>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>

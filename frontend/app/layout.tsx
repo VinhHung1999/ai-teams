@@ -34,10 +34,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
-      <body
-        className={`${beVietnamPro.variable} ${jetbrainsMonoCode.variable} antialiased`}
-      >
+    <html lang="en" className={`${beVietnamPro.variable} ${jetbrainsMonoCode.variable}`}>
+      <body className="antialiased">
         <Providers>{children}</Providers>
       </body>
     </html>

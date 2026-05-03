@@ -9,6 +9,8 @@ interface ChatHeaderProps {
   onOpenInfo: () => void;
   onBack?: () => void;
   onRefreshProjects?: () => void;
+  terminalOpen?: boolean;
+  onToggleTerminal?: () => void;
 }
 
 function teamGradient(id: number): string {
@@ -41,7 +43,7 @@ function IconBtn({ onClick, title, disabled, children }: { onClick?: () => void;
 
 type TeamAction = "start" | "kill" | "refresh";
 
-export function ChatHeader({ project, onOpenInfo, onBack, onRefreshProjects }: ChatHeaderProps) {
+export function ChatHeader({ project, onOpenInfo, onBack, onRefreshProjects, terminalOpen, onToggleTerminal }: ChatHeaderProps) {
   const statusText = project?.roles?.map((r) => `${r} online`).join(" · ") ?? "";
   const [loadingAction, setLoadingAction] = useState<TeamAction | null>(null);
   const isOnline = project?.tmux_active ?? false;
@@ -135,6 +137,15 @@ export function ChatHeader({ project, onOpenInfo, onBack, onRefreshProjects }: C
           </>
         )}
 
+        {/* [369] Terminal toggle — visible on ≤1023px as drawer trigger, on ≥1024px toggles panel */}
+        {onToggleTerminal && (
+          <IconBtn onClick={onToggleTerminal} title={terminalOpen ? "Hide terminal" : "Show terminal"}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"
+              style={{ opacity: terminalOpen ? 1 : 0.5 }}>
+              <rect x="2" y="4" width="20" height="16" rx="2"/><path d="M8 9l3 3-3 3M13 15h3"/>
+            </svg>
+          </IconBtn>
+        )}
         <Link
           href="/project"
           className="flex items-center justify-center rounded-full transition-colors text-[11px] font-medium px-2.5 h-8"
