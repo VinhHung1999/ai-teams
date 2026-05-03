@@ -208,15 +208,17 @@ export default function ChatPage() {
         return true;
       });
       if (fresh.length === 0) return prev;
-      // [367] When confirmed BOSS events arrive, remove matching pending ones
+      // [380] 3-way dedup: confirmed BOSS text → remove pending from BOTH prev and fresh.
+      // Handles case where backend pending:hash + confirmed arrive in same WS batch.
       const confirmedTexts = new Set(
         fresh.filter(e => e.role === "BOSS" && e.kind === "message" && !e.pending)
           .map(e => e.text?.trim() ?? "").filter(Boolean)
       );
-      const base = confirmedTexts.size > 0
-        ? prev.filter(e => !(e.pending && confirmedTexts.has(e.text?.trim() ?? "")))
-        : prev;
-      return [...base, ...fresh];
+      const isPendingMatch = (e: ChatEvent) =>
+        e.pending === true && confirmedTexts.has(e.text?.trim() ?? "");
+      const base = confirmedTexts.size > 0 ? prev.filter(e => !isPendingMatch(e)) : prev;
+      const filteredFresh = confirmedTexts.size > 0 ? fresh.filter(e => !isPendingMatch(e)) : fresh;
+      return [...base, ...filteredFresh];
     });
     const last = newEvts[newEvts.length - 1];
     if (last && selectedId) {
