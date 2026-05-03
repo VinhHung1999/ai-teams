@@ -445,7 +445,7 @@ export function ChatStream({ events, loading, hasMore, onLoadMore, filterRole, s
   const isAtBottomRef = useRef(true);
 
   const scrollToBottom = useCallback(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "auto" });
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, []);
 
   useEffect(() => {

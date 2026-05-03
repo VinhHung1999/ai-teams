@@ -355,6 +355,13 @@ html, body { overflow-x: hidden; }
 .chat-bubble-col   { max-width: 70%; min-width: 0; overflow: hidden; }
 .chat-tool-card-col { max-width: 65%; min-width: 0; overflow: hidden; }
 
+/* [411] Bubble entrance animation — applied to glass-bubble on mount */
+@keyframes bubble-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.glass-bubble { animation: bubble-in 220ms ease-out; }
+
 /* ── Composer: hide menu label on mobile, hide topic status text ── */
 @media (max-width: 767px) {
   .composer-menu-label { display: none; }
