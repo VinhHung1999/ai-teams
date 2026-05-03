@@ -253,6 +253,7 @@ export default function ChatPage() {
           defaultRole={selectedRole ?? roles[0]}
           disabled={!selectedId}
           onSend={handleSend}
+          projectId={selectedId ?? undefined}
         />
 
         {/* Info panel (snap open/close, no animation per design) */}

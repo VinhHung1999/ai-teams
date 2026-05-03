@@ -7,6 +7,7 @@ interface ChatInputProps {
   defaultRole?: string;
   disabled?: boolean;
   onSend: (role: string, text: string) => Promise<void>;
+  projectId?: number;
 }
 
 const SLASH_CMDS = [
@@ -24,7 +25,16 @@ const ATTACH_ITEMS = [
   { label: "Link / PR", color: "#ec4899" },
 ];
 
-export function ChatInput({ roles, defaultRole, disabled, onSend }: ChatInputProps) {
+// ── Voice recording state ─────────────────────────────────────────────────────
+type VoiceState = "idle" | "recording" | "uploading";
+
+function formatDuration(ms: number): string {
+  const s = Math.floor(ms / 1000);
+  const m = Math.floor(s / 60);
+  return `${m}:${String(s % 60).padStart(2, "0")}`;
+}
+
+export function ChatInput({ roles, defaultRole, disabled, onSend, projectId }: ChatInputProps) {
   const [role, setRole] = useState(defaultRole ?? roles[0] ?? "PO");
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
@@ -34,11 +44,21 @@ export function ChatInput({ roles, defaultRole, disabled, onSend }: ChatInputPro
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
+  // Voice state
+  const [voiceState, setVoiceState] = useState<VoiceState>("idle");
+  const [voiceDuration, setVoiceDuration] = useState(0);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
+  const voiceStartRef = useRef<number>(0);
+  const durationIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const micBtnRef = useRef<HTMLButtonElement>(null);
+  const cancelledRef = useRef(false);
+  const maxDurationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   useEffect(() => {
     if (defaultRole && roles.includes(defaultRole)) setRole(defaultRole);
   }, [defaultRole, roles]);
 
-  // Close attach menu on outside click
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (!containerRef.current?.contains(e.target as Node)) setShowAttach(false);
@@ -89,7 +109,113 @@ export function ChatInput({ roles, defaultRole, disabled, onSend }: ChatInputPro
     }
   };
 
+  // ── Voice: press-and-hold ─────────────────────────────────────────────────
+
+  const stopRecordingAndUpload = useCallback(async () => {
+    const mr = mediaRecorderRef.current;
+    if (!mr) return;
+
+    if (maxDurationTimerRef.current) clearTimeout(maxDurationTimerRef.current);
+    if (durationIntervalRef.current) clearInterval(durationIntervalRef.current);
+
+    const duration = Date.now() - voiceStartRef.current;
+
+    mr.stop();
+
+    if (cancelledRef.current || duration < 500) {
+      // Too short or cancelled — discard
+      chunksRef.current = [];
+      mr.stream.getTracks().forEach((t) => t.stop());
+      mediaRecorderRef.current = null;
+      setVoiceState("idle");
+      setVoiceDuration(0);
+      return;
+    }
+
+    // Wait for dataavailable
+    await new Promise<void>((resolve) => {
+      mr.addEventListener("stop", () => resolve(), { once: true });
+    });
+
+    const blob = new Blob(chunksRef.current, { type: mr.mimeType || "audio/webm" });
+    chunksRef.current = [];
+    mr.stream.getTracks().forEach((t) => t.stop());
+    mediaRecorderRef.current = null;
+
+    if (!projectId) {
+      setVoiceState("idle");
+      setVoiceDuration(0);
+      return;
+    }
+
+    setVoiceState("uploading");
+    try {
+      const form = new FormData();
+      form.append("role", role);
+      form.append("audio", blob, "voice.webm");
+
+      const res = await fetch(`/api/chat/${projectId}/voice`, { method: "POST", body: form });
+      if (res.status === 413) { setError("Recording too large (max 5MB)"); return; }
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        setError(d.error ?? "Voice upload failed");
+        return;
+      }
+      // Success — transcript arrives via tm-send, WS will push it
+    } catch (e: any) {
+      setError(e.message ?? "Voice upload failed");
+    } finally {
+      setVoiceState("idle");
+      setVoiceDuration(0);
+    }
+  }, [projectId, role]);
+
+  const startRecording = useCallback(async () => {
+    if (voiceState !== "idle" || disabled) return;
+    setError(null);
+    cancelledRef.current = false;
+    chunksRef.current = [];
+
+    let stream: MediaStream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch {
+      setError("Cần quyền microphone");
+      return;
+    }
+
+    const mr = new MediaRecorder(stream);
+    mediaRecorderRef.current = mr;
+    mr.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data); };
+    mr.start(100); // collect chunks every 100ms
+
+    voiceStartRef.current = Date.now();
+    setVoiceState("recording");
+    setVoiceDuration(0);
+
+    durationIntervalRef.current = setInterval(() => {
+      setVoiceDuration(Date.now() - voiceStartRef.current);
+    }, 100);
+
+    // Auto-stop at 60s
+    maxDurationTimerRef.current = setTimeout(() => {
+      stopRecordingAndUpload();
+    }, 60000);
+  }, [voiceState, disabled, stopRecordingAndUpload]);
+
+  const cancelRecording = useCallback(() => {
+    cancelledRef.current = true;
+    stopRecordingAndUpload();
+  }, [stopRecordingAndUpload]);
+
+  // Drag-cancel: if pointer leaves the mic button area while recording → cancel
+  const handlePointerLeave = useCallback(() => {
+    if (voiceState === "recording") cancelRecording();
+  }, [voiceState, cancelRecording]);
+
   const hasText = text.trim().length > 0;
+  const isRecording = voiceState === "recording";
+  const isUploading = voiceState === "uploading";
 
   return (
     <div ref={containerRef} className="flex-shrink-0" style={{ position: "relative" }}>
@@ -127,14 +253,12 @@ export function ChatInput({ roles, defaultRole, disabled, onSend }: ChatInputPro
         <div
           className="absolute z-10"
           style={{
-            bottom: "calc(100% + 4px)",
-            right: 56,
+            bottom: "calc(100% + 4px)", right: 56,
             background: "var(--c-bg-list)",
             border: "1px solid var(--c-line)",
             borderRadius: 14,
             boxShadow: "0 8px 32px rgba(0,0,0,0.16)",
-            padding: 6,
-            minWidth: 200,
+            padding: 6, minWidth: 200,
           }}
         >
           {ATTACH_ITEMS.map(({ label, color }) => (
@@ -146,10 +270,7 @@ export function ChatInput({ roles, defaultRole, disabled, onSend }: ChatInputPro
               onMouseEnter={(e) => (e.currentTarget.style.background = "var(--c-bg-hover)")}
               onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
             >
-              <span
-                className="flex items-center justify-center text-white rounded-full"
-                style={{ width: 36, height: 36, background: color, flexShrink: 0 }}
-              >
+              <span className="flex items-center justify-center text-white rounded-full" style={{ width: 36, height: 36, background: color, flexShrink: 0 }}>
                 📎
               </span>
               <span>{label}</span>
@@ -165,35 +286,48 @@ export function ChatInput({ roles, defaultRole, disabled, onSend }: ChatInputPro
         </div>
       )}
 
+      {/* Voice recording status bar */}
+      {(isRecording || isUploading) && (
+        <div
+          className="flex items-center gap-2 mx-3 mb-1 px-3 py-1.5 rounded-xl"
+          style={{ background: isRecording ? "rgba(239,68,68,0.08)" : "rgba(51,144,236,0.08)", fontSize: 13 }}
+        >
+          <span style={{ color: isRecording ? "#ef4444" : "var(--c-accent)", animation: isRecording ? "status-pulse 1.2s ease-in-out infinite" : "none" }}>
+            {isRecording ? "🎤" : "📝"}
+          </span>
+          <span style={{ color: isRecording ? "#ef4444" : "var(--c-accent)" }}>
+            {isRecording ? `Recording… ${formatDuration(voiceDuration)}` : "Transcribing…"}
+          </span>
+          {isRecording && (
+            <button
+              onClick={cancelRecording}
+              style={{ marginLeft: "auto", color: "var(--c-fg-2)", fontSize: 12, background: "transparent", border: "none", cursor: "pointer" }}
+            >
+              Cancel
+            </button>
+          )}
+        </div>
+      )}
+
       {/* ── 4-frame composer ── */}
-      <div
-        className="flex items-center gap-2 px-3 py-2"
-        style={{ background: "transparent" }}
-      >
-        {/* Frame 1: Menu pill (accent blue) */}
+      <div className="flex items-center gap-2 px-3 py-2" style={{ background: "transparent" }}>
+        {/* Frame 1: Menu pill */}
         <button
           onClick={() => setShowSlash((s) => !s)}
           className="flex items-center gap-1.5 flex-shrink-0 font-medium"
           style={{
-            height: 40,
-            padding: "0 16px 0 14px",
-            background: "var(--c-accent)",
-            color: "white",
-            borderRadius: 20,
-            border: "none",
-            fontSize: 15,
+            height: 40, padding: "0 16px 0 14px",
+            background: "var(--c-accent)", color: "white",
+            borderRadius: 20, border: "none", fontSize: 15,
           }}
         >
-          {/* ≡ icon */}
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
             <path d="M3 6h18M3 12h18M3 18h18"/>
           </svg>
-          <span className="composer-menu-label">
-            {role}
-          </span>
+          <span className="composer-menu-label">{role}</span>
         </button>
 
-        {/* Frame 2: Attach round (glass) */}
+        {/* Frame 2: Attach */}
         <button
           onClick={(e) => { e.stopPropagation(); setShowAttach((s) => !s); }}
           className="glass-composer-btn flex-shrink-0 flex items-center justify-center rounded-full"
@@ -205,7 +339,7 @@ export function ChatInput({ roles, defaultRole, disabled, onSend }: ChatInputPro
           </svg>
         </button>
 
-        {/* Frame 3: Input pill (glass, flex-1) */}
+        {/* Frame 3: Input pill */}
         <div
           className="glass-input-pill flex-1 flex items-center gap-1"
           style={{ borderRadius: 20, padding: "0 6px 0 16px", minHeight: 40 }}
@@ -217,27 +351,19 @@ export function ChatInput({ roles, defaultRole, disabled, onSend }: ChatInputPro
             onKeyDown={handleKeyDown}
             placeholder={disabled ? "Select a team…" : "Tin nhắn…"}
             rows={1}
-            disabled={disabled || sending}
+            disabled={disabled || sending || isRecording || isUploading}
             className="flex-1 outline-none resize-none"
             style={{
-              background: "transparent",
-              border: "none",
-              color: "var(--c-fg-0)",
-              fontSize: 16, // prevents iOS zoom
-              lineHeight: 1.4,
-              fontFamily: "inherit",
-              minHeight: 22,
-              maxHeight: 160,
-              padding: 0,
-              alignSelf: "center",
+              background: "transparent", border: "none",
+              color: "var(--c-fg-0)", fontSize: 16, lineHeight: 1.4,
+              fontFamily: "inherit", minHeight: 22, maxHeight: 160,
+              padding: 0, alignSelf: "center",
             }}
           />
-          {/* Clock icon (schedule send placeholder) */}
           <button
             className="flex-shrink-0 flex items-center justify-center rounded-full"
             style={{ width: 32, height: 32, color: "var(--c-fg-2)", background: "transparent" }}
             title="Schedule (coming soon)"
-            onClick={() => {}}
           >
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
               <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
@@ -245,35 +371,49 @@ export function ChatInput({ roles, defaultRole, disabled, onSend }: ChatInputPro
           </button>
         </div>
 
-        {/* Frame 4: Mic/Send swap */}
-        <button
-          onClick={send}
-          disabled={disabled || sending}
-          className="flex-shrink-0 flex items-center justify-center rounded-full glass-composer-btn"
-          style={{
-            width: 40, height: 40,
-            background: hasText ? "var(--c-accent)" : undefined,
-            color: hasText ? "white" : "var(--c-fg-1)",
-            border: hasText ? "none" : undefined,
-            transition: "background 0.12s, color 0.12s, transform 0.12s",
-          }}
-          title={hasText ? "Send" : "Mic (coming soon)"}
-        >
-          {hasText ? (
-            // Send icon
+        {/* Frame 4: Mic / Send swap */}
+        {hasText ? (
+          <button
+            onClick={send}
+            disabled={disabled || sending}
+            className="flex-shrink-0 flex items-center justify-center rounded-full"
+            style={{
+              width: 40, height: 40,
+              background: "var(--c-accent)", color: "white",
+              border: "none", transition: "background 0.12s, transform 0.12s",
+            }}
+            title="Send"
+          >
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
               <path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4 20-7z"/>
             </svg>
-          ) : (
-            // Mic icon
+          </button>
+        ) : (
+          <button
+            ref={micBtnRef}
+            disabled={disabled || isUploading}
+            onPointerDown={startRecording}
+            onPointerUp={stopRecordingAndUpload}
+            onPointerLeave={handlePointerLeave}
+            className="flex-shrink-0 flex items-center justify-center rounded-full glass-composer-btn"
+            style={{
+              width: 40, height: 40,
+              background: isRecording ? "#ef4444" : undefined,
+              color: isRecording ? "white" : isUploading ? "var(--c-accent)" : "var(--c-fg-1)",
+              border: isRecording ? "none" : undefined,
+              transition: "background 0.12s, color 0.12s",
+              animation: isRecording ? "status-pulse 1.2s ease-in-out infinite" : "none",
+            }}
+            title={isRecording ? "Release to send" : isUploading ? "Transcribing…" : "Hold to record"}
+          >
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
               <rect x="9" y="2" width="6" height="12" rx="3"/>
               <path d="M5 11a7 7 0 0 0 14 0"/>
               <line x1="12" y1="18" x2="12" y2="22"/>
               <line x1="8" y1="22" x2="16" y2="22"/>
             </svg>
-          )}
-        </button>
+          </button>
+        )}
       </div>
     </div>
   );

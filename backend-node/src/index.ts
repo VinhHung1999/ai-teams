@@ -80,6 +80,7 @@ import filesRouter from './routes/files';
 import gitRouter from './routes/git';
 import notificationsRouter from './routes/notifications';
 import { chatRouter } from './routes/chat';
+import voiceRouter from './routes/voice';
 
 app.use(projectsRouter);
 app.use(backlogRouter);
@@ -90,6 +91,7 @@ app.use(filesRouter);
 app.use(gitRouter);
 app.use(notificationsRouter);
 app.use(chatRouter);
+app.use(voiceRouter);
 
 // Terminal REST endpoints
 app.get('/api/terminal/sessions', (_req, res) => {
