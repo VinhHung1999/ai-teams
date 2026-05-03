@@ -211,7 +211,7 @@ export default function ChatPage() {
       {/* ── Teams sidebar ── */}
       <aside
         className="glass-sidebar flex flex-col overflow-hidden chat-mobile-list"
-        style={{ borderRight: "1px solid var(--c-line)", gridColumn: 1, gridRow: 1 }}
+        style={{ borderRight: "1px solid var(--c-line)", gridColumn: 1, gridRow: 1, minWidth: 0, overflowX: "hidden" }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 12px", borderBottom: "1px solid var(--c-line)", flexShrink: 0, background: "var(--c-bg-list-glass)", backdropFilter: "blur(24px) saturate(180%)" }}>
           <button style={{ width: 36, height: 36, borderRadius: "50%", border: "none", background: "transparent", color: "var(--c-fg-1)", display: "grid", placeItems: "center", cursor: "pointer" }}>

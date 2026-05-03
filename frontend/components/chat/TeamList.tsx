@@ -43,6 +43,8 @@ function TeamItem({ project, active, preview, unread, onSelect }: TeamItemProps)
       style={{
         background: active ? "var(--c-bg-active)" : "transparent",
         transition: "background 0.1s",
+        minWidth: 0,
+        overflow: "hidden",
       }}
       onMouseEnter={(e) => {
         if (!active) (e.currentTarget as HTMLElement).style.background = "var(--c-bg-hover)";
@@ -139,7 +141,7 @@ export function TeamList({
       : sorted;
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full" style={{ minWidth: 0, overflow: "hidden" }}>
       {/* Search bar */}
       <div
         className="flex items-center gap-2 px-3 py-2.5 flex-shrink-0"

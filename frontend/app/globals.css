@@ -363,14 +363,21 @@ html, body { overflow-x: hidden; }
   .chat-tool-card-col { max-width: calc(100% - 24px); }
 }
 
-/* ── [356] Composer padding-bottom: safe-area + 24px mobile, 12px desktop ── */
+/* ── [356] Composer padding-bottom: safe-area + 10px mobile, 12px desktop ── */
 .chat-composer-wrap {
   padding-bottom: 12px;
 }
 @media (max-width: 767px) {
   .chat-composer-wrap {
-    padding-bottom: calc(24px + env(safe-area-inset-bottom, 0px));
+    padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px));
   }
+}
+
+/* ── [355] Sidebar TeamList — clamp to prevent any flex child from overflowing ── */
+.chat-sidebar-inner {
+  min-width: 0;
+  overflow-x: hidden;
+  width: 100%;
 }
 
 /* ── Mobile single-view layout (<768px) ── */
