@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+"use client";
 import type { Project } from "@/lib/types";
 
 interface TeamListProps {
@@ -95,7 +95,6 @@ function TeamItem({ project, active, preview, unread, onSelect }: TeamItemProps)
   );
 }
 
-type FilterTab = "all" | "unread";
 
 export function TeamList({
   projects,
@@ -105,18 +104,11 @@ export function TeamList({
   lastEventAt = {},
   lastReadAt = {},
 }: TeamListProps) {
-  const [tab, setTab] = useState<FilterTab>("all");
-
   const sorted = [...projects].sort((a, b) => {
     const aTs = lastEventAt[a.id] ?? "0";
     const bTs = lastEventAt[b.id] ?? "0";
     return bTs.localeCompare(aTs) || a.name.localeCompare(b.name);
   });
-
-  const filtered =
-    tab === "unread"
-      ? sorted.filter((p) => (lastEventAt[p.id] ?? "0") > (lastReadAt[p.id] ?? "0"))
-      : sorted;
 
   return (
     <div className="flex flex-col h-full" style={{ minWidth: 0, overflow: "hidden" }}>
@@ -133,26 +125,12 @@ export function TeamList({
         </div>
       </div>
 
-      {/* Tabs */}
-      <div className="flex gap-1 px-2 py-1 flex-shrink-0" style={{ borderBottom: "1px solid var(--c-line)" }}>
-        {(["all", "unread"] as FilterTab[]).map((t) => (
-          <button
-            key={t}
-            onClick={() => setTab(t)}
-            className="px-3 py-1.5 rounded-lg text-[13px] font-medium capitalize transition-colors"
-            style={{ background: tab === t ? "var(--c-accent)" : "transparent", color: tab === t ? "white" : "var(--c-fg-1)" }}
-          >
-            {t === "all" ? "All" : "Unread"}
-          </button>
-        ))}
-      </div>
-
       {/* Team list */}
       <div className="flex-1 overflow-y-auto chat-scroll">
-        {filtered.length === 0 ? (
+        {sorted.length === 0 ? (
           <p className="p-4 text-sm" style={{ color: "var(--c-fg-2)" }}>No teams found.</p>
         ) : (
-          filtered.map((p) => {
+          sorted.map((p) => {
             const at = lastEventAt[p.id] ?? "0";
             const read = lastReadAt[p.id] ?? "0";
             const isUnread = at > read && p.id !== activeId;

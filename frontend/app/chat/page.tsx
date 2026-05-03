@@ -334,7 +334,7 @@ export default function ChatPage() {
             roles={roles}
             onClose={() => { setInfoPanelOpen(false); setInfoPanelTab("overview"); }}
             onTabChange={setInfoPanelTab}
-            onSelectRole={(role) => { setSelectedRole(role); setInfoPanelOpen(false); }}
+            onSelectRole={(role) => { setSelectedRole(role); setInfoPanelOpen(false); setInfoPanelTab("overview"); }}
             onRefreshProjects={loadProjects}
           />
         </div>
