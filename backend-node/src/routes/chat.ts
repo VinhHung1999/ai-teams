@@ -532,7 +532,7 @@ async function watchProject(projectId: number) {
 
   // [378] chokidar: more reliable than fs.watch on macOS (handles renames, no missed events)
   const watcher = chokidar.watch(`${folder}/*.jsonl`, {
-    persistent: true, ignoreInitial: true, awaitWriteFinish: { stabilityThreshold: 30, pollInterval: 20 },
+    persistent: true, ignoreInitial: true, awaitWriteFinish: { stabilityThreshold: 80, pollInterval: 50 },
   });
 
   watcher.on('change', (filePath: string) => {
