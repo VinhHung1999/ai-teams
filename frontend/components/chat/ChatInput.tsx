@@ -206,10 +206,17 @@ export function ChatInput({ roles, defaultRole, disabled, onSend, projectId }: C
     mr.stream.getTracks().forEach((t) => t.stop());
     mediaRecorderRef.current = null;
 
-    // [377] Instrumentation: log blob size + duration for tail-loss diagnosis
     const expectedSeconds = duration / 1000;
-    const kbps = (blob.size * 8) / 1000 / expectedSeconds;
+    const kbps = blob.size > 0 ? (blob.size * 8) / 1000 / expectedSeconds : 0;
     console.log(`[voice] mimeType=${mimeType} duration=${expectedSeconds.toFixed(1)}s blob=${(blob.size/1024).toFixed(1)}KB bitrate≈${kbps.toFixed(0)}kbps isIOS=${isIOS}`);
+
+    // [403] Guard: blob empty = iOS MediaRecorder emitted no data
+    if (blob.size === 0) {
+      setVoiceState("idle");
+      setVoiceDuration(0);
+      setError("Recording empty — please hold mic button for at least 1 second before releasing");
+      return;
+    }
 
     if (!projectId) { setVoiceState("idle"); setVoiceDuration(0); return; }
     setVoiceState("uploading");
@@ -247,10 +254,18 @@ export function ChatInput({ roles, defaultRole, disabled, onSend, projectId }: C
       setError("Cần quyền microphone");
       return;
     }
-    const mr = new MediaRecorder(stream);
+    // [403] iOS Safari ignores timeslice and emits 0-byte chunks; use no-timeslice on iOS
+    const isIOS2 = /iPad|iPhone|iPod/.test(navigator.userAgent);
+    const mr = isIOS2
+      ? new MediaRecorder(stream)                                            // iOS: no options, no timeslice
+      : new MediaRecorder(stream, { mimeType: "audio/webm", audioBitsPerSecond: 96000 });
     mediaRecorderRef.current = mr;
     mr.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data); };
-    mr.start(250); // [377] 250ms timeslice — reduces chunk boundary gaps, cleaner tail
+    if (isIOS2) {
+      mr.start(); // iOS: single chunk emitted on stop()
+    } else {
+      mr.start(250); // non-iOS: 250ms timeslice
+    }
     voiceStartRef.current = Date.now();
     setVoiceState("recording");
     setVoiceDuration(0);
