@@ -327,7 +327,7 @@ export function InfoPanel({ open, tab, project, roles, onClose, onTabChange, onS
                 <path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/>
               </svg>
             </button>
-            <div className="flex-1 overflow-hidden">
+            <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}>
               <FilesTab project={project} />
             </div>
           </>
