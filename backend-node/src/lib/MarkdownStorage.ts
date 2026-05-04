@@ -210,9 +210,17 @@ function parseSprintFile(
   content: string,
   fallbackProjectId: number,
 ): { sprint: Sprint; items: Array<{ si: SprintItem; bi: BacklogItem }> } | null {
-  const metaVal = (key: string) => {
-    const m = content.match(new RegExp(`^%% ${key}: (.+?) %%`, 'm'));
-    return m ? m[1].trim() : null;
+  const metaVal = (key: string): string | null => {
+    // Obsidian comment format: %% key: value %%
+    const obs = content.match(new RegExp(`^%% ${key}: (.+?) %%`, 'm'));
+    if (obs) return obs[1].trim();
+    // YAML frontmatter fallback: between --- markers
+    const fm = content.match(/^---\n([\s\S]*?)\n---/m);
+    if (fm) {
+      const yl = fm[1].match(new RegExp(`^${key}:\\s*(.+)$`, 'm'));
+      if (yl) return yl[1].trim();
+    }
+    return null;
   };
 
   const sprintIdStr = metaVal('sprint-id');
