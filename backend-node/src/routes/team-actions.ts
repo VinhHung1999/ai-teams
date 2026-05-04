@@ -63,15 +63,16 @@ router.post('/api/projects/:id/start', async (req: Request, res: Response) => {
   }
 
   const logPath = `/tmp/${sessionName}-startup.log`;
-  const logStream = fs.createWriteStream(logPath, { flags: 'a' });
+  const logFd = fs.openSync(logPath, 'a');
 
   // Spawn detached so it survives beyond the HTTP response timeout
   const child = spawn('bash', [setupFile], {
     cwd: workingDir,
     detached: true,
-    stdio: ['ignore', logStream, logStream],
+    stdio: ['ignore', logFd, logFd],
   });
   child.unref();
+  fs.closeSync(logFd);
 
   // Wait up to 5s for tmux session to appear
   const deadline = Date.now() + 5000;
@@ -135,14 +136,15 @@ router.post('/api/projects/:id/refresh', async (req: Request, res: Response) => 
   }
 
   const logPath = `/tmp/${sessionName}-startup.log`;
-  const logStream = fs.createWriteStream(logPath, { flags: 'w' });
+  const logFd = fs.openSync(logPath, 'w');
 
   const child = spawn('bash', [setupFile], {
     cwd: workingDir,
     detached: true,
-    stdio: ['ignore', logStream, logStream],
+    stdio: ['ignore', logFd, logFd],
   });
   child.unref();
+  fs.closeSync(logFd);
 
   // Wait up to 5s
   const deadline = Date.now() + 5000;
