@@ -6,7 +6,7 @@ import type { Project } from "@/lib/types";
 import { api } from "@/lib/api";
 import { FileManager } from "@/components/FileManager";
 
-export type InfoPanelTab = "overview" | "files" | "agents";
+export type InfoPanelTab = "overview" | "files" | "team";
 
 interface InfoPanelProps {
   open: boolean;
@@ -235,6 +235,82 @@ function AgentsTab({ project, roles, onSelectRole }: { project: Project | null; 
   );
 }
 
+// ── Team tab (identity + action buttons + agents) ─────────────────────────────
+
+function TeamTab({
+  project, roles, isOnline, loadingAction, onDoAction, onSelectRole,
+}: {
+  project: Project | null;
+  roles: string[];
+  isOnline: boolean;
+  loadingAction: "start" | "kill" | "refresh" | "compact" | null;
+  onDoAction: (a: "start" | "kill" | "refresh" | "compact") => void;
+  onSelectRole: (r: string) => void;
+}) {
+  if (!project) return <Msg>Select a team to view info.</Msg>;
+  return (
+    <div style={{ height: "100%", overflowY: "auto", WebkitOverflowScrolling: "touch" } as React.CSSProperties}>
+      {/* Identity */}
+      <div style={{ textAlign: "center", padding: "20px 16px 16px", borderBottom: "1px solid var(--c-line)" }}>
+        <div style={{ width: 56, height: 56, borderRadius: "50%", background: teamGradient(project.id), display: "flex", alignItems: "center", justifyContent: "center", color: "white", fontWeight: 700, fontSize: 24, margin: "0 auto 10px" }}>
+          {project.name.charAt(0).toUpperCase()}
+        </div>
+        <div style={{ fontSize: 18, fontWeight: 600, color: "var(--c-fg-0)" }}>{project.name}</div>
+        <div style={{ fontSize: 13, color: isOnline ? "var(--c-status-ok)" : "var(--c-fg-2)", marginTop: 4, display: "flex", alignItems: "center", justifyContent: "center", gap: 5 }}>
+          <span style={{ width: 6, height: 6, borderRadius: "50%", background: isOnline ? "var(--c-status-ok)" : "var(--c-fg-3)", display: "inline-block" }} />
+          {isOnline ? `Active · ${roles.length} pane${roles.length !== 1 ? "s" : ""}` : "Idle"}
+        </div>
+        {/* Action buttons */}
+        <div style={{ display: "flex", gap: 10, marginTop: 12, justifyContent: "center" }}>
+          {([
+            { action: "start"   as const, title: "Start team",               color: "#10b981", disabled: isOnline || loadingAction !== null,
+              icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5,3 19,12 5,21"/></svg> },
+            { action: "kill"    as const, title: "Kill team",                color: "#ef4444", disabled: !isOnline || loadingAction !== null,
+              icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="4" width="16" height="16" rx="2"/></svg> },
+            { action: "refresh" as const, title: "Refresh team",             color: "#3390ec", disabled: loadingAction !== null,
+              icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg> },
+            { action: "compact" as const, title: "Compact all (free context)", color: "#a78bfa", disabled: !isOnline || loadingAction !== null,
+              icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/><line x1="12" y1="8" x2="12" y2="16"/><polyline points="8 12 12 16 16 12"/></svg> },
+          ]).map(({ action, title, color, disabled, icon }) => (
+            <button key={action} disabled={disabled} onClick={() => onDoAction(action)} title={title}
+              style={{ width: 36, height: 36, borderRadius: "50%", border: "none", background: disabled ? "rgba(0,0,0,0.04)" : `${color}18`, color: disabled ? "var(--c-fg-3)" : color, display: "flex", alignItems: "center", justifyContent: "center", cursor: disabled ? "not-allowed" : "pointer", opacity: loadingAction === action ? 0.5 : 1 }}>
+              {loadingAction === action
+                ? <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" style={{ animation: "spin 1s linear infinite" }}><path d="M12 2v4"/><path d="M12 18v4" opacity="0.3"/></svg>
+                : icon}
+            </button>
+          ))}
+        </div>
+      </div>
+      {/* Agents */}
+      {roles.length > 0 && (
+        <div style={{ padding: "12px 16px 0", fontSize: 11, fontWeight: 600, color: "var(--c-fg-2)", textTransform: "uppercase", letterSpacing: "0.04em" }}>
+          Agents · {roles.length}
+        </div>
+      )}
+      <div style={{ padding: "0 8px 16px" }}>
+        {roles.map((role) => (
+          <button key={role} onClick={() => onSelectRole(role)} className="w-full flex items-center gap-3 text-left"
+            style={{ padding: "10px 8px", borderRadius: 8, background: "transparent" }}
+            onMouseEnter={(e) => (e.currentTarget.style.background = "var(--c-bg-hover)")}
+            onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}>
+            <div className="relative flex-shrink-0">
+              <div style={{ width: 36, height: 36, borderRadius: "50%", background: ROLE_GRADIENT[role] ?? ROLE_GRADIENT.DEV, display: "flex", alignItems: "center", justifyContent: "center", color: "white", fontWeight: 600, fontSize: 13 }}>
+                {role[0]}
+              </div>
+              <span style={{ position: "absolute", bottom: 0, right: 0, width: 10, height: 10, borderRadius: "50%", background: isOnline ? "var(--c-status-ok)" : "var(--c-fg-3)", border: "2px solid var(--c-bg-list-glass)" }} />
+            </div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontWeight: 500, fontSize: 14, color: "var(--c-fg-0)" }}>{ROLE_LABEL[role] ?? role}</div>
+              <div style={{ fontSize: 12, color: isOnline ? "var(--c-accent)" : "var(--c-fg-2)" }}>{isOnline ? "online" : "offline"}</div>
+            </div>
+          </button>
+        ))}
+        {roles.length === 0 && <Msg>No agents for this team.</Msg>}
+      </div>
+    </div>
+  );
+}
+
 // ── Shared helper ─────────────────────────────────────────────────────────────
 
 function Msg({ children, style }: { children: React.ReactNode; style?: React.CSSProperties }) {
@@ -274,7 +350,7 @@ export function InfoPanel({ open, tab, project, roles, onClose, onTabChange, onS
 
   if (!open) return null; // snap: no animation
 
-  const TABS: [InfoPanelTab, string][] = [["overview", "Overview"], ["files", "Files"], ["agents", "Agents"]];
+  const TABS: [InfoPanelTab, string][] = [["overview", "Overview"], ["files", "Files"], ["team", "Team"]];
 
   return (
     <>
@@ -379,61 +455,6 @@ export function InfoPanel({ open, tab, project, roles, onClose, onTabChange, onS
               <span style={{ fontWeight: 600, fontSize: 16, flex: 1, color: "var(--c-fg-0)" }}>Project Info</span>
             </div>
 
-            {/* Team hero */}
-            {project && (
-              <div style={{ textAlign: "center", padding: "24px 16px 16px", flexShrink: 0 }}>
-                <div
-                  style={{
-                    width: 64, height: 64, borderRadius: "50%",
-                    background: teamGradient(project.id),
-                    display: "flex", alignItems: "center", justifyContent: "center",
-                    color: "white", fontWeight: 700, fontSize: 28,
-                    margin: "0 auto 12px",
-                  }}
-                >
-                  {project.name.charAt(0).toUpperCase()}
-                </div>
-                <div style={{ fontSize: 20, fontWeight: 600, color: "var(--c-fg-0)" }}>{project.name}</div>
-                <div style={{ fontSize: 14, color: isOnline ? "var(--c-status-ok)" : "var(--c-fg-2)", marginTop: 4, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
-                  <span style={{ width: 7, height: 7, borderRadius: "50%", background: isOnline ? "var(--c-status-ok)" : "var(--c-fg-3)", display: "inline-block" }} />
-                  {isOnline ? `Active · ${roles.length} pane${roles.length !== 1 ? "s" : ""}` : "Idle"}
-                </div>
-                {/* [372] Team management actions — icon buttons */}
-                <div style={{ display: "flex", gap: 10, marginTop: 14, justifyContent: "center" }}>
-                  {([
-                    { action: "start" as const, title: "Start team", color: "#10b981", disabled: isOnline || loadingAction !== null,
-                      icon: <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><polygon points="5,3 19,12 5,21"/></svg> },
-                    { action: "kill" as const, title: "Kill team", color: "#ef4444", disabled: !isOnline || loadingAction !== null,
-                      icon: <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="4" width="16" height="16" rx="2"/></svg> },
-                    { action: "refresh" as const, title: "Refresh team", color: "#3390ec", disabled: loadingAction !== null,
-                      icon: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg> },
-                    { action: "compact" as const, title: "Compact all (free context)", color: "#a78bfa", disabled: !isOnline || loadingAction !== null,
-                      icon: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/><line x1="12" y1="8" x2="12" y2="16"/><polyline points="8 12 12 16 16 12"/></svg> },
-                  ]).map(({ action, title, color, disabled, icon }) => (
-                    <button
-                      key={action}
-                      disabled={disabled}
-                      onClick={() => doAction(action)}
-                      title={title}
-                      style={{
-                        width: 38, height: 38, borderRadius: "50%", border: "none",
-                        background: disabled ? "rgba(0,0,0,0.04)" : `${color}18`,
-                        color: disabled ? "var(--c-fg-3)" : color,
-                        display: "flex", alignItems: "center", justifyContent: "center",
-                        cursor: disabled ? "not-allowed" : "pointer",
-                        opacity: loadingAction === action ? 0.5 : 1,
-                      }}
-                    >
-                      {loadingAction === action
-                        ? <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" style={{ animation: "spin 1s linear infinite" }}><path d="M12 2v4"/><path d="M12 18v4" opacity="0.3"/></svg>
-                        : icon
-                      }
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
             {/* Tabs — underline style */}
             <div
               style={{
@@ -469,7 +490,7 @@ export function InfoPanel({ open, tab, project, roles, onClose, onTabChange, onS
             {/* Tab content */}
             <div className="flex-1 overflow-hidden">
               {tab === "overview" && <OverviewTab project={project} />}
-              {tab === "agents" && <AgentsTab project={project} roles={roles} onSelectRole={onSelectRole} />}
+              {tab === "team" && <TeamTab project={project} roles={roles} isOnline={isOnline} loadingAction={loadingAction} onDoAction={doAction} onSelectRole={onSelectRole} />}
             </div>
           </>
         )}

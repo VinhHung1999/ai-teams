@@ -30,7 +30,7 @@ export default function ChatPage() {
   const oldestTsRef = useRef<string | undefined>(undefined);
 
   const [infoPanelOpen, setInfoPanelOpen] = useState(false);
-  const [infoPanelTab, setInfoPanelTab] = useState<"overview" | "files" | "agents">("overview");
+  const [infoPanelTab, setInfoPanelTab] = useState<"overview" | "files" | "team">("overview");
   const [selectedRole, setSelectedRole] = useState<string | null>(null);
 
   // [392] Terminal tab is a value of selectedRole === 'TERMINAL'
@@ -277,7 +277,7 @@ export default function ChatPage() {
     await api.chatSend(selectedId, role, text);
   }, [selectedId]);
 
-  const openInfo = useCallback((tab: "overview" | "files" | "agents" = "overview") => {
+  const openInfo = useCallback((tab: "overview" | "files" | "team" = "overview") => {
     setInfoPanelTab(tab);
     setInfoPanelOpen(true);
   }, []);
