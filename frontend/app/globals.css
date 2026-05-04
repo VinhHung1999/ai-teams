@@ -333,7 +333,7 @@ html[data-theme="light"] {
 .info-panel { width: min(50vw, 900px); }
 .info-panel-close { display: grid; }
 .info-panel-back  { display: none; }
-@media (max-width: 767px) {
+@media (max-width: 1023px) {
   .info-panel { width: 100%; }
   .info-panel-close { display: none; }
   .info-panel-back  { display: grid; }
@@ -363,7 +363,7 @@ html, body { overflow-x: hidden; }
 .glass-bubble { animation: bubble-in 220ms ease-out; }
 
 /* ── Composer: hide menu label on mobile, hide topic status text ── */
-@media (max-width: 767px) {
+@media (max-width: 1023px) {
   .composer-menu-label { display: none; }
   .topic-status-text { display: none; }
   /* [355] Mobile bubble fits within viewport — calc leaves 12px each side */
@@ -375,7 +375,7 @@ html, body { overflow-x: hidden; }
 .chat-composer-wrap {
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }
-@media (min-width: 768px) {
+@media (min-width: 1024px) {
   .chat-composer-wrap {
     padding-bottom: 12px;
   }
@@ -401,8 +401,8 @@ html, body { overflow-x: hidden; }
 /* ── [368] Spinner keyframe for team action buttons in ChatHeader ── */
 @keyframes spin { to { transform: rotate(360deg); } }
 
-/* ── Mobile single-view layout (<768px) ── */
-@media (max-width: 767px) {
+/* ── Mobile single-view layout (<1024px) ── */
+@media (max-width: 1023px) {
   /* Override grid → stacked, both panels in same cell */
   [data-mobile-view] {
     grid-template-columns: 1fr !important;
