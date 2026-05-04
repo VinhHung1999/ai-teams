@@ -97,6 +97,83 @@ function TeamItem({ project, active, preview, unread, onSelect }: TeamItemProps)
 }
 
 
+// ── DirPicker ─────────────────────────────────────────────────────────────────
+
+interface DirEntry { name: string; path: string; }
+interface BrowseResult { current: string; parent: string; dirs: DirEntry[]; }
+
+function DirPicker({ onSelect, onClose }: { onSelect: (p: string) => void; onClose: () => void }) {
+  const [browse, setBrowse] = useState<BrowseResult | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  const load = (p?: string) => {
+    setLoading(true);
+    fetch(`/api/projects/browse-dirs${p ? `?path=${encodeURIComponent(p)}` : ""}`)
+      .then((r) => r.json())
+      .then((d) => { setBrowse(d); setLoading(false); })
+      .catch(() => setLoading(false));
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const breadcrumbs = browse ? browse.current.split("/").filter(Boolean) : [];
+
+  return (
+    <div style={{ border: "1px solid var(--c-line)", borderRadius: 8, background: "var(--c-bg-list-glass)", marginTop: 4, overflow: "hidden", maxHeight: 260, display: "flex", flexDirection: "column" }}>
+      {/* Breadcrumb */}
+      <div style={{ padding: "6px 10px", borderBottom: "1px solid var(--c-line)", display: "flex", alignItems: "center", gap: 2, flexWrap: "nowrap", overflowX: "auto", flexShrink: 0 }}>
+        <button onClick={() => load()} style={{ border: "none", background: "none", color: "var(--c-accent)", fontSize: 12, cursor: "pointer", padding: "1px 3px", borderRadius: 3 }}>~</button>
+        {breadcrumbs.map((seg, i) => {
+          const segPath = "/" + breadcrumbs.slice(0, i + 1).join("/");
+          return (
+            <span key={segPath} style={{ display: "flex", alignItems: "center", gap: 2 }}>
+              <span style={{ color: "var(--c-fg-3)", fontSize: 11 }}>/</span>
+              <button onClick={() => load(segPath)} style={{ border: "none", background: "none", color: "var(--c-accent)", fontSize: 12, cursor: "pointer", padding: "1px 3px", borderRadius: 3, whiteSpace: "nowrap" }}>
+                {seg}
+              </button>
+            </span>
+          );
+        })}
+      </div>
+
+      {/* Dir list */}
+      <div style={{ flex: 1, overflowY: "auto" }}>
+        {loading && <div style={{ padding: "8px 10px", fontSize: 12, color: "var(--c-fg-2)" }}>Loading…</div>}
+        {!loading && browse && browse.current !== browse.parent && (
+          <button onClick={() => load(browse.parent)}
+            style={{ width: "100%", textAlign: "left", padding: "7px 10px", border: "none", background: "none", fontSize: 12, color: "var(--c-fg-1)", cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}
+            onMouseEnter={(e) => (e.currentTarget.style.background = "var(--c-bg-hover)")}
+            onMouseLeave={(e) => (e.currentTarget.style.background = "none")}>
+            <span style={{ opacity: 0.6 }}>↩</span> ..
+          </button>
+        )}
+        {!loading && browse?.dirs.map((d) => (
+          <button key={d.path} onClick={() => load(d.path)}
+            style={{ width: "100%", textAlign: "left", padding: "7px 10px", border: "none", background: "none", fontSize: 12, color: "var(--c-fg-0)", cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}
+            onMouseEnter={(e) => (e.currentTarget.style.background = "var(--c-bg-hover)")}
+            onMouseLeave={(e) => (e.currentTarget.style.background = "none")}>
+            <span style={{ fontSize: 14 }}>📁</span> {d.name}
+          </button>
+        ))}
+        {!loading && browse?.dirs.length === 0 && (
+          <div style={{ padding: "8px 10px", fontSize: 12, color: "var(--c-fg-3)" }}>No subdirectories</div>
+        )}
+      </div>
+
+      {/* Select footer */}
+      {browse && (
+        <div style={{ borderTop: "1px solid var(--c-line)", padding: "6px 8px", display: "flex", gap: 6, flexShrink: 0 }}>
+          <button onClick={onClose} style={{ flex: 1, height: 28, border: "1px solid var(--c-line)", borderRadius: 6, background: "none", fontSize: 12, color: "var(--c-fg-2)", cursor: "pointer" }}>Cancel</button>
+          <button onClick={() => { onSelect(browse.current); onClose(); }}
+            style={{ flex: 2, height: 28, border: "none", borderRadius: 6, background: "var(--c-accent)", color: "white", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+            Select this folder
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── NewTeamModal ──────────────────────────────────────────────────────────────
 
 function toSlug(name: string): string {
@@ -111,6 +188,7 @@ function NewTeamModal({ onClose, onSent }: { onClose: () => void; onSent: () => 
   const [roles, setRoles] = useState("PO DEV QC CMO");
   const [nameEdited, setNameEdited] = useState(false);
   const [sessionEdited, setSessionEdited] = useState(false);
+  const [showPicker, setShowPicker] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -185,10 +263,23 @@ function NewTeamModal({ onClose, onSent }: { onClose: () => void; onSent: () => 
           <input autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="my-project" style={{ ...inputStyle, fontFamily: "inherit", fontSize: 14 }} />
         </label>
 
-        <label style={labelStyle}>
+        <div style={labelStyle}>
           <span style={capStyle}>Working Directory *</span>
-          <input value={workDir} onChange={(e) => setWorkDir(e.target.value)} placeholder="/Users/you/projects/my-project" style={inputStyle} />
-        </label>
+          <div style={{ display: "flex", gap: 6 }}>
+            <input value={workDir} onChange={(e) => { setWorkDir(e.target.value); setShowPicker(false); }} placeholder="/Users/you/projects/my-project" style={{ ...inputStyle, flex: 1 }} />
+            <button type="button" onClick={() => setShowPicker((v) => !v)}
+              title="Browse directories"
+              style={{ width: 38, height: 38, flexShrink: 0, borderRadius: 8, border: "1px solid var(--c-line)", background: showPicker ? "var(--c-accent)" : "rgba(0,0,0,0.04)", color: showPicker ? "white" : "var(--c-fg-1)", cursor: "pointer", fontSize: 16, display: "flex", alignItems: "center", justifyContent: "center" }}>
+              📁
+            </button>
+          </div>
+          {showPicker && (
+            <DirPicker
+              onSelect={(p) => { setWorkDir(p); }}
+              onClose={() => setShowPicker(false)}
+            />
+          )}
+        </div>
 
         <div style={{ display: "flex", gap: 10 }}>
           <label style={{ ...labelStyle, flex: 1 }}>
