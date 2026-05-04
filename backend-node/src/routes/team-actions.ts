@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
 import path from 'path';
+import os from 'os';
 import fs, { globSync } from 'fs';
 import { exec, spawn } from 'child_process';
 import { promisify } from 'util';
@@ -205,6 +206,57 @@ router.get('/api/projects/:id/context-usage', async (req: Request, res: Response
   } catch (e: any) {
     return res.json({});
   }
+});
+
+// ── GET /api/projects/:id/role-models ─────────────────────────────────────────
+// Returns the last-used model per role by scanning the tail of each role's JSONL.
+// Cache: 30s per project.
+
+const roleModelsCache = new Map<number, { data: Record<string, string>; expiry: number }>();
+
+async function lastModelInJsonl(jsonlPath: string): Promise<string | null> {
+  if (!fs.existsSync(jsonlPath)) return null;
+  try {
+    const { stdout } = await execAsync(`tail -n 300 "${jsonlPath}"`, { timeout: 3000 });
+    const lines = stdout.split('\n').filter(Boolean).reverse();
+    for (const line of lines) {
+      try {
+        const obj = JSON.parse(line);
+        if (obj.type === 'assistant' && obj.message?.model) return obj.message.model as string;
+      } catch {}
+    }
+  } catch {}
+  return null;
+}
+
+router.get('/api/projects/:id/role-models', async (req: Request, res: Response) => {
+  const projectId = parseInt(req.params.id as string);
+  if (isNaN(projectId)) return res.status(400).json({ error: 'invalid id' });
+
+  const now = Date.now();
+  const cached = roleModelsCache.get(projectId);
+  if (cached && now < cached.expiry) return res.json(cached.data);
+
+  const project = storage.getProject(projectId);
+  if (!project?.working_directory) return res.json({});
+
+  const mapPath = path.join(project.working_directory, '.ai-teams-sessions.json');
+  if (!fs.existsSync(mapPath)) return res.json({});
+
+  let roles: Record<string, { session_id: string; cwd: string }>;
+  try { roles = JSON.parse(fs.readFileSync(mapPath, 'utf-8')).roles ?? {}; }
+  catch { return res.json({}); }
+
+  const result: Record<string, string> = {};
+  await Promise.all(Object.entries(roles).map(async ([role, info]) => {
+    const encoded = info.cwd.replace(/[/_]/g, '-');
+    const jsonlPath = path.join(os.homedir(), '.claude', 'projects', encoded, `${info.session_id}.jsonl`);
+    const model = await lastModelInJsonl(jsonlPath);
+    if (model) result[role] = model;
+  }));
+
+  roleModelsCache.set(projectId, { data: result, expiry: now + 30000 });
+  return res.json(result);
 });
 
 // ── POST /api/projects/:id/compact-all ────────────────────────────────────────

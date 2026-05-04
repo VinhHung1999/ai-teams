@@ -237,6 +237,14 @@ function AgentsTab({ project, roles, onSelectRole }: { project: Project | null; 
 
 // ── Team tab (identity + action buttons + agents) ─────────────────────────────
 
+function modelShort(m: string): string {
+  if (m.includes("opus")) return "opus";
+  if (m.includes("sonnet")) return "sonnet";
+  if (m.includes("haiku")) return "haiku";
+  return m.split("-")[1] ?? m;
+}
+const MODEL_COLOR: Record<string, string> = { opus: "#a78bfa", sonnet: "#3390ec", haiku: "#10b981" };
+
 function TeamTab({
   project, roles, isOnline, loadingAction, onDoAction, onSelectRole,
 }: {
@@ -247,6 +255,16 @@ function TeamTab({
   onDoAction: (a: "start" | "kill" | "refresh" | "compact") => void;
   onSelectRole: (r: string) => void;
 }) {
+  const [roleModels, setRoleModels] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    if (!project) return;
+    fetch(`/api/projects/${project.id}/role-models`)
+      .then((r) => r.json())
+      .then(setRoleModels)
+      .catch(() => {});
+  }, [project?.id]);
+
   if (!project) return <Msg>Select a team to view info.</Msg>;
   return (
     <div style={{ height: "100%", overflowY: "auto", WebkitOverflowScrolling: "touch" } as React.CSSProperties}>
@@ -300,7 +318,18 @@ function TeamTab({
               <span style={{ position: "absolute", bottom: 0, right: 0, width: 10, height: 10, borderRadius: "50%", background: isOnline ? "var(--c-status-ok)" : "var(--c-fg-3)", border: "2px solid var(--c-bg-list-glass)" }} />
             </div>
             <div style={{ flex: 1 }}>
-              <div style={{ fontWeight: 500, fontSize: 14, color: "var(--c-fg-0)" }}>{ROLE_LABEL[role] ?? role}</div>
+              <div style={{ fontWeight: 500, fontSize: 14, color: "var(--c-fg-0)", display: "flex", alignItems: "center", gap: 6 }}>
+                {ROLE_LABEL[role] ?? role}
+                {roleModels[role] && (() => {
+                  const short = modelShort(roleModels[role]);
+                  const color = MODEL_COLOR[short] ?? "var(--c-fg-2)";
+                  return (
+                    <span style={{ fontSize: 10, fontWeight: 600, color: "white", background: color, padding: "1px 6px", borderRadius: 4, letterSpacing: "0.02em" }}>
+                      {short}
+                    </span>
+                  );
+                })()}
+              </div>
               <div style={{ fontSize: 12, color: isOnline ? "var(--c-accent)" : "var(--c-fg-2)" }}>{isOnline ? "online" : "offline"}</div>
             </div>
           </button>
