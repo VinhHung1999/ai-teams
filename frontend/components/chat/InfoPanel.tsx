@@ -307,145 +307,172 @@ export function InfoPanel({ open, tab, project, roles, onClose, onTabChange, onS
           boxShadow: "-4px 0 24px rgba(0,0,0,0.08)",
         }}
       >
-        {/* Panel header */}
-        <div
-          style={{
-            display: "flex", alignItems: "center", gap: 10,
-            padding: "10px 16px",
-            borderBottom: "1px solid var(--c-line)",
-            flexShrink: 0,
-          }}
-        >
-          {/* ← back (mobile) */}
-          <button
-            onClick={onClose}
-            className="info-panel-back"
-            style={{
-              width: 38, height: 38, borderRadius: "50%", border: "none",
-              background: "transparent", color: "var(--c-fg-1)",
-              placeItems: "center", cursor: "pointer",
-            }}
-            onMouseEnter={(e) => (e.currentTarget.style.background = "var(--c-bg-hover)")}
-            onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
-            title="Back"
-          >
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/>
-            </svg>
-          </button>
-          {/* ✕ close (desktop) */}
-          <button
-            onClick={onClose}
-            className="info-panel-close"
-            style={{
-              width: 38, height: 38, borderRadius: "50%", border: "none",
-              background: "transparent", color: "var(--c-fg-1)",
-              placeItems: "center", cursor: "pointer",
-            }}
-            onMouseEnter={(e) => (e.currentTarget.style.background = "var(--c-bg-hover)")}
-            onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
-            title="Close"
-          >
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M18 6L6 18M6 6l12 12"/>
-            </svg>
-          </button>
-          <span style={{ fontWeight: 600, fontSize: 16, flex: 1, color: "var(--c-fg-0)" }}>Project Info</span>
-        </div>
-
-        {/* Team hero */}
-        {project && (
-          <div style={{ textAlign: "center", padding: "24px 16px 16px", flexShrink: 0 }}>
+        {tab === "files" ? (
+          /* Files full-screen: floating back button + FileManager fills everything */
+          <>
+            <button
+              onClick={() => onTabChange("overview")}
+              title="Back to overview"
+              style={{
+                position: "absolute", top: 10, left: 10, zIndex: 10,
+                width: 34, height: 34, borderRadius: "50%", border: "none",
+                background: "rgba(0,0,0,0.06)", color: "var(--c-fg-1)",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                cursor: "pointer",
+              }}
+              onMouseEnter={(e) => (e.currentTarget.style.background = "var(--c-bg-hover)")}
+              onMouseLeave={(e) => (e.currentTarget.style.background = "rgba(0,0,0,0.06)")}
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/>
+              </svg>
+            </button>
+            <div className="flex-1 overflow-hidden">
+              <FilesTab project={project} />
+            </div>
+          </>
+        ) : (
+          <>
+            {/* Panel header */}
             <div
               style={{
-                width: 64, height: 64, borderRadius: "50%",
-                background: teamGradient(project.id),
-                display: "flex", alignItems: "center", justifyContent: "center",
-                color: "white", fontWeight: 700, fontSize: 28,
-                margin: "0 auto 12px",
+                display: "flex", alignItems: "center", gap: 10,
+                padding: "10px 16px",
+                borderBottom: "1px solid var(--c-line)",
+                flexShrink: 0,
               }}
             >
-              {project.name.charAt(0).toUpperCase()}
+              {/* ← back (mobile) */}
+              <button
+                onClick={onClose}
+                className="info-panel-back"
+                style={{
+                  width: 38, height: 38, borderRadius: "50%", border: "none",
+                  background: "transparent", color: "var(--c-fg-1)",
+                  placeItems: "center", cursor: "pointer",
+                }}
+                onMouseEnter={(e) => (e.currentTarget.style.background = "var(--c-bg-hover)")}
+                onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+                title="Back"
+              >
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/>
+                </svg>
+              </button>
+              {/* ✕ close (desktop) */}
+              <button
+                onClick={onClose}
+                className="info-panel-close"
+                style={{
+                  width: 38, height: 38, borderRadius: "50%", border: "none",
+                  background: "transparent", color: "var(--c-fg-1)",
+                  placeItems: "center", cursor: "pointer",
+                }}
+                onMouseEnter={(e) => (e.currentTarget.style.background = "var(--c-bg-hover)")}
+                onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+                title="Close"
+              >
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M18 6L6 18M6 6l12 12"/>
+                </svg>
+              </button>
+              <span style={{ fontWeight: 600, fontSize: 16, flex: 1, color: "var(--c-fg-0)" }}>Project Info</span>
             </div>
-            <div style={{ fontSize: 20, fontWeight: 600, color: "var(--c-fg-0)" }}>{project.name}</div>
-            <div style={{ fontSize: 14, color: isOnline ? "var(--c-status-ok)" : "var(--c-fg-2)", marginTop: 4, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
-              <span style={{ width: 7, height: 7, borderRadius: "50%", background: isOnline ? "var(--c-status-ok)" : "var(--c-fg-3)", display: "inline-block" }} />
-              {isOnline ? `Active · ${roles.length} pane${roles.length !== 1 ? "s" : ""}` : "Idle"}
-            </div>
-            {/* [372] Team management actions — icon buttons */}
-            <div style={{ display: "flex", gap: 10, marginTop: 14, justifyContent: "center" }}>
-              {([
-                { action: "start" as const, title: "Start team", color: "#10b981", disabled: isOnline || loadingAction !== null,
-                  icon: <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><polygon points="5,3 19,12 5,21"/></svg> },
-                { action: "kill" as const, title: "Kill team", color: "#ef4444", disabled: !isOnline || loadingAction !== null,
-                  icon: <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="4" width="16" height="16" rx="2"/></svg> },
-                { action: "refresh" as const, title: "Refresh team", color: "#3390ec", disabled: loadingAction !== null,
-                  icon: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg> },
-                { action: "compact" as const, title: "Compact all (free context)", color: "#a78bfa", disabled: !isOnline || loadingAction !== null,
-                  icon: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/><line x1="12" y1="8" x2="12" y2="16"/><polyline points="8 12 12 16 16 12"/></svg> },
-              ]).map(({ action, title, color, disabled, icon }) => (
-                <button
-                  key={action}
-                  disabled={disabled}
-                  onClick={() => doAction(action)}
-                  title={title}
+
+            {/* Team hero */}
+            {project && (
+              <div style={{ textAlign: "center", padding: "24px 16px 16px", flexShrink: 0 }}>
+                <div
                   style={{
-                    width: 38, height: 38, borderRadius: "50%", border: "none",
-                    background: disabled ? "rgba(0,0,0,0.04)" : `${color}18`,
-                    color: disabled ? "var(--c-fg-3)" : color,
+                    width: 64, height: 64, borderRadius: "50%",
+                    background: teamGradient(project.id),
                     display: "flex", alignItems: "center", justifyContent: "center",
-                    cursor: disabled ? "not-allowed" : "pointer",
-                    opacity: loadingAction === action ? 0.5 : 1,
+                    color: "white", fontWeight: 700, fontSize: 28,
+                    margin: "0 auto 12px",
                   }}
                 >
-                  {loadingAction === action
-                    ? <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" style={{ animation: "spin 1s linear infinite" }}><path d="M12 2v4"/><path d="M12 18v4" opacity="0.3"/></svg>
-                    : icon
-                  }
+                  {project.name.charAt(0).toUpperCase()}
+                </div>
+                <div style={{ fontSize: 20, fontWeight: 600, color: "var(--c-fg-0)" }}>{project.name}</div>
+                <div style={{ fontSize: 14, color: isOnline ? "var(--c-status-ok)" : "var(--c-fg-2)", marginTop: 4, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+                  <span style={{ width: 7, height: 7, borderRadius: "50%", background: isOnline ? "var(--c-status-ok)" : "var(--c-fg-3)", display: "inline-block" }} />
+                  {isOnline ? `Active · ${roles.length} pane${roles.length !== 1 ? "s" : ""}` : "Idle"}
+                </div>
+                {/* [372] Team management actions — icon buttons */}
+                <div style={{ display: "flex", gap: 10, marginTop: 14, justifyContent: "center" }}>
+                  {([
+                    { action: "start" as const, title: "Start team", color: "#10b981", disabled: isOnline || loadingAction !== null,
+                      icon: <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><polygon points="5,3 19,12 5,21"/></svg> },
+                    { action: "kill" as const, title: "Kill team", color: "#ef4444", disabled: !isOnline || loadingAction !== null,
+                      icon: <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="4" width="16" height="16" rx="2"/></svg> },
+                    { action: "refresh" as const, title: "Refresh team", color: "#3390ec", disabled: loadingAction !== null,
+                      icon: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg> },
+                    { action: "compact" as const, title: "Compact all (free context)", color: "#a78bfa", disabled: !isOnline || loadingAction !== null,
+                      icon: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/><line x1="12" y1="8" x2="12" y2="16"/><polyline points="8 12 12 16 16 12"/></svg> },
+                  ]).map(({ action, title, color, disabled, icon }) => (
+                    <button
+                      key={action}
+                      disabled={disabled}
+                      onClick={() => doAction(action)}
+                      title={title}
+                      style={{
+                        width: 38, height: 38, borderRadius: "50%", border: "none",
+                        background: disabled ? "rgba(0,0,0,0.04)" : `${color}18`,
+                        color: disabled ? "var(--c-fg-3)" : color,
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                        cursor: disabled ? "not-allowed" : "pointer",
+                        opacity: loadingAction === action ? 0.5 : 1,
+                      }}
+                    >
+                      {loadingAction === action
+                        ? <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" style={{ animation: "spin 1s linear infinite" }}><path d="M12 2v4"/><path d="M12 18v4" opacity="0.3"/></svg>
+                        : icon
+                      }
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Tabs — underline style */}
+            <div
+              style={{
+                display: "flex",
+                borderBottom: "1px solid var(--c-line)",
+                padding: "0 8px",
+                flexShrink: 0,
+              }}
+            >
+              {TABS.map(([key, label]) => (
+                <button
+                  key={key}
+                  onClick={() => onTabChange(key)}
+                  style={{
+                    flex: 1,
+                    padding: "12px 8px",
+                    border: "none",
+                    borderBottom: tab === key ? "2px solid var(--c-accent)" : "2px solid transparent",
+                    marginBottom: -1,
+                    background: "transparent",
+                    fontSize: 13, fontWeight: 500,
+                    color: tab === key ? "var(--c-accent)" : "var(--c-fg-2)",
+                    cursor: "pointer",
+                  }}
+                  onMouseEnter={(e) => { if (tab !== key) (e.currentTarget as HTMLElement).style.color = "var(--c-fg-0)"; }}
+                  onMouseLeave={(e) => { if (tab !== key) (e.currentTarget as HTMLElement).style.color = "var(--c-fg-2)"; }}
+                >
+                  {label}
                 </button>
               ))}
             </div>
-          </div>
+
+            {/* Tab content */}
+            <div className="flex-1 overflow-hidden">
+              {tab === "overview" && <OverviewTab project={project} />}
+              {tab === "agents" && <AgentsTab project={project} roles={roles} onSelectRole={onSelectRole} />}
+            </div>
+          </>
         )}
-
-        {/* Tabs — underline style */}
-        <div
-          style={{
-            display: "flex",
-            borderBottom: "1px solid var(--c-line)",
-            padding: "0 8px",
-            flexShrink: 0,
-          }}
-        >
-          {TABS.map(([key, label]) => (
-            <button
-              key={key}
-              onClick={() => onTabChange(key)}
-              style={{
-                flex: 1,
-                padding: "12px 8px",
-                border: "none",
-                borderBottom: tab === key ? "2px solid var(--c-accent)" : "2px solid transparent",
-                marginBottom: -1,
-                background: "transparent",
-                fontSize: 13, fontWeight: 500,
-                color: tab === key ? "var(--c-accent)" : "var(--c-fg-2)",
-                cursor: "pointer",
-              }}
-              onMouseEnter={(e) => { if (tab !== key) (e.currentTarget as HTMLElement).style.color = "var(--c-fg-0)"; }}
-              onMouseLeave={(e) => { if (tab !== key) (e.currentTarget as HTMLElement).style.color = "var(--c-fg-2)"; }}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-
-        {/* Tab content */}
-        <div className="flex-1 overflow-hidden">
-          {tab === "overview" && <OverviewTab project={project} />}
-          {tab === "files" && <FilesTab project={project} />}
-          {tab === "agents" && <AgentsTab project={project} roles={roles} onSelectRole={onSelectRole} />}
-        </div>
       </div>
     </>
   );
