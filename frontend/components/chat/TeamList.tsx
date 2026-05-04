@@ -183,19 +183,13 @@ function toSlug(name: string): string {
 function NewTeamModal({ onClose, onSent }: { onClose: () => void; onSent: () => void }) {
   const [name, setName] = useState("");
   const [workDir, setWorkDir] = useState("");
-  const [teamName, setTeamName] = useState("");
-  const [sessionName, setSessionName] = useState("");
   const [roles, setRoles] = useState("PO DEV QC CMO");
-  const [nameEdited, setNameEdited] = useState(false);
-  const [sessionEdited, setSessionEdited] = useState(false);
   const [showPicker, setShowPicker] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!nameEdited) setTeamName(name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, ""));
-    if (!sessionEdited) setSessionName(toSlug(name));
-  }, [name, nameEdited, sessionEdited]);
+  const teamName = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  const sessionName = teamName.replace(/-/g, "_");
 
   useEffect(() => {
     const h = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
@@ -279,17 +273,6 @@ function NewTeamModal({ onClose, onSent }: { onClose: () => void; onSent: () => 
               onClose={() => setShowPicker(false)}
             />
           )}
-        </div>
-
-        <div style={{ display: "flex", gap: 10 }}>
-          <label style={{ ...labelStyle, flex: 1 }}>
-            <span style={capStyle}>Team folder name</span>
-            <input value={teamName} onChange={(e) => { setTeamName(e.target.value); setNameEdited(true); }} placeholder="scrum-team" style={inputStyle} />
-          </label>
-          <label style={{ ...labelStyle, flex: 1 }}>
-            <span style={capStyle}>tmux session</span>
-            <input value={sessionName} onChange={(e) => { setSessionName(e.target.value); setSessionEdited(true); }} placeholder="scrum_team" style={inputStyle} />
-          </label>
         </div>
 
         <label style={labelStyle}>
