@@ -307,6 +307,7 @@ export default function ChatPage() {
             lastEvents={lastEvents}
             lastEventAt={lastEventAt}
             lastReadAt={lastReadAt}
+            onCreateTeam={() => { /* PO skill scaffolds async — user refreshes to see new team */ }}
           />
         </div>
       </aside>
