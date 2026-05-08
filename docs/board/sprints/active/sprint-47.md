@@ -70,7 +70,7 @@ kanban-plugin: board
 ## In Progress
 
 - [ ] **[382]** Chat dùng tmux capture-pane (drop JSONL hoàn toàn)
-      **Priority:** P0 · **Points:** 2 · **Assignee:** DEV · **Status:** testing · **Backlog-ID:** 417
+      **Priority:** P0 · **Points:** 2 · **Assignee:** DEV · **Status:** in_progress · **Backlog-ID:** 417
       **Branch:** `feature_chat_capture_pane`
       **Description:**
       Boss reframe 2026-05-08: "Cái chat làm cơ chế theo capture-pane giống AgentPane luôn, chỉ khác render UI thôi. Đơn giản nha, sử dụng lại cơ chế của AgentPaneView á nhưng mà render kiểu mới thôi. Bỏ luôn cái JSONL đi."
@@ -158,17 +158,19 @@ kanban-plugin: board
       **Notes:**
       2026-05-08 10:42 DEV: Iter 1 complete (commit 54aef51) — drop JSONL backend, ChatStream parser 6 rules, ChatInput send path swap, attach/voice rename to /api/projects/:pid/*, build pass.
       2026-05-08 10:45 BOSS: Iter 1 fail → 3 UI issues (tool/text not separated, dividers+footer noise, thinking states render plain). Iter 2 spec added.
-      2026-05-08 10:55 DEV: Iter 2 complete (commit c34c428) — ChatStream rewrite single-file: 7-pattern parser dispatch, ToolChipView compact pill, ResultIndent gray, ThinkingMiniView italic+spinner, incremental render via cacheRef Map<id,Bubble> + React.memo BubbleRow + ThinkingMiniView. Build pass, /chat 200.
+      2026-05-08 10:55 DEV: Iter 2 complete (commit c34c428) — ChatStream rewrite single-file: 7-pattern parser dispatch, ToolChipView compact pill, ResultIndent gray, ThinkingMiniView italic+spinner, incremental render via cacheRef + React.memo. Build pass.
       2026-05-08 11:02 PO: Card moved In Progress → Testing.
-      2026-05-08 11:05 BOSS: Iter 2 fail → vẫn cluttered, mix tool+thinking+chat trong 1 stream. Reframe — TÁCH 2 ZONES (chat bubbles only vs running panel for activity). Iter 3 spec added.
-      2026-05-08 11:08 PO: Card rolled back Testing → In Progress per Boss reframe.
-      2026-05-08 11:18 DEV: Iter 3 complete. Frontend build pass, PM2 restarted, /chat 200.
-      Refactor:
-        • NEW `lib/chatParser.ts` — exports `parsePane`, `deriveActivity`, `filterMessages`, plus types `MessageBubble` (with `source: 'input' | 'response'`), `ToolBubble`, `ThinkingBubble`. Centralizes the 7-rule dispatch so both chat zones can derive their slice without duplicating regex / dispatch code.
-        • SLIM `components/chat/ChatStream.tsx` — drops ToolChipView + ThinkingMiniView entirely; imports parser, calls `filterMessages(parsePane(...))`, renders only MessageBubble rows (BOSS + cross-talk + assistant `⏺ <text>` responses). cacheRef + React.memo logic preserved for incremental render.
-        • NEW `components/chat/RunningPanel.tsx` — owns ToolChipView + ThinkingMiniView. Calls `parsePane` + `deriveActivity` to scope tools to "after the most recent assistant-response message" (so finished turns don't linger). Single-slot thinking. Hidden when both empty. 3s idle-fade timer (`IDLE_FADE_MS=3000`) tracks an `activityKey` snapshot of tool ids + result lengths + thinking id; fresh activity resets timer, no new activity within 3s sets `hiddenByIdle=true`. ToolBubble references reused via cacheRef so unchanged chips skip render.
-        • EDIT `app/chat/page.tsx` — vertical layout now `ChatStream (flex-1) → RunningPanel (auto, hidden when idle) → ChatInput`. Both ChatStream and RunningPanel get the same `output` + `viewingRole` props, parse independently (cheap regex pass on a few KB).
-      Acceptance code-side: build clean, /chat 200, parser unit-test logic verified by reading test snapshots in head. Browser visual still pending Boss confirm: zone separation, idle-collapse, fade after assistant text, PO/DEV cross-talk in chat zone (not running zone), tool chip visual stays in RunningPanel only.
+      2026-05-08 11:05 BOSS: Iter 2 fail → vẫn cluttered, mix tool+thinking+chat trong 1 stream. Reframe — TÁCH 2 ZONES. Iter 3 spec added.
+      2026-05-08 11:08 PO: Card rolled back Testing → In Progress.
+      2026-05-08 11:18 DEV: Iter 3 complete (commit 2b0f161, 5 files +537/-452, 2 new). Refactor:
+        • NEW `lib/chatParser.ts` — exports `parsePane`, `deriveActivity`, `filterMessages`, types `MessageBubble{source: 'input' | 'response'}`, `ToolBubble`, `ThinkingBubble`. Centralizes 7-rule dispatch.
+        • SLIM `components/chat/ChatStream.tsx` — drops ToolChipView + ThinkingMiniView; renders only MessageBubble rows (BOSS + cross-talk + assistant `⏺ <text>` responses).
+        • NEW `components/chat/RunningPanel.tsx` — owns ToolChipView + ThinkingMiniView, scopes tools to "after most recent assistant-response message", hidden when empty, 3s idle-fade timer (`IDLE_FADE_MS=3000`).
+        • EDIT `app/chat/page.tsx` — vertical stack `ChatStream (flex-1) → RunningPanel (auto, hidden when idle) → ChatInput`.
+      Build clean, /chat 200, PM2 restarted. Browser visual + zone separation acceptance still requires Boss test.
+      2026-05-08 11:20 PO: Card moved In Progress → Testing for Iter 3 browser test.
+      2026-05-08 11:25 BOSS: Iter 3 partial fail — `✢ Sock-hopping…` thinking line vẫn lọt vào ChatStream (parser pattern `[✻✳·]` không cover `✢`). Patch: expand thinking-char set bao gồm `✢` + tất cả Claude Code spinner variants (`✻✳✢·⊹✺✷✦✧◦∗⋆`). Test: bất kỳ line `^<spinner-char>\s+\w+(ing|ed)…?` → RunningPanel, KHÔNG attach vào chat bubble.
+      2026-05-08 11:25 PO: Card rolled back Testing → In Progress.
 
 ## In Review
 

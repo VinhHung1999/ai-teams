@@ -52,7 +52,9 @@ const ANSI_OSC_RE = /\x1b\].*?(?:\x1b\\|\x07|)/g;
 const SENDER_RE = /^([A-Z]{2,})\s*\[(\d{1,2}:\d{2})\]:\s*/;
 const TOOL_RE = /^⏺\s+([A-Z][a-zA-Z_0-9]*)\s*\((.*)$/;
 const RESULT_RE = /^\s+⎿\s+(.+)/;
-const THINKING_RE = /^\s*[✻✳·]\s+(.+)/;
+// [382 Iter 3.1] Spinner glyph set — Claude Code rotates through several;
+// add chars here when new glyphs leak into ChatStream as continuation.
+const THINKING_RE = /^\s*[✻✳✢·⊹✺✷✦✧◦∗⋆]\s+(.+)/;
 const BOX_ONLY_RE = /^[─━┌┐└┘│┃═]+$/;
 
 export function stripAnsi(s: string): string {
