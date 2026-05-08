@@ -70,7 +70,7 @@ kanban-plugin: board
 ## In Progress
 
 - [ ] **[382]** Chat dùng tmux capture-pane (drop JSONL hoàn toàn)
-      **Priority:** P0 · **Points:** 2 · **Assignee:** DEV · **Status:** in_progress · **Backlog-ID:** 417
+      **Priority:** P0 · **Points:** 2 · **Assignee:** DEV · **Status:** testing · **Backlog-ID:** 417
       **Branch:** `feature_chat_capture_pane`
       **Description:**
       Boss reframe 2026-05-08: "Cái chat làm cơ chế theo capture-pane giống AgentPane luôn, chỉ khác render UI thôi. Đơn giản nha, sử dụng lại cơ chế của AgentPaneView á nhưng mà render kiểu mới thôi. Bỏ luôn cái JSONL đi."
@@ -171,6 +171,7 @@ kanban-plugin: board
       2026-05-08 11:20 PO: Card moved In Progress → Testing for Iter 3 browser test.
       2026-05-08 11:25 BOSS: Iter 3 partial fail — `✢ Sock-hopping…` thinking line vẫn lọt vào ChatStream (parser pattern `[✻✳·]` không cover `✢`). Patch: expand thinking-char set bao gồm `✢` + tất cả Claude Code spinner variants (`✻✳✢·⊹✺✷✦✧◦∗⋆`). Test: bất kỳ line `^<spinner-char>\s+\w+(ing|ed)…?` → RunningPanel, KHÔNG attach vào chat bubble.
       2026-05-08 11:25 PO: Card rolled back Testing → In Progress.
+      2026-05-08 11:27 DEV: Iter 3.1 patch landed (commit b3c830d). `THINKING_RE` in `lib/chatParser.ts` expanded from `[✻✳·]` to `[✻✳✢·⊹✺✷✦✧◦∗⋆]`. Verified no collision with existing prefixes (`❯` U+276F, `⏺` U+23FA, `⎿` U+23BF, box-drawing `─━┌┐└┘│┃═`). Build clean, PM2 restart. New spinner glyphs in future → append to the set at `lib/chatParser.ts` THINKING_RE.
 
 ## In Review
 
