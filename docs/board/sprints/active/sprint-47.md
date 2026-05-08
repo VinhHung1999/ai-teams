@@ -97,103 +97,78 @@ kanban-plugin: board
       - KHÔNG prepend `[via UI] BOSS:` (Boss 2026-05-08 — "mắc công quá")
       - Optimistic UI: KHÔNG cần
 
-      **Iteration 2 (Boss feedback 2026-05-08 10:45) — UI polish "thân thiện với chat":**
-      Boss browser test → 3 vấn đề:
-      1. Chưa phân biệt tool call vs assistant text response (cả 2 đều `⏺ ` line, render plain text như nhau)
-      2. Render dư separator dividers (`──...──`) + status footer (`[Opus 4.7] 📁 ai-teams ...`) + cost bar + permission line → UI noise
-      3. Thinking states (`✻ Cooked for Xs`, `· Meandering…`, `✳ Moving card...`) chưa render special — Boss muốn mini "thinking bubble" riêng
+      **Iteration 2 (Boss feedback 2026-05-08 10:45) — UI polish:**
+      A. Skip noise lines (box-drawing, footer, cost bar, permission, bare `❯`)
+      B. Thinking mini-bubble cho `✻/✳/·`
+      C. Tool chip cho `⏺ Name(args)`
+      D. Tool result indented `⎿`
+      E. Assistant text bubble cho `⏺ <text>` (no tool pattern)
+      Render: incremental, append-only, stable React keys, single thinking slot.
 
-      **Parser refinements ChatStream.tsx (Iteration 2):**
+      **Iteration 3 (Boss feedback 2026-05-08 11:05) — TÁCH ZONES: chat bubbles ≠ running panel:**
+      Boss exact: "Bubule chat á là chỉ hiển thị cái mà chat của bạn và tôi thôi, còn kiểu mấy cái tool đang chạy á, thì nằm ở trong phần running, thinking đồ á, còn bubunle là chat của bạn và tôi thôi"
 
-      A. **Skip noise lines** (discard hoàn toàn, không thuộc bubble nào):
-         - Full-width box-drawing: `^[─━┌┐└┘│┃═\s]+$` (chỉ chứa các char box hoặc space, không có chữ)
-         - Status footer: line bắt đầu `[Sonnet`/`[Opus`/`[Haiku` hoặc chứa `░░░` progress bar
-         - Cost/time bar: line chứa `⏱️` hoặc match `\d+%\s*\|\s*\$\d`
-         - Permission line: chứa `⏵⏵ bypass permissions`
-         - Bottom empty prompt: line chỉ có `❯` (không có text sau)
+      → Iter 2 render tool chip + thinking + assistant text + BOSS chung 1 stream → cluttered. Boss muốn 2 zones tách rạch ròi:
 
-      B. **Thinking mini-bubble** (visual: italic, opacity ~0.65, smaller font, animated dot icon ◌ hoặc spinner):
-         - Pattern: `^[✻✳·]\s+(.+)` → thinking mini-bubble
-         - Examples bắt buộc test: `✻ Cooked for 21s`, `✻ Crunched for 12s`, `· Meandering…`, `✳ Moving card to In Progress…`
+      **Zone 1 — ChatStream (bubbles ONLY, pure conversation):**
+      - BOSS messages (rule `❯ ` không role prefix)
+      - PO/DEV cross-talk (rule `<ROLE> [HH:mm]:`)
+      - Assistant TEXT response (`⏺ <text>` KHÔNG phải tool call)
+      - = chat giữa người với người, đọc lại như Telegram/WhatsApp
 
-      C. **Tool call chip** (visual: compact horizontal chip với tool icon, KHÔNG full-width bubble):
-         - Pattern: `^⏺\s+([A-Z][a-zA-Z_]*)\(` → tool chip
-         - Examples: `⏺ Read(/path)`, `⏺ Bash(...)`, `⏺ Edit(...)`, `⏺ Write(...)`, `⏺ Skill(...)`, `⏺ Task(...)`
-         - Render: chip ngang gọn (icon + tool name + truncated args), height ~24-32px
+      **Zone 2 — RunningPanel (separate component, agent activity):**
+      - Tool calls đang chạy (`⏺ Name(args)`) → tool chip
+      - Tool results (`⎿ ...`) → indented gray dưới chip
+      - Thinking states (`✻/✳/·`) → mini italic single-slot
+      - = "Đang chạy gì" / "What's running"
+      - **Khi idle (không tool/thinking active) → panel collapse/hide**
+      - **Tool history ephemeral** — sau khi assistant text response arrive (turn done) → activity zone fade/clear (không append vào chat zone)
 
-      D. **Tool result indented** (visual: gray, smaller font, indent dưới chip):
-         - Pattern: `^\s*⎿\s+(.+)` → tool result, render attach dưới tool chip C gần nhất
+      **Layout (PO propose):**
+      Vertical stack: `ChatStream` (scrollable, flex-1) → `RunningPanel` (auto-height, collapse khi idle) → `ChatInput` ở dưới cùng.
+      DEV confirm reasonable hoặc đề xuất layout khác.
 
-      E. **Assistant text bubble** (visual: bubble bình thường role = viewingRole):
-         - Pattern: `^⏺\s+(.+)` mà KHÔNG match C (no `(...)` ngay sau tool name) → response bubble
-         - Multi-line continuation attach vào bubble này
+      **Implementation refactor:**
+      - Move `ToolBubble` + `ThinkingBubble` render OUT khỏi ChatStream sang component mới `components/chat/RunningPanel.tsx`
+      - Parser dispatch sang 2 state slots:
+        - `messages: MessageBubble[]` → ChatStream (BOSS + PO/DEV + assistant text only)
+        - `activity: { tools: ToolBubble[]; thinking: ThinkingBubble | null }` → RunningPanel
+      - RunningPanel hidden when `activity.tools.length === 0 && activity.thinking === null`
+      - Idle heuristic: clear activity state after assistant text response arrives, OR after no new ⏺/⎿/✻ line trong N=3s
+      - Incremental render principle giữ nguyên cho cả 2 zones
 
-      **Render strategy — INCREMENTAL, append-only (Boss 2026-05-08 10:48):**
-      Boss exact: "Đoạn UI thì không cần phải render liên tục, khi có tool mới thì render thêm bubble tool, khi có câu trả lời thì render câu trả lời mới, khi mà loading thì có bubble loading thôi."
-
-      → KHÔNG full re-parse + re-render mỗi tick (500ms WS message). Implementation pattern:
-
-      1. **State**: keep `bubbles: Bubble[]` (stable React keys per bubble) + `thinkingBubble: Bubble | null` (single active loading slot).
-      2. **On WS output update**: parse incoming text; diff against last-known parser state to detect:
-         - NEW tool chip → append to `bubbles` (new key, animate in)
-         - NEW tool result → attach indented under matching tool chip (mutate that bubble's children, không re-mount cả list)
-         - NEW assistant text bubble OR continuation to existing → append/extend (existing bubble extends content, no new mount)
-         - Thinking state appears → set `thinkingBubble` (single active slot — replace nếu đang có)
-         - Thinking state disappears (next line is tool/text/another thinking phase): dismiss `thinkingBubble`
-         - Non-changed lines → no-op (existing bubbles không re-render)
-      3. **React keys**: stable (vd `bubble-${index}-${firstLineHash}`) để React không unmount/remount bubbles cũ → no flicker, no scroll jump.
-      4. **At most 1 thinking bubble active at a time** (replace, không stack).
-
-      **Acceptance (combined Iter 1+2):**
-      - Mở /chat → bubbles render (PO/DEV/BOSS phân biệt, ANSI stripped, multi-line group)
-      - Boss gõ → ≤500ms BOSS bubble (parser via `❯ ` rule, no `[via UI] BOSS:` prefix)
-      - Reload → bubbles regen từ pane snapshot
-      - Switch role → re-subscribe đúng
-      - Build pass, không còn `chat.ts` / `/ws/chat` / `/api/chat/*` references
-      - **NEW: Tool call → chip (compact, không full bubble)**
-      - **NEW: Tool result → indented gray dưới chip**
-      - **NEW: Thinking states → italic mini-bubble với spinner**
-      - **NEW: Skip toàn bộ noise** (dividers, status footer, cost bar, permission, bottom empty `❯`)
-      - **NEW: Assistant text bubble visually phân biệt với tool chip** (full bubble vs compact chip)
-      - **NEW: Incremental render** — bubbles cũ không re-mount khi WS tick, append-only; tối đa 1 thinking bubble active (replace, không stack); dismiss thinking khi tool/text response arrives
+      **Acceptance (combined Iter 1+2+3):**
+      - Mở /chat → ChatStream chỉ chứa MessageBubble (BOSS + assistant text + PO/DEV cross-talk); KHÔNG có tool chip, KHÔNG có thinking trong stream chat
+      - Khi agent đang chạy tool → tool chip xuất hiện trong RunningPanel (zone riêng), không mix với chat
+      - Khi agent thinking → thinking mini xuất hiện trong RunningPanel
+      - Khi agent idle → RunningPanel collapse/hide hoàn toàn
+      - Khi turn done (assistant text arrive trong chat) → tool/thinking fade khỏi RunningPanel
+      - Boss gõ → ≤500ms BOSS bubble trong ChatStream
+      - Reload → ChatStream + RunningPanel regen từ pane snapshot
+      - Switch role → cả 2 zones re-subscribe đúng
+      - Build pass
 
       **Out of scope:**
       - Tool-call EXPAND UI / hover popover (chip read-only summary)
       - Image preview / interactive question buttons (Boss accepted regression)
       - History persistence beyond tmux scrollback default
+      - Tool history sau turn done (ephemeral, không append vào chat hoặc lưu)
       - Sprint 48 [380] sending-miết — DELETE (auto-fixed bởi story này)
 
       **Notes:**
-      2026-05-08 DEV: Implementation complete on branch `feature_chat_capture_pane`. Build passes (backend + frontend).
-      Backend changes:
-        • DELETED `backend-node/src/routes/chat.ts` (entire file).
-        • EDIT `index.ts`: dropped chat router import + mount.
-        • EDIT `routes/terminal.ts`: dropped `/ws/chat` + `/ws/chat/firehose` upgrade branches and chat WSS imports.
-        • RENAMED `POST /api/chat/:pid/attach` → `POST /api/projects/:pid/attach` (attachments.ts).
-        • RENAMED `POST /api/chat/:pid/voice` → `POST /api/projects/:pid/voice` (voice.ts) — heads-up to [377] DEV.
-        • Both renamed handlers also drop the `[via UI] BOSS:` prefix from the tm-send'd msg per Boss's 2026-05-08 directive — pane shows `❯ <msg>`, parser tags as BOSS.
-      Frontend changes:
-        • REWROTE `components/chat/ChatStream.tsx`: now accepts `output: string` + `viewingRole: string`, parses pane text into bubbles using the spec'd 6-rule pipeline (strip ANSI → split → `⏺ `/`❯ `/role-prefix/continuation), renders glass MessageBubble row per bubble. Auto-scroll preserved.
-        • EDIT `components/chat/ChatInput.tsx`: `attach` + `voice` paths updated to new namespace; `send` path now goes through `onSend` prop wired to `/api/tmux/session/<sess>/send` (no `[via UI] BOSS:` prepend).
-        • REWIRED `app/chat/page.tsx`: dropped `useChatWs`/`useFirehoseWs` + history fetch + 30s refetch + last-events inbox preview + optimistic `sendingMessage`. Uses `useTmuxWs(sessionName, viewingRole)` and forwards `outputs[viewingRole]` to ChatStream. `handleSend` POSTs raw text to tmux endpoint.
-        • DELETED `lib/useChatWs.ts`, `lib/useFirehoseWs.ts`, `lib/chat-types.ts`, `components/chat/ToolCard.tsx`, `app/chat/tool-preview/` (all dead post-rewrite).
-        • EDIT `lib/api.ts`: removed `chatHistory` + `chatSend` helpers.
-      Verification: build pass on both projects; `grep -rn "/api/chat\\|useChatWs\\|useFirehoseWs\\|ChatEvent\\|chat-types"` shows zero callsites (only doc comments). PM2 services restarted clean. /chat page returns 200; old `/api/chat/14/history` and `/api/chat/14/send` return 404 (deleted, expected).
-      ⚠ Functional acceptance (BOSS bubble round-trip ≤500ms, role switch re-subscribe, reload regen) requires browser test by Boss/PO — moved to Testing column for QC. Code-side acceptance (build pass, no leftover refs, parser logic mirrors spec rules 1-6) verified.
-      Sprint 48 [380] auto-fixed (no longer needs separate work).
-      2026-05-08 10:45 BOSS browser test → ROLLBACK to In Progress: Iteration 2 (UI polish) needed — tool calls vs assistant text chưa phân biệt, dividers+status footer noise, thinking states render plain. Spec mới tại "Iteration 2" section bên trên.
-      2026-05-08 10:55 DEV: Iteration 2 implementation complete. Frontend build pass.
-      ChatStream.tsx rewrite (single-file scope):
-        • Bubble model split into 3 kinds: `MessageBubble` (role + text), `ToolBubble` (name + args + result), `ThinkingBubble` (transient single-slot).
-        • Parser dispatch order matches spec exactly: noise-skip → ⎿ result (attaches to nearest preceding tool) → ✻/✳/· thinking (replace single slot) → ❯ message (BOSS or sender-prefix) → ⏺ Name(...) tool chip → ⏺ <text> assistant text → continuation (appends to nearest message bubble; tools don't accept continuation).
-        • Noise patterns blocked per spec: box-drawing-only lines (`^[─━┌┐└┘│┃═]+$` after trim), status footer (`[Sonnet`/`[Opus`/`[Haiku`), `░░░` progress bar, `⏱`/`%|$` cost bar, `⏵⏵ bypass permissions`, bare `❯` bottom prompt.
-        • Tool chip render: compact horizontal pill with icon (reusing `tool-icons.tsx` ICON_MAP), bold tool name, mono args truncated to 80 chars. Result rendered as gray indented `⎿ <line>` underneath chip (single line per spec).
-        • Thinking mini-bubble: italic, opacity 0.65, `status-pulse` animated dot, fits below all bubbles.
-        • Incremental render: useMemo derives bubbles from `output`, but bubble OBJECTS are reference-stable across parses — `cacheRef: Map<id, Bubble>` reuses prior reference when content matches (kind + name/args/result for tools, role + text + timestamp for messages). `BubbleRow` and `ThinkingMiniView` wrapped in `React.memo`. Result: when WS pushes a new tick that adds 1 line, only the affected bubble (or new appended bubble) re-renders; older rows skip render via shallow-equal memo.
-        • Bubble IDs combine sequential index + content hash (`msg-${seq}-${role}-${hash}`, `tool-${seq}-${name}-${hash}`) — stable across continuations because hash uses first-32-chars of starter line.
-        • Single thinking slot enforced by parser: every non-thinking event clears `thinking = null`. End-of-stream thinking line wins.
-      Verification: `tsc` + `next build` clean; PM2 web restart, /chat returns 200. Browser visual + incremental-render acceptance still requires Boss test.
-      Out-of-scope confirmed: tool expand UI / hover popover / image preview kept as accepted regression — chip is read-only summary only.
+      2026-05-08 10:42 DEV: Iter 1 complete (commit 54aef51) — drop JSONL backend, ChatStream parser 6 rules, ChatInput send path swap, attach/voice rename to /api/projects/:pid/*, build pass.
+      2026-05-08 10:45 BOSS: Iter 1 fail → 3 UI issues (tool/text not separated, dividers+footer noise, thinking states render plain). Iter 2 spec added.
+      2026-05-08 10:55 DEV: Iter 2 complete (commit c34c428) — ChatStream rewrite single-file: 7-pattern parser dispatch, ToolChipView compact pill, ResultIndent gray, ThinkingMiniView italic+spinner, incremental render via cacheRef Map<id,Bubble> + React.memo BubbleRow + ThinkingMiniView. Build pass, /chat 200.
+      2026-05-08 11:02 PO: Card moved In Progress → Testing.
+      2026-05-08 11:05 BOSS: Iter 2 fail → vẫn cluttered, mix tool+thinking+chat trong 1 stream. Reframe — TÁCH 2 ZONES (chat bubbles only vs running panel for activity). Iter 3 spec added.
+      2026-05-08 11:08 PO: Card rolled back Testing → In Progress per Boss reframe.
+      2026-05-08 11:18 DEV: Iter 3 complete. Frontend build pass, PM2 restarted, /chat 200.
+      Refactor:
+        • NEW `lib/chatParser.ts` — exports `parsePane`, `deriveActivity`, `filterMessages`, plus types `MessageBubble` (with `source: 'input' | 'response'`), `ToolBubble`, `ThinkingBubble`. Centralizes the 7-rule dispatch so both chat zones can derive their slice without duplicating regex / dispatch code.
+        • SLIM `components/chat/ChatStream.tsx` — drops ToolChipView + ThinkingMiniView entirely; imports parser, calls `filterMessages(parsePane(...))`, renders only MessageBubble rows (BOSS + cross-talk + assistant `⏺ <text>` responses). cacheRef + React.memo logic preserved for incremental render.
+        • NEW `components/chat/RunningPanel.tsx` — owns ToolChipView + ThinkingMiniView. Calls `parsePane` + `deriveActivity` to scope tools to "after the most recent assistant-response message" (so finished turns don't linger). Single-slot thinking. Hidden when both empty. 3s idle-fade timer (`IDLE_FADE_MS=3000`) tracks an `activityKey` snapshot of tool ids + result lengths + thinking id; fresh activity resets timer, no new activity within 3s sets `hiddenByIdle=true`. ToolBubble references reused via cacheRef so unchanged chips skip render.
+        • EDIT `app/chat/page.tsx` — vertical layout now `ChatStream (flex-1) → RunningPanel (auto, hidden when idle) → ChatInput`. Both ChatStream and RunningPanel get the same `output` + `viewingRole` props, parse independently (cheap regex pass on a few KB).
+      Acceptance code-side: build clean, /chat 200, parser unit-test logic verified by reading test snapshots in head. Browser visual still pending Boss confirm: zone separation, idle-collapse, fade after assistant text, PO/DEV cross-talk in chat zone (not running zone), tool chip visual stays in RunningPanel only.
 
 ## In Review
 

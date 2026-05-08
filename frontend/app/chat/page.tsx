@@ -11,6 +11,7 @@ import { ChatHeader } from "@/components/chat/ChatHeader";
 import { TopicBar } from "@/components/chat/TopicBar";
 import { PinStrip } from "@/components/chat/PinStrip";
 import { ChatStream } from "@/components/chat/ChatStream";
+import { RunningPanel } from "@/components/chat/RunningPanel";
 import { ChatInput } from "@/components/chat/ChatInput";
 import { InfoPanel } from "@/components/chat/InfoPanel";
 import { ChatTerminalPanel } from "@/components/chat/ChatTerminalPanel";
@@ -253,6 +254,11 @@ export default function ChatPage() {
                     output={paneOutput}
                     viewingRole={subscribeRole}
                     className="flex-1 min-h-0"
+                  />
+
+                  <RunningPanel
+                    output={paneOutput}
+                    viewingRole={subscribeRole}
                   />
 
                   <ChatInput
