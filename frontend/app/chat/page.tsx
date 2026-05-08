@@ -1,5 +1,10 @@
 "use client";
 
+// [382] Capture-pane chat — page wires useTmuxWs to ChatStream/ChatInput.
+// No JSONL, no events[], no firehose. ChatStream gets raw pane output and
+// parses it locally. ChatInput sends raw text via tmux send (no [via UI]
+// BOSS: prefix).
+
 import { useState, useEffect, useCallback, useRef } from "react";
 import { TeamList } from "@/components/chat/TeamList";
 import { ChatHeader } from "@/components/chat/ChatHeader";
@@ -10,13 +15,9 @@ import { ChatInput } from "@/components/chat/ChatInput";
 import { InfoPanel } from "@/components/chat/InfoPanel";
 import { ChatTerminalPanel } from "@/components/chat/ChatTerminalPanel";
 import { api } from "@/lib/api";
-import { useChatWs, getCachedChatEvents, seedChatCache } from "@/lib/useChatWs";
-import { useFirehoseWs } from "@/lib/useFirehoseWs";
+import { useTmuxWs } from "@/lib/useTmuxWs";
 import { usePushNotifications } from "@/lib/usePushNotifications";
 import type { Project } from "@/lib/types";
-import type { ChatEvent } from "@/lib/chat-types";
-
-const HISTORY_LIMIT = 200;
 
 export default function ChatPage() {
   const [projects, setProjects] = useState<Project[]>([]);
@@ -24,16 +25,9 @@ export default function ChatPage() {
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
   const [roles, setRoles] = useState<string[]>(["PO", "DEV"]);
 
-  const [events, setEvents] = useState<ChatEvent[]>([]);
-  const [loadingHistory, setLoadingHistory] = useState(false);
-  const [hasMore, setHasMore] = useState(false);
-  const oldestTsRef = useRef<string | undefined>(undefined);
-
   const [infoPanelOpen, setInfoPanelOpen] = useState(false);
   const [infoPanelTab, setInfoPanelTab] = useState<"overview" | "files" | "team">("overview");
   const [selectedRole, setSelectedRole] = useState<string | null>(null);
-
-  // [392] Terminal tab is a value of selectedRole === 'TERMINAL'
 
   // Mobile single-view state: 'list' | 'chat'
   const [mobileView, setMobileView] = useState<"list" | "chat">("list");
@@ -46,7 +40,7 @@ export default function ChatPage() {
   const onTouchStart = useCallback((e: React.TouchEvent) => {
     if (mobileView !== "chat") return;
     const t = e.touches[0];
-    if (t.clientX > 40) return; // only detect from left edge ≤40px
+    if (t.clientX > 40) return;
     swipeOrigin.current = { x: t.clientX, y: t.clientY };
     swipeActive.current = false;
   }, [mobileView]);
@@ -57,7 +51,7 @@ export default function ChatPage() {
     const dx = t.clientX - swipeOrigin.current.x;
     const dy = Math.abs(t.clientY - swipeOrigin.current.y);
     if (!swipeActive.current) {
-      if (dy > dx) { swipeOrigin.current = null; return; } // vertical scroll wins
+      if (dy > dx) { swipeOrigin.current = null; return; }
       if (dx > 8) swipeActive.current = true;
     }
     if (swipeActive.current && dx > 0 && chatColRef.current) {
@@ -83,14 +77,11 @@ export default function ChatPage() {
     }
   }, []);
 
-  // Last event preview per project
-  const [lastEvents, setLastEvents] = useState<Record<number, string>>({});
-  // Inbox: last event timestamp per project (for sort + unread detection)
-  const [lastEventAt, setLastEventAt] = useState<Record<number, string>>({});
-  // Inbox: last read timestamp per project (persisted in localStorage)
+  // Inbox unread tracking — preserved across re-mounts via localStorage.
+  // Last-event preview / sort dropped with firehose (Sprint 47 [382]
+  // out-of-scope regression).
   const [lastReadAt, setLastReadAt] = useState<Record<number, string>>({});
 
-  // Load lastReadAt from localStorage on mount (client-only)
   useEffect(() => {
     try {
       const stored = localStorage.getItem("chat-read-state");
@@ -98,28 +89,8 @@ export default function ChatPage() {
     } catch {}
   }, []);
 
-  // Load projects on mount + fetch last-events for inbox sort
   const loadProjects = useCallback(() => {
-    api.listProjects().then((ps) => {
-      setProjects(ps);
-      if (ps.length > 0) {
-        const ids = ps.map((p) => p.id).join(",");
-        fetch(`/api/chat/last-events?projectIds=${ids}`)
-          .then((r) => r.json())
-          .then((data: Record<string, { lastMessageAt: string; lastMessageText: string }>) => {
-            const ats: Record<number, string> = {};
-            const previews: Record<number, string> = {};
-            for (const [k, v] of Object.entries(data)) {
-              const id = parseInt(k);
-              ats[id] = v.lastMessageAt;
-              previews[id] = v.lastMessageText;
-            }
-            setLastEventAt(ats);
-            setLastEvents((p) => ({ ...p, ...previews }));
-          })
-          .catch(() => {});
-      }
-    }).catch(() => {});
+    api.listProjects().then(setProjects).catch(() => {});
   }, []);
 
   useEffect(() => { loadProjects(); }, []);
@@ -143,48 +114,16 @@ export default function ChatPage() {
     return () => navigator.serviceWorker.removeEventListener("message", handler);
   }, []);
 
-  // [378c] Safety re-fetch: catch missed WS events every 30s + on tab focus
-  const selectedIdRef = useRef(selectedId);
-  selectedIdRef.current = selectedId;
-  useEffect(() => {
-    const refetch = async () => {
-      const id = selectedIdRef.current;
-      if (!id) return;
-      try {
-        const { events: hist } = await api.chatHistory(id, HISTORY_LIMIT);
-        setEvents((prev) => {
-          const existingIds = new Set(prev.map((e) => e.id));
-          const seen = new Set<string>();
-          const fresh = hist.filter((e) => {
-            if (existingIds.has(e.id) || seen.has(e.id)) return false;
-            seen.add(e.id); return true;
-          });
-          return fresh.length === 0 ? prev : [...prev, ...fresh].sort((a, b) => a.timestamp.localeCompare(b.timestamp));
-        });
-      } catch {}
-    };
-    const interval = setInterval(refetch, 30_000);
-    const onVisible = () => { if (document.visibilityState === "visible") refetch(); };
-    document.addEventListener("visibilitychange", onVisible);
-    return () => { clearInterval(interval); document.removeEventListener("visibilitychange", onVisible); };
-  }, []);
-
   const handleSelectProject = useCallback(async (id: number, ps?: Project[]) => {
     const list = ps ?? projects;
     const proj = list.find((p) => p.id === id) ?? null;
 
     setSelectedId(id);
     setSelectedProject(proj);
-    // [388] Restore from cache instantly; history fetch below will update/seed
-    setEvents(getCachedChatEvents(id));
-    oldestTsRef.current = undefined;
-    setHasMore(false);
     setMobileView("chat");
-    // [374] Reset InfoPanel to Overview when switching teams
     setInfoPanelOpen(false);
     setInfoPanelTab("overview");
 
-    // Mark as read
     const now = new Date().toISOString();
     setLastReadAt((prev) => {
       const updated = { ...prev, [id]: now };
@@ -194,88 +133,35 @@ export default function ChatPage() {
 
     if (!proj) return;
 
-    // Enrich with roles
     try {
       const full = await api.getProject(id);
       const projectRoles = full.roles?.length ? full.roles : ["PO", "DEV"];
       setRoles(projectRoles);
       setSelectedProject(full);
-      setSelectedRole(projectRoles[0] ?? null); // default to first role, no "All"
+      setSelectedRole(projectRoles[0] ?? null);
     } catch {}
-
-    // Load initial history
-    setLoadingHistory(true);
-    try {
-      const { events: hist, total } = await api.chatHistory(id, HISTORY_LIMIT);
-      seedChatCache(id, hist); // [388] seed module cache with authoritative history
-      setEvents(hist);
-      setHasMore(total > hist.length);
-      if (hist.length > 0) {
-        oldestTsRef.current = hist[0].timestamp;
-        // Update preview
-        const last = hist[hist.length - 1];
-        setLastEvents((prev) => ({
-          ...prev,
-          [id]: last.text?.slice(0, 60) ?? last.tool?.name ?? "",
-        }));
-      }
-    } catch {} finally {
-      setLoadingHistory(false);
-    }
   }, [projects]);
 
-  // Load more (older) events
-  const loadMore = useCallback(async () => {
-    if (!selectedId || loadingHistory || !hasMore) return;
-    setLoadingHistory(true);
-    try {
-      const { events: older, total } = await api.chatHistory(
-        selectedId, HISTORY_LIMIT, oldestTsRef.current
-      );
-      if (older.length > 0) {
-        oldestTsRef.current = older[0].timestamp;
-        setEvents((prev) => [...older, ...prev]);
-      }
-      setHasMore(total > older.length);
-    } catch {} finally {
-      setLoadingHistory(false);
-    }
-  }, [selectedId, loadingHistory, hasMore]);
-
-  // [388] Singleton WS handler — appends fresh events from per-project WS
-  const handleWsEvents = useCallback((fresh: ChatEvent[]) => {
-    setEvents((prev) => {
-      const existingIds = new Set(prev.map((e) => e.id));
-      const toAdd = fresh.filter((e) => !existingIds.has(e.id));
-      if (toAdd.length === 0) return prev;
-      return [...prev, ...toAdd];
-    });
-    const last = fresh[fresh.length - 1];
-    if (last && selectedId) {
-      setLastEvents((p) => ({ ...p, [selectedId]: (last.text ?? last.tool?.name ?? "").slice(0, 60) }));
-      setLastEventAt((p) => ({ ...p, [selectedId]: last.timestamp }));
-    }
-  }, [selectedId]);
-
-  useChatWs(selectedId, handleWsEvents);
-
-  // [351] Firehose — inbox preview only (lastEventAt + lastEvents for sidebar sort/badge)
-  useFirehoseWs(useCallback((projectId, events) => {
-    const last = events[events.length - 1];
-    if (!last) return;
-    setLastEventAt((p) => ({ ...p, [projectId]: last.timestamp }));
-    if (last.kind === "message" && last.text) {
-      setLastEvents((p) => ({ ...p, [projectId]: last.text!.slice(0, 60) }));
-    }
-  }, []));
+  const sessionName = selectedProject?.tmux_session_name ?? undefined;
+  const subscribeRole = selectedRole && selectedRole !== "TERMINAL" ? selectedRole : roles[0] ?? "PO";
+  const { outputs, wsStatus } = useTmuxWs(sessionName, subscribeRole);
+  const paneOutput = outputs[subscribeRole] ?? "";
 
   // [352] PWA Web Push
   usePushNotifications();
 
   const handleSend = useCallback(async (role: string, text: string) => {
-    if (!selectedId) return;
-    await api.chatSend(selectedId, role, text);
-  }, [selectedId]);
+    if (!sessionName) throw new Error("No tmux session for selected project");
+    const res = await fetch(`/api/tmux/session/${encodeURIComponent(sessionName)}/send`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ role, text }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error ?? `Send failed (${res.status})`);
+    }
+  }, [sessionName]);
 
   const openInfo = useCallback((tab: "overview" | "files" | "team" = "overview") => {
     setInfoPanelTab(tab);
@@ -283,7 +169,6 @@ export default function ChatPage() {
   }, []);
 
   return (
-    // data-mobile-view drives CSS for single-view on mobile (list|chat slide)
     <div
       className="h-[100dvh] overflow-hidden"
       data-mobile-view={mobileView}
@@ -294,7 +179,6 @@ export default function ChatPage() {
         color: "var(--c-fg-0)",
       }}
     >
-      {/* ── Teams sidebar ── */}
       <aside
         className="glass-sidebar flex flex-col overflow-hidden chat-mobile-list"
         style={{ borderRight: "1px solid var(--c-line)", gridColumn: 1, gridRow: 1, minWidth: 0, overflowX: "hidden" }}
@@ -304,17 +188,13 @@ export default function ChatPage() {
             projects={projects}
             activeId={selectedId}
             onSelect={(id) => handleSelectProject(id)}
-            lastEvents={lastEvents}
-            lastEventAt={lastEventAt}
             lastReadAt={lastReadAt}
             onCreateTeam={() => { /* PO skill scaffolds async — user refreshes to see new team */ }}
           />
         </div>
       </aside>
 
-      {/* ── Main chat area ── */}
       <main className="chat-wallpaper flex flex-row min-w-0 overflow-hidden chat-mobile-chat" style={{ gridColumn: 2, gridRow: 1 }}>
-        {/* Chat column (flex-1) — [407] swipe-to-back gesture */}
         <div
           ref={chatColRef}
           className="flex flex-col flex-1 min-w-0 overflow-hidden"
@@ -322,7 +202,6 @@ export default function ChatPage() {
           onTouchMove={onTouchMove}
           onTouchEnd={onTouchEnd}
         >
-          {/* [359] No team selected — show placeholder on desktop */}
           {!selectedId ? (
             <div className="flex-1 flex flex-col items-center justify-center chat-no-team-placeholder" style={{ color: "var(--c-fg-2)", gap: 12 }}>
               <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.4 }}>
@@ -332,7 +211,6 @@ export default function ChatPage() {
             </div>
           ) : (
             <>
-              {/* [399] Sticky header zone — stays at top when mobile keyboard appears */}
               <div style={{ position: "sticky", top: 0, zIndex: 10, flexShrink: 0 }}>
                 <ChatHeader
                   project={selectedProject}
@@ -347,7 +225,6 @@ export default function ChatPage() {
                 />
               </div>
 
-              {/* [392] Terminal tab — full main area swap */}
               {selectedRole === "TERMINAL" ? (
                 <ChatTerminalPanel
                   project={selectedProject}
@@ -360,20 +237,28 @@ export default function ChatPage() {
                     onClick={() => openInfo("overview")}
                   />
 
+                  {wsStatus !== "connected" && (
+                    <div
+                      className="px-3 py-1 text-[11px] font-mono shrink-0"
+                      style={{
+                        color: wsStatus === "connecting" ? "var(--c-fg-2)" : "#ef4444",
+                        background: wsStatus === "connecting" ? "transparent" : "rgba(239,68,68,0.06)",
+                      }}
+                    >
+                      {wsStatus === "connecting" ? "connecting pane…" : "pane disconnected"}
+                    </div>
+                  )}
+
                   <ChatStream
-                    events={events}
-                    loading={loadingHistory}
-                    hasMore={hasMore}
-                    onLoadMore={loadMore}
-                    filterRole={selectedRole ?? undefined}
-                    projectId={selectedId ?? undefined}
+                    output={paneOutput}
+                    viewingRole={subscribeRole}
                     className="flex-1 min-h-0"
                   />
 
                   <ChatInput
                     roles={roles}
                     defaultRole={selectedRole ?? roles[0]}
-                    disabled={!selectedId}
+                    disabled={!selectedId || !sessionName}
                     onSend={handleSend}
                     projectId={selectedId ?? undefined}
                   />
@@ -382,7 +267,6 @@ export default function ChatPage() {
             </>
           )}
 
-          {/* Info panel (snap open/close) */}
           <InfoPanel
             open={infoPanelOpen}
             tab={infoPanelTab}

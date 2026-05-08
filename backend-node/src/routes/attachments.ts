@@ -48,9 +48,10 @@ async function tmSend(sessionName: string, role: string, text: string): Promise<
   await execAsync(`tmux send-keys -t ${sessionName}:0.${paneIdx} C-m`);
 }
 
-// POST /api/chat/:projectId/attach — multipart: role (string), file (blob ≤20MB)
+// POST /api/projects/:projectId/attach — multipart: role (string), file (blob ≤20MB)
+// [382] Renamed from /api/chat/* — namespace cleared with JSONL chat removal.
 router.post(
-  '/api/chat/:projectId/attach',
+  '/api/projects/:projectId/attach',
   upload.single('file'),
   async (req: Request, res: Response) => {
     const projectId = parseInt(req.params.projectId as string);
@@ -77,7 +78,8 @@ router.post(
 
       const isImage = (file.mimetype || '').startsWith('image/');
       const label = isImage ? '📷 Image' : '📎 File';
-      const msg = `[via UI] BOSS: ${label} attached: ${file.originalname} → /api/attachments/${finalName}`;
+      // [382] No '[via UI] BOSS:' prefix — pane shows '❯ <msg>', parser tags as BOSS.
+      const msg = `${label} attached: ${file.originalname} → /api/attachments/${finalName}`;
 
       await tmSend(sessionName, role, msg);
       res.json({ ok: true, uuid: finalName, name: file.originalname, mime: file.mimetype, isImage });

@@ -130,9 +130,10 @@ async function transcribeWithSoniox(audioFilePath: string, apiKey: string, filen
   }
 }
 
-// POST /api/chat/:projectId/voice — multipart: role (string), audio (blob ≤5MB)
+// POST /api/projects/:projectId/voice — multipart: role (string), audio (blob ≤5MB)
+// [382] Renamed from /api/chat/* — namespace cleared with JSONL chat removal.
 router.post(
-  '/api/chat/:projectId/voice',
+  '/api/projects/:projectId/voice',
   upload.single('audio'),
   async (req: Request, res: Response) => {
     const projectId = parseInt(req.params.projectId as string);
@@ -163,7 +164,8 @@ router.post(
         if (!transcript) return res.status(422).json({ error: 'empty transcript from STT' });
       }
 
-      await tmSend(sessionName, role, `[via UI] BOSS: ${transcript}`);
+      // [382] No '[via UI] BOSS:' prefix — pane shows '❯ <transcript>', parser tags as BOSS.
+      await tmSend(sessionName, role, transcript);
       res.json({ ok: true, transcript });
     } catch (e: any) {
       res.status(500).json({ error: e.message });

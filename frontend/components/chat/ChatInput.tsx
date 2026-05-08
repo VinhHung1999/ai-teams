@@ -155,7 +155,7 @@ export function ChatInput({ roles, defaultRole, disabled, onSend, projectId }: C
     form.append("role", role);
     form.append("file", file, file.name);
     try {
-      const res = await fetch(`/api/chat/${projectId}/attach`, { method: "POST", body: form });
+      const res = await fetch(`/api/projects/${projectId}/attach`, { method: "POST", body: form });
       if (res.status === 413) { setError("File too large (max 20MB)"); return; }
       if (!res.ok) {
         const d = await res.json().catch(() => ({}));
@@ -229,7 +229,7 @@ export function ChatInput({ roles, defaultRole, disabled, onSend, projectId }: C
       const form = new FormData();
       form.append("role", role);
       form.append("audio", blob, ext);
-      const res = await fetch(`/api/chat/${projectId}/voice`, { method: "POST", body: form });
+      const res = await fetch(`/api/projects/${projectId}/voice`, { method: "POST", body: form });
       if (res.status === 413) { setError("Recording too large (max 5MB)"); return; }
       if (!res.ok) {
         const d = await res.json().catch(() => ({}));
