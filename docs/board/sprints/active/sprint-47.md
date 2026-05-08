@@ -69,10 +69,6 @@ kanban-plugin: board
 
 ## In Progress
 
-## In Review
-
-## Testing
-
 - [ ] **[382]** Chat dùng tmux capture-pane (drop JSONL hoàn toàn)
       **Priority:** P0 · **Points:** 2 · **Assignee:** DEV · **Status:** testing · **Backlog-ID:** 417
       **Branch:** `feature_chat_capture_pane`
@@ -86,32 +82,84 @@ kanban-plugin: board
       - DELETE: `routes/chat.ts`, WS `/ws/chat`, WS `/ws/chat/firehose`, REST `/api/chat/*`
       - Verify grep: không còn callsite nào trong frontend ngoài `/chat`
 
-      **Frontend `ChatStream.tsx` (rewrite):**
+      **Frontend `ChatStream.tsx` parser (Iteration 1 — base rules):**
       - Subscribe `useTmuxWs(sessionName, role)` — cùng hook AgentPaneView dùng
       - Input: `output: string` (raw capture-pane text với ANSI escapes)
-      - Parser pipeline:
-        1. Split lines
-        2. Regex prefix detect: `^([A-Z]{2,})\s*\[\d{1,2}:\d{2}\]:\s*` → PO/DEV bubble với timestamp (tm-send từ role khác)
-        3. Line bắt đầu `❯ ` (Claude Code prompt char) **không** kèm role prefix → BOSS input bubble (bỏ `❯ ` rồi render text); slash commands `❯ /init-role` cũng treat plain BOSS bubble
-        4. Line bắt đầu `⏺ ` → response bubble của pane đang xem (PO khi xem PO pane, DEV khi xem DEV pane)
-        5. Lines không match → continuation, attach vào bubble gần nhất phía trên (multi-line body)
-        6. ANSI strip trước khi render bubble text
-      - Tool calls / attachments → plain text trong bubble (Boss accepted regression — không expand UI, không image preview)
+      - Pipeline base:
+        1. ANSI strip trước
+        2. Split lines
+        3. Regex `^([A-Z]{2,})\s*\[\d{1,2}:\d{2}\]:\s*` → PO/DEV bubble với timestamp (tm-send từ role khác)
+        4. Line `❯ ` không kèm role prefix → BOSS input bubble (strip `❯ `)
+        5. Lines không match prefix nào → continuation attach vào bubble gần nhất phía trên
 
       **Frontend `ChatInput.tsx` send path:**
-      - Đổi từ `POST /api/chat/...` → `POST /api/tmux/session/<sess>/send` body `{role, text}` (cùng endpoint AgentPaneView dùng)
-      - **KHÔNG prepend `[via UI] BOSS:` nữa** (Boss 2026-05-08: "không có cần [via UI] BOSS gì hết nữa nha mắc công quá") — send raw text Boss gõ thẳng. Pane sẽ render `❯ <text>`, parser detect via prompt char (rule 3 trên).
-      - Optimistic UI: KHÔNG cần (capture-pane round-trip ≤500ms, đủ snappy; bug "sending miết" tự biến mất)
+      - `POST /api/tmux/session/<sess>/send` body `{role, text}`
+      - KHÔNG prepend `[via UI] BOSS:` (Boss 2026-05-08 — "mắc công quá")
+      - Optimistic UI: KHÔNG cần
 
-      **Acceptance:**
-      - Mở /chat → bubbles xuất hiện đúng (PO/DEV/BOSS phân biệt được, ANSI stripped, multi-line group đúng)
-      - Boss gõ message qua /chat UI → raw text vào pane (KHÔNG prefix `[via UI] BOSS:`) → render trong pane là `❯ <text>` → ≤500ms sau bubble BOSS hiện trong chat (parser detect qua `❯ ` rule)
-      - Reload trang → bubbles regen từ snapshot pane lúc đó (mất old là OK, Boss accepted)
-      - Switch role PO ↔ DEV → re-subscribe pane đúng, bubbles refresh
-      - Build pass, không còn reference `chat.ts` / `/ws/chat` / `/api/chat/*` trong codebase
+      **Iteration 2 (Boss feedback 2026-05-08 10:45) — UI polish "thân thiện với chat":**
+      Boss browser test → 3 vấn đề:
+      1. Chưa phân biệt tool call vs assistant text response (cả 2 đều `⏺ ` line, render plain text như nhau)
+      2. Render dư separator dividers (`──...──`) + status footer (`[Opus 4.7] 📁 ai-teams ...`) + cost bar + permission line → UI noise
+      3. Thinking states (`✻ Cooked for Xs`, `· Meandering…`, `✳ Moving card...`) chưa render special — Boss muốn mini "thinking bubble" riêng
+
+      **Parser refinements ChatStream.tsx (Iteration 2):**
+
+      A. **Skip noise lines** (discard hoàn toàn, không thuộc bubble nào):
+         - Full-width box-drawing: `^[─━┌┐└┘│┃═\s]+$` (chỉ chứa các char box hoặc space, không có chữ)
+         - Status footer: line bắt đầu `[Sonnet`/`[Opus`/`[Haiku` hoặc chứa `░░░` progress bar
+         - Cost/time bar: line chứa `⏱️` hoặc match `\d+%\s*\|\s*\$\d`
+         - Permission line: chứa `⏵⏵ bypass permissions`
+         - Bottom empty prompt: line chỉ có `❯` (không có text sau)
+
+      B. **Thinking mini-bubble** (visual: italic, opacity ~0.65, smaller font, animated dot icon ◌ hoặc spinner):
+         - Pattern: `^[✻✳·]\s+(.+)` → thinking mini-bubble
+         - Examples bắt buộc test: `✻ Cooked for 21s`, `✻ Crunched for 12s`, `· Meandering…`, `✳ Moving card to In Progress…`
+
+      C. **Tool call chip** (visual: compact horizontal chip với tool icon, KHÔNG full-width bubble):
+         - Pattern: `^⏺\s+([A-Z][a-zA-Z_]*)\(` → tool chip
+         - Examples: `⏺ Read(/path)`, `⏺ Bash(...)`, `⏺ Edit(...)`, `⏺ Write(...)`, `⏺ Skill(...)`, `⏺ Task(...)`
+         - Render: chip ngang gọn (icon + tool name + truncated args), height ~24-32px
+
+      D. **Tool result indented** (visual: gray, smaller font, indent dưới chip):
+         - Pattern: `^\s*⎿\s+(.+)` → tool result, render attach dưới tool chip C gần nhất
+
+      E. **Assistant text bubble** (visual: bubble bình thường role = viewingRole):
+         - Pattern: `^⏺\s+(.+)` mà KHÔNG match C (no `(...)` ngay sau tool name) → response bubble
+         - Multi-line continuation attach vào bubble này
+
+      **Render strategy — INCREMENTAL, append-only (Boss 2026-05-08 10:48):**
+      Boss exact: "Đoạn UI thì không cần phải render liên tục, khi có tool mới thì render thêm bubble tool, khi có câu trả lời thì render câu trả lời mới, khi mà loading thì có bubble loading thôi."
+
+      → KHÔNG full re-parse + re-render mỗi tick (500ms WS message). Implementation pattern:
+
+      1. **State**: keep `bubbles: Bubble[]` (stable React keys per bubble) + `thinkingBubble: Bubble | null` (single active loading slot).
+      2. **On WS output update**: parse incoming text; diff against last-known parser state to detect:
+         - NEW tool chip → append to `bubbles` (new key, animate in)
+         - NEW tool result → attach indented under matching tool chip (mutate that bubble's children, không re-mount cả list)
+         - NEW assistant text bubble OR continuation to existing → append/extend (existing bubble extends content, no new mount)
+         - Thinking state appears → set `thinkingBubble` (single active slot — replace nếu đang có)
+         - Thinking state disappears (next line is tool/text/another thinking phase): dismiss `thinkingBubble`
+         - Non-changed lines → no-op (existing bubbles không re-render)
+      3. **React keys**: stable (vd `bubble-${index}-${firstLineHash}`) để React không unmount/remount bubbles cũ → no flicker, no scroll jump.
+      4. **At most 1 thinking bubble active at a time** (replace, không stack).
+
+      **Acceptance (combined Iter 1+2):**
+      - Mở /chat → bubbles render (PO/DEV/BOSS phân biệt, ANSI stripped, multi-line group)
+      - Boss gõ → ≤500ms BOSS bubble (parser via `❯ ` rule, no `[via UI] BOSS:` prefix)
+      - Reload → bubbles regen từ pane snapshot
+      - Switch role → re-subscribe đúng
+      - Build pass, không còn `chat.ts` / `/ws/chat` / `/api/chat/*` references
+      - **NEW: Tool call → chip (compact, không full bubble)**
+      - **NEW: Tool result → indented gray dưới chip**
+      - **NEW: Thinking states → italic mini-bubble với spinner**
+      - **NEW: Skip toàn bộ noise** (dividers, status footer, cost bar, permission, bottom empty `❯`)
+      - **NEW: Assistant text bubble visually phân biệt với tool chip** (full bubble vs compact chip)
+      - **NEW: Incremental render** — bubbles cũ không re-mount khi WS tick, append-only; tối đa 1 thinking bubble active (replace, không stack); dismiss thinking khi tool/text response arrives
 
       **Out of scope:**
-      - Tool-call expand / image preview / interactive question buttons (Boss accepted regression)
+      - Tool-call EXPAND UI / hover popover (chip read-only summary)
+      - Image preview / interactive question buttons (Boss accepted regression)
       - History persistence beyond tmux scrollback default
       - Sprint 48 [380] sending-miết — DELETE (auto-fixed bởi story này)
 
@@ -133,6 +181,23 @@ kanban-plugin: board
       Verification: build pass on both projects; `grep -rn "/api/chat\\|useChatWs\\|useFirehoseWs\\|ChatEvent\\|chat-types"` shows zero callsites (only doc comments). PM2 services restarted clean. /chat page returns 200; old `/api/chat/14/history` and `/api/chat/14/send` return 404 (deleted, expected).
       ⚠ Functional acceptance (BOSS bubble round-trip ≤500ms, role switch re-subscribe, reload regen) requires browser test by Boss/PO — moved to Testing column for QC. Code-side acceptance (build pass, no leftover refs, parser logic mirrors spec rules 1-6) verified.
       Sprint 48 [380] auto-fixed (no longer needs separate work).
+      2026-05-08 10:45 BOSS browser test → ROLLBACK to In Progress: Iteration 2 (UI polish) needed — tool calls vs assistant text chưa phân biệt, dividers+status footer noise, thinking states render plain. Spec mới tại "Iteration 2" section bên trên.
+      2026-05-08 10:55 DEV: Iteration 2 implementation complete. Frontend build pass.
+      ChatStream.tsx rewrite (single-file scope):
+        • Bubble model split into 3 kinds: `MessageBubble` (role + text), `ToolBubble` (name + args + result), `ThinkingBubble` (transient single-slot).
+        • Parser dispatch order matches spec exactly: noise-skip → ⎿ result (attaches to nearest preceding tool) → ✻/✳/· thinking (replace single slot) → ❯ message (BOSS or sender-prefix) → ⏺ Name(...) tool chip → ⏺ <text> assistant text → continuation (appends to nearest message bubble; tools don't accept continuation).
+        • Noise patterns blocked per spec: box-drawing-only lines (`^[─━┌┐└┘│┃═]+$` after trim), status footer (`[Sonnet`/`[Opus`/`[Haiku`), `░░░` progress bar, `⏱`/`%|$` cost bar, `⏵⏵ bypass permissions`, bare `❯` bottom prompt.
+        • Tool chip render: compact horizontal pill with icon (reusing `tool-icons.tsx` ICON_MAP), bold tool name, mono args truncated to 80 chars. Result rendered as gray indented `⎿ <line>` underneath chip (single line per spec).
+        • Thinking mini-bubble: italic, opacity 0.65, `status-pulse` animated dot, fits below all bubbles.
+        • Incremental render: useMemo derives bubbles from `output`, but bubble OBJECTS are reference-stable across parses — `cacheRef: Map<id, Bubble>` reuses prior reference when content matches (kind + name/args/result for tools, role + text + timestamp for messages). `BubbleRow` and `ThinkingMiniView` wrapped in `React.memo`. Result: when WS pushes a new tick that adds 1 line, only the affected bubble (or new appended bubble) re-renders; older rows skip render via shallow-equal memo.
+        • Bubble IDs combine sequential index + content hash (`msg-${seq}-${role}-${hash}`, `tool-${seq}-${name}-${hash}`) — stable across continuations because hash uses first-32-chars of starter line.
+        • Single thinking slot enforced by parser: every non-thinking event clears `thinking = null`. End-of-stream thinking line wins.
+      Verification: `tsc` + `next build` clean; PM2 web restart, /chat returns 200. Browser visual + incremental-render acceptance still requires Boss test.
+      Out-of-scope confirmed: tool expand UI / hover popover / image preview kept as accepted regression — chip is read-only summary only.
+
+## In Review
+
+## Testing
 
 ## Done
 
