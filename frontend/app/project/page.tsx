@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef, Suspense } from "react";
-import Link from "next/link";
 import { useSearchParams, useRouter } from "next/navigation";
 import { AppSidebar } from "@/components/AppSidebar";
 import { ProjectDashboard } from "@/components/ProjectDashboard";
@@ -183,12 +182,6 @@ function ProjectPageContent() {
           {/* Center tabs + content */}
           {selectedProjectId && (
             <div className="flex gap-0.5 px-2 h-9 items-center border-b border-border/40 bg-muted/20 shrink-0">
-              <Link
-                href="/chat"
-                className="px-3 py-1 rounded-md text-[11px] font-mono text-muted-foreground/50 hover:text-foreground/70 hover:bg-muted/30 transition-colors mr-2"
-              >
-                ← Chat
-              </Link>
               <button
                 onClick={() => setCenterTab("dashboard")}
                 className={`px-3 py-1 rounded-md text-[11px] font-mono transition-colors ${
