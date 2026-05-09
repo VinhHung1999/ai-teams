@@ -1,11 +1,11 @@
 import type { Metadata, Viewport } from "next";
-import { JetBrains_Mono } from "next/font/google";
+import { Be_Vietnam_Pro, JetBrains_Mono } from "next/font/google";
 import { Providers } from "@/components/Providers";
 import "./globals.css";
 
-const jetbrainsMono = JetBrains_Mono({
+const beVietnamPro = Be_Vietnam_Pro({
   variable: "--font-sans",
-  subsets: ["latin", "latin-ext"],
+  subsets: ["vietnamese", "latin"],
   weight: ["400", "500", "600", "700"],
 });
 
@@ -34,10 +34,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
-      <body
-        className={`${jetbrainsMono.variable} ${jetbrainsMonoCode.variable} antialiased`}
-      >
+    <html lang="en" className={`${beVietnamPro.variable} ${jetbrainsMonoCode.variable}`}>
+      <body className="antialiased">
         <Providers>{children}</Providers>
       </body>
     </html>

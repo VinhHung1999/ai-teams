@@ -71,7 +71,7 @@ app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', uptime: process.uptime(), memory: process.memoryUsage().rss });
 });
 
-// Import routes
+// Import routes (kanban core — main's storage-backed)
 import projectsRouter from './routes/projects';
 import backlogRouter from './routes/backlog';
 import sprintsRouter from './routes/sprints';
@@ -80,6 +80,13 @@ import tmuxRouter from './routes/tmux';
 import filesRouter from './routes/files';
 import gitRouter from './routes/git';
 import notificationsRouter from './routes/notifications';
+// Feature-only routes (lib/JsonStorage-backed)
+import voiceRouter from './routes/voice';
+import skillsRouter from './routes/skills';
+import attachmentsRouter from './routes/attachments';
+import pushRouter from './routes/push';
+import teamActionsRouter from './routes/team-actions';
+// Main-only services
 import { startTelegramBot, stopTelegramBot } from './telegram-bot';
 import { startBoardFileWatcher, stopBoardFileWatcher } from './routes/board-file-watcher';
 
@@ -91,6 +98,11 @@ app.use(tmuxRouter);
 app.use(filesRouter);
 app.use(gitRouter);
 app.use(notificationsRouter);
+app.use(voiceRouter);
+app.use(skillsRouter);
+app.use(attachmentsRouter);
+app.use(pushRouter);
+app.use(teamActionsRouter);
 
 // Terminal REST endpoints
 app.get('/api/terminal/sessions', (_req, res) => {

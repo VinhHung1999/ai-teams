@@ -21,7 +21,6 @@
       "name": "App store",
       "tmux_session_name": "app-store",
       "working_directory": "/Users/hungphu/Documents/AI_Projects/app-store",
-      "board_directory": "/Users/hungphu/Documents/Note/HungVault/brain2/wiki/projects/app-store/docs/board",
       "pinned": false,
       "created_at": "2026-04-16T15:53:11.635Z"
     },
@@ -62,7 +61,6 @@
       "name": "murmur-team",
       "tmux_session_name": "murmur-team",
       "working_directory": "/Users/hungphu/Documents/AI_Projects/journaling-app",
-      "board_directory": "/Users/hungphu/Documents/Note/HungVault/brain2/wiki/projects/murmur/docs/board",
       "pinned": false,
       "created_at": "2026-04-16T15:53:11.637Z"
     },
@@ -79,7 +77,6 @@
       "name": "tuvi-team",
       "tmux_session_name": "tuvi-team",
       "working_directory": "/Users/hungphu/Documents/AI_Projects/horoscope",
-      "board_directory": "/Users/hungphu/Documents/Note/HungVault/brain2/wiki/projects/menh-viet/docs/board",
       "pinned": true,
       "created_at": "2026-04-16T15:53:11.636Z"
     },
@@ -88,7 +85,6 @@
       "name": "hexarian-team",
       "tmux_session_name": "hexarian_team",
       "working_directory": "/Users/hungphu/Documents/AI_Projects/hexarian",
-      "board_directory": "/Users/hungphu/Documents/Note/HungVault/brain2/wiki/projects/hexarian/docs/board",
       "pinned": false,
       "created_at": "2026-04-17T05:12:47.143Z"
     },
@@ -102,8 +98,28 @@
     }
   ],
   "nextProjectId": 28,
-  "nextNotificationId": 9,
+  "nextNotificationId": 11,
   "notifications": [
+    {
+      "id": 10,
+      "project_id": 14,
+      "session_name": "ai_teams",
+      "from_role": "ASSISTANT",
+      "message": "🌙 Dream report nightly\n\n🌙 Dream xong (2026-05-04 evening batch). 16 snapshots tổng, 2 streams.\n\n📥 Personal stream (8 snapshots):\n  • people first: huynh-dung (MAP leader MoMo), vu-viet-kien (Product MoMo), pham-hung-son (AI leader MoMo), anh-duong (PO/Marketing Tử Vi), phu-vinh-quynh-trang (em gái Boss)\n  • companies refresh: momo (theme: ai-team-leadership-conversations-day)\n  • concepts first: gbrain, ai-team-structure (PO/Dev/QC vs Planner/Executor/Evaluator vs subagents)\n\n🏢 Team stream (8 snapshots):\n  • horoscope (po+dev+qc+cmo+shared): Sprint 26 close + Sprint 27 GA4 baseline shipped end-to-end (16-event catalog, caveat-transparent PASS, BE 981→1034)\n  • ai-teams (po+dev+shared): PromptCard polling, 2 new infra fails (fs.createWriteStream async fd, dual frontmatter), backend-cannot-invoke-skill rule, assistant-as-parallel-executor pattern proven\n\n⏭️ Skip verdict gate: assistant (23 entries — self-pane), love-scrum (5 — standby)\n\n⚠️ Cần Boss để mắt:\n  • MoMo AI team adoption push (4 conversations 1 ngày) — concepts/ai-team-structure track 3 patterns\n  • GBRAIN nghiên cứu pending (Boss TODO + 2 conversations với MoMo AI leads)\n\n📄 Full report: wiki/.dream/2026-05-04-evening.md",
+      "urgency": "normal",
+      "read": false,
+      "created_at": "2026-05-04T19:23:00.793Z"
+    },
+    {
+      "id": 9,
+      "project_id": 14,
+      "session_name": "ai_teams",
+      "from_role": "ASSISTANT",
+      "message": "🌙 Dream report nightly\n\n🌙 Dream xong (2026-05-04). 7 snapshots, 4 workspace.\n\n📥 Personal stream: SKIP (raw rỗng hôm nay)\n\n🏢 Team stream:\n  • horoscope: po + dev + qc + shared (SePay live, S25 admin, dev-login bypass, browser-level QC bar)\n  • ai-teams: po + dev (FIRST) + shared (chat marathon: JSONL truth, WS singleton, iOS Safari MediaRecorder rules; /chat đã replace Telegram)\n\n⏭️  Skip verdict gate: 5 role-slices (horoscope/cmo, ai-teams/assistant, assistant, love-scrum/po+dev) — low signal\n\n⚠️  Cần Boss để mắt: ai-teams shared snapshot flag iOS Safari MediaRecorder rules là candidate global mobile-dev template\n\n📄 Full report: wiki/.dream/2026-05-04.md",
+      "urgency": "normal",
+      "read": false,
+      "created_at": "2026-05-03T19:15:50.318Z"
+    },
     {
       "id": 8,
       "project_id": 18,

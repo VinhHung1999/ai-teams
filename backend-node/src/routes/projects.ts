@@ -213,4 +213,38 @@ router.delete('/api/projects/:id', async (req: Request, res: Response) => {
   res.json({ ok: true });
 });
 
+// [417] Create team — sends instruction to PO via tm-send to scaffold a tmux team.
+// Ported from feature_initial_setup; PO's /tmux-team:create-team skill does the actual
+// scaffolding, then registers the project + notifies Boss.
+router.post('/api/projects/create-team', async (req: Request, res: Response) => {
+  const { name, workingDir, teamName, sessionName, roles } = req.body;
+  if (!name || !workingDir) {
+    return res.status(400).json({ ok: false, error: 'name and workingDir are required' });
+  }
+
+  const team = teamName || name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+  const session = sessionName || name.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
+  const roleList = (Array.isArray(roles) ? roles.join(' ') : roles) || 'PO DEV QC CMO';
+
+  const instruction = [
+    `[417] Create team via /tmux-team:create-team:`,
+    `  name="${name}"`,
+    `  cwd="${workingDir}"`,
+    `  team-name="${team}"`,
+    `  session="${session}"`,
+    `  roles="${roleList}"`,
+    `After scaffolding completes, add the project to registry.json and notify Boss.`,
+  ].join(' | ');
+
+  try {
+    // tm-send routes by role name in the current ai_teams session
+    await execAsync(`tm-send PO "${instruction.replace(/"/g, '\\"')}"`, {
+      env: { ...process.env, HOME: os.homedir(), PATH: `${os.homedir()}/.local/bin:${process.env.PATH}` },
+    });
+    return res.json({ ok: true, message: 'Instruction sent to PO — skill will scaffold the team shortly.' });
+  } catch (e: any) {
+    return res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
 export default router;
