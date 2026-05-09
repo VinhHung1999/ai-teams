@@ -1,17 +1,36 @@
 "use client";
-
 import { useRef, useState, type FC, type KeyboardEvent } from "react";
+import { Ic } from "./icons";
 
 export interface ComposerProps {
   sessionName: string;
   role: string;
   disabled?: boolean;
+  /** Optional: parent-controlled text (lets SlashHints set composer text). */
+  value?: string;
+  /** Called when text changes — parent can sync state to detect '/' for SlashHints. */
+  onChange?: (text: string) => void;
+  /** Called when attach button clicked — parent toggles AttachMenu visibility. */
+  onAttachClick?: () => void;
+  /** Called when menu pill clicked — parent can open menu drawer (defer S51, but wire now). */
+  onMenuClick?: () => void;
 }
 
-export const Composer: FC<ComposerProps> = ({ sessionName, role, disabled }) => {
-  const [text, setText] = useState("");
+export const Composer: FC<ComposerProps> = ({
+  sessionName, role, disabled,
+  value, onChange,
+  onAttachClick, onMenuClick,
+}) => {
+  const [internalText, setInternalText] = useState("");
   const [sending, setSending] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+
+  // Controlled if value+onChange provided; else internal state
+  const text = value !== undefined ? value : internalText;
+  const setText = (next: string) => {
+    if (onChange) onChange(next);
+    else setInternalText(next);
+  };
 
   const isDisabled = !!disabled || !sessionName || !role || sending;
   const hasText = text.trim().length > 0;
@@ -20,23 +39,23 @@ export const Composer: FC<ComposerProps> = ({ sessionName, role, disabled }) => 
     const el = textareaRef.current;
     if (!el) return;
     el.style.height = "";
-    el.style.height = `${Math.min(el.scrollHeight, 96)}px`;
+    el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
   };
 
   const submit = async () => {
-    const value = text.trim();
-    if (!value || isDisabled) return;
+    const v = text.trim();
+    if (!v || isDisabled) return;
     setSending(true);
     try {
       await fetch(`/api/tmux/session/${encodeURIComponent(sessionName)}/send`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ role, text: value }),
+        body: JSON.stringify({ role, text: v }),
       });
       setText("");
       if (textareaRef.current) textareaRef.current.style.height = "";
     } catch {
-      // swallow — terminal echo is canonical feedback
+      // swallow — terminal echo canonical
     } finally {
       setSending(false);
     }
@@ -50,73 +69,51 @@ export const Composer: FC<ComposerProps> = ({ sessionName, role, disabled }) => 
   };
 
   return (
-    <div
-      className="flex items-end gap-2 px-2 py-2 border-t"
-      style={{
-        borderColor: "var(--c-line)",
-        background: "var(--c-bg-list-glass)",
-        backdropFilter: "blur(20px) saturate(160%)",
-        WebkitBackdropFilter: "blur(20px) saturate(160%)",
-        paddingBottom: "max(8px, env(safe-area-inset-bottom))",
-      }}
-    >
-      <div
-        className={`glass-input-pill flex flex-1 items-end gap-2 px-3 py-2 ${
-          isDisabled ? "opacity-60" : ""
-        }`}
-        style={{ borderRadius: "var(--c-radius-input)" }}
+    <div className="composer">
+      <button
+        type="button"
+        className="comp-menu-pill"
+        onClick={onMenuClick}
+        title="Menu (coming soon)"
       >
-        <button
-          type="button"
-          title="Attach (coming soon)"
-          aria-label="Attach (coming soon)"
-          disabled
-          className="inline-flex h-8 w-8 shrink-0 items-center justify-center self-end rounded-full text-muted-foreground hover:bg-foreground/5 disabled:opacity-60"
-          style={{ transform: "rotate(-45deg)" }}
-        >
-          📎
-        </button>
+        <Ic name="menu" size={20} />
+        <span>Menu</span>
+      </button>
 
+      <button
+        type="button"
+        className="comp-side-btn"
+        onClick={(e) => { e.stopPropagation(); onAttachClick?.(); }}
+        title="Attach"
+        aria-label="Attach"
+      >
+        <Ic name="paperclip" size={20} />
+      </button>
+
+      <div className="composer-field">
         <textarea
           ref={textareaRef}
           rows={1}
           value={text}
-          onChange={(e) => {
-            setText(e.target.value);
-            autosize();
-          }}
+          onChange={(e) => { setText(e.target.value); autosize(); }}
           onKeyDown={onKeyDown}
           readOnly={isDisabled}
           aria-label="Message"
-          placeholder="Message…"
-          style={{ fontSize: 16, lineHeight: 1.4, minHeight: 24, maxHeight: 96 }}
-          className="flex-1 resize-none bg-transparent outline-none placeholder:text-muted-foreground/60"
+          placeholder="Tin nhắn"
         />
-
-        <button
-          type="button"
-          title="Emoji (coming soon)"
-          aria-label="Emoji (coming soon)"
-          disabled
-          className="inline-flex h-8 w-8 shrink-0 items-center justify-center self-end rounded-full text-muted-foreground hover:bg-foreground/5 disabled:opacity-60"
-        >
-          😊
+        <button type="button" className="field-icon-btn" title="Schedule">
+          <Ic name="clock" size={20} />
         </button>
       </div>
 
       <button
         type="button"
+        className={`comp-side-btn${hasText ? " send-active" : ""}`}
         onClick={submit}
         disabled={isDisabled || !hasText}
         aria-label={hasText ? "Send message" : "Voice input"}
-        className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition-all duration-150 disabled:opacity-60 ${
-          hasText
-            ? "text-white shadow-md"
-            : "bg-transparent text-muted-foreground hover:text-foreground"
-        }`}
-        style={hasText ? { background: "var(--c-accent)" } : undefined}
       >
-        {hasText ? "➤" : "🎤"}
+        <Ic name={hasText ? "send" : "mic"} size={hasText ? 20 : 22} />
       </button>
     </div>
   );

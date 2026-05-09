@@ -1,24 +1,21 @@
 "use client";
 
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 import { AgentPaneView } from "@/components/AgentPaneView";
 import { CreateProjectDialog } from "@/components/CreateProjectDialog";
-import { Bubble, type BubbleMessage } from "@/components/project/Bubble";
+import { AttachMenu } from "@/components/project/AttachMenu";
 import { ChatHeader } from "@/components/project/ChatHeader";
 import { ChatItem, type ChatItemData } from "@/components/project/ChatItem";
 import { Composer } from "@/components/project/Composer";
+import { InfoPanel } from "@/components/project/InfoPanel";
 import { PinStrip } from "@/components/project/PinStrip";
+import { SlashHints } from "@/components/project/SlashHints";
 import { TopicBar } from "@/components/project/TopicBar";
 
 import { api } from "@/lib/api";
-import {
-  filterMessages,
-  parsePane,
-  type MessageBubble,
-} from "@/lib/chatParser";
-import type { Project } from "@/lib/types";
+import type { Board, Project } from "@/lib/types";
 import { useSwipeBack } from "@/lib/useSwipeBack";
 import { useTmuxWs } from "@/lib/useTmuxWs";
 
@@ -50,33 +47,6 @@ function projectToChatItem(
   };
 }
 
-interface BubbleEntry {
-  msg: BubbleMessage;
-  mine: boolean;
-  key: string;
-}
-
-// chatParser → Bubble adapter. Maps BOSS sender → ME (self-bubble), and
-// collapses author repeats into the `same` flag so consecutive bubbles from
-// the same role hide their avatar/header.
-function adaptBubbles(messages: MessageBubble[]): BubbleEntry[] {
-  return messages.map((m, i) => {
-    const prev = i > 0 ? messages[i - 1] : null;
-    const same = prev !== null && prev.role === m.role;
-    const fromKind = m.role === "BOSS" ? "ME" : m.role;
-    return {
-      key: m.id,
-      mine: m.role === "BOSS",
-      msg: {
-        from: fromKind as BubbleMessage["from"],
-        text: m.text,
-        time: m.timestamp ?? "",
-        same,
-      },
-    };
-  });
-}
-
 // ─── inner component (uses useSearchParams → must be inside Suspense) ────────
 
 function ProjectShell() {
@@ -87,9 +57,13 @@ function ProjectShell() {
   const [activeId, setActiveId] = useState<number | null>(null);
   const [topic, setTopic] = useState<string>("");
   const [mobileView, setMobileView] = useState<"list" | "chat">("list");
-  const [paneOpen, setPaneOpen] = useState(false);
-  const [activeSprint, setActiveSprint] = useState<{ title: string; sub: string } | null>(null);
+  const [activeSprint, setActiveSprint] = useState<{ id: number; title: string; sub: string } | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
+  // [391c] Composer-controlled mode + overlays
+  const [composerText, setComposerText] = useState("");
+  const [showAttach, setShowAttach] = useState(false);
+  const [showInfo, setShowInfo] = useState(false);
+  const [board, setBoard] = useState<Board | null>(null);
 
   // Derived state — recomputed on every render, no effect / no extra state.
   const activeProject =
@@ -126,7 +100,8 @@ function ProjectShell() {
     window.history.replaceState(null, "", `/project?team=${activeId}`);
   }, [activeId]);
 
-  // Active sprint for PinStrip — fetched only for the selected project
+  // Active sprint for PinStrip — fetched only for the selected project.
+  // [391c] now also carries `id` so the board-fetch effect below can resolve.
   useEffect(() => {
     if (activeId === null) {
       setActiveSprint(null);
@@ -140,6 +115,7 @@ function ProjectShell() {
         const active = sprints.find((s) => s.status === "active");
         if (active) {
           setActiveSprint({
+            id: active.id,
             title: `Sprint ${active.number}`,
             sub: active.goal ?? "",
           });
@@ -153,6 +129,16 @@ function ProjectShell() {
     };
   }, [activeId]);
 
+  // [391c] Board fetch — feeds InfoPanel Overview tab.
+  useEffect(() => {
+    if (!activeSprint) { setBoard(null); return; }
+    let cancelled = false;
+    api.getBoard(activeSprint.id)
+      .then((b) => { if (!cancelled) setBoard(b); })
+      .catch(() => { if (!cancelled) setBoard(null); });
+    return () => { cancelled = true; };
+  }, [activeSprint]);
+
   // Live tmux output for the active topic
   const sessionName = activeProject?.tmux_session_name ?? "";
   const { outputs, wsStatus } = useTmuxWs(sessionName || undefined, topic);
@@ -161,8 +147,36 @@ function ProjectShell() {
   const { ref: swipeRef } = useSwipeBack({
     mode: "callback",
     onTrigger: () => setMobileView("list"),
-    shouldStart: () => mobileView === "chat" && !paneOpen,
+    shouldStart: () => mobileView === "chat",
   });
+
+  // Browser-back on mobile chat view → pop to list (stay on /project).
+  // Push a synthetic history entry when entering chat; popstate undoes it.
+  // Desktop (≥768px) skips pushState — both panes are visible, normal nav is fine.
+  const pushedChatRef = useRef(false);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (mobileView === "chat" && !pushedChatRef.current) {
+      if (window.innerWidth < 768) {
+        window.history.pushState({ aiTeamsView: "chat" }, "");
+        pushedChatRef.current = true;
+      }
+    } else if (mobileView === "list") {
+      pushedChatRef.current = false;
+    }
+  }, [mobileView]);
+
+  useEffect(() => {
+    const onPop = () => {
+      if (mobileView === "chat") {
+        setMobileView("list");
+        pushedChatRef.current = false;
+      }
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, [mobileView]);
 
   // ── render ───────────────────────────────────────────────────────────────
 
@@ -225,7 +239,6 @@ function ProjectShell() {
               onClick={() => {
                 setActiveId(p.id);
                 setMobileView("chat");
-                setPaneOpen(false);
               }}
             />
           ))}
@@ -254,7 +267,8 @@ function ProjectShell() {
               name={activeProject.name}
               sub={topic ? `Topic: ${topic}` : "Select an agent"}
               onBack={() => setMobileView("list")}
-              onMoreClick={() => setPaneOpen((v) => !v)}
+              onWhoClick={() => setShowInfo(true)}
+              onMoreClick={() => setShowInfo(true)}
             />
             {(activeProject.roles?.length ?? 0) > 0 && (
               <TopicBar
@@ -266,107 +280,52 @@ function ProjectShell() {
             {activeSprint && (
               <PinStrip title={activeSprint.title} text={activeSprint.sub} />
             )}
-            <div
-              style={{
-                flex: 1,
-                overflowY: "auto",
-                minHeight: 0,
-                padding: 12,
-                display: "flex",
-                flexDirection: "column",
-              }}
-            >
-              {(() => {
-                if (!sessionName || !topic) {
-                  return (
-                    <div style={{ margin: "auto", color: "var(--fg-2)" }}>
-                      No active session
-                    </div>
-                  );
-                }
-                const adapted = adaptBubbles(
-                  filterMessages(parsePane(outputs[topic] ?? "", topic)),
-                );
-                if (adapted.length === 0) {
-                  return (
-                    <div style={{ margin: "auto", color: "var(--fg-2)" }}>
-                      No messages yet
-                    </div>
-                  );
-                }
-                return adapted.map((b) => (
-                  <Bubble key={b.key} m={b.msg} mine={b.mine} />
-                ));
-              })()}
-            </div>
+            {!sessionName || !topic ? (
+              <div style={{ flex: 1, display: "grid", placeItems: "center", color: "var(--fg-2)" }}>
+                No active session
+              </div>
+            ) : (
+              <div style={{ flex: 1, minHeight: 0, background: "#000" }}>
+                <AgentPaneView
+                  sessionName={sessionName}
+                  role={topic}
+                  isVisible={true}
+                  output={outputs[topic] ?? ""}
+                  wsStatus={wsStatus}
+                />
+              </div>
+            )}
             <Composer
               sessionName={sessionName}
               role={topic}
               disabled={!sessionName || !topic}
+              value={composerText}
+              onChange={setComposerText}
+              onAttachClick={() => setShowAttach((v) => !v)}
             />
+            {composerText.startsWith("/") && (
+              <SlashHints
+                filterText={composerText.slice(1)}
+                onSelect={(cmd) => setComposerText(cmd + " ")}
+              />
+            )}
+            {showAttach && (
+              <AttachMenu
+                onClose={() => setShowAttach(false)}
+              />
+            )}
           </>
         )}
 
-        {/* Collapsible AgentPaneView (layout-a — Boss-recommended dark wrapper) */}
-        {paneOpen && sessionName && topic && (
-          <div
-            style={{
-              position: "absolute",
-              top: 0,
-              right: 0,
-              bottom: 0,
-              width: "min(420px, 100vw)",
-              background: "#000",
-              borderLeft: "1px solid var(--line)",
-              boxShadow: "-4px 0 24px rgba(0,0,0,0.25)",
-              display: "flex",
-              flexDirection: "column",
-              zIndex: 10,
-            }}
-          >
-            <div
-              style={{
-                padding: "8px 12px",
-                display: "flex",
-                alignItems: "center",
-                gap: 8,
-                background: "#0a0a0a",
-                color: "#fff",
-                borderBottom: "1px solid #1f1f1f",
-              }}
-            >
-              <span style={{ flex: 1, fontFamily: "var(--font-chat-mono)", fontSize: 12 }}>
-                Terminal · {topic}
-              </span>
-              <button
-                type="button"
-                onClick={() => setPaneOpen(false)}
-                aria-label="Close terminal"
-                style={{
-                  width: 32,
-                  height: 32,
-                  border: 0,
-                  background: "transparent",
-                  color: "#888",
-                  cursor: "pointer",
-                  borderRadius: 4,
-                  fontSize: 16,
-                }}
-              >
-                ✕
-              </button>
-            </div>
-            <div style={{ flex: 1, minHeight: 0 }}>
-              <AgentPaneView
-                sessionName={sessionName}
-                role={topic}
-                isVisible={true}
-                output={outputs[topic] ?? ""}
-                wsStatus={wsStatus}
-              />
-            </div>
-          </div>
-        )}
+        <InfoPanel
+          open={showInfo && !!activeProject}
+          onClose={() => setShowInfo(false)}
+          name={activeProject?.name ?? ""}
+          sub={(activeProject?.roles ?? []).join(" · ") || "No team"}
+          board={board}
+          roles={activeProject?.roles ?? []}
+          onSelectAgent={(r) => setTopic(r)}
+        />
       </main>
 
       <CreateProjectDialog
