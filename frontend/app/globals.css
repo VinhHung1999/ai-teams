@@ -1,3 +1,8 @@
+/* [391a] Geist + JetBrains Mono — design fidelity for chat zone.
+   Loaded BEFORE tailwindcss per CSS spec (font @imports must precede style rules).
+   Note: app-wide --font-sans is still Be Vietnam Pro via next/font in layout.tsx;
+   chat components opt into Geist via class-scoped font-family if needed. */
+@import url('https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
@@ -281,6 +286,68 @@ html[data-theme="dark"] {
 }
 
 html[data-theme="dark"] { color-scheme: dark; }
+
+
+/* ═══════════════════════════════════════════════════════════
+   [391a] Design-name token aliases — bare prefix matching
+   docs/design/project/chat-styles.css. Points to existing --c-*
+   tokens (Sprint 41-42 namespace). Hex values are identical;
+   this is rename-only sugar so design's CSS rules work as-is.
+   NOTE: --font-sans / --font-mono intentionally NOT redefined here —
+   layout.tsx's next/font loader owns those globally (Be Vietnam Pro).
+   Chat components scope Geist via class-level font-family if needed.
+   ═══════════════════════════════════════════════════════════ */
+:root,
+html[data-theme="light"] {
+  /* Surfaces */
+  --bg-app:           var(--c-bg-app);
+  --bg-list:          var(--c-bg-list);
+  --bg-list-glass:    var(--c-bg-list-glass);
+  --bg-chat:          var(--c-bg-chat);
+  --bg-chat-glass:    rgba(255,255,255,0.62);  /* design-only, no --c- equivalent */
+  --bg-hover:         var(--c-bg-hover);
+  --bg-active:        var(--c-bg-active);
+  --bg-bubble-them:   var(--c-bg-bubble-them);
+  --bg-bubble-me:     var(--c-bg-bubble-me);
+
+  /* Lines + foregrounds */
+  --line:             var(--c-line);
+  --line-soft:        var(--c-line-soft);
+  --fg-0:             var(--c-fg-0);
+  --fg-1:             var(--c-fg-1);
+  --fg-2:             var(--c-fg-2);
+  --fg-3:             var(--c-fg-3);
+
+  /* Accent + role + status */
+  --accent:           var(--c-accent);
+  --accent-soft:      var(--c-accent-soft);
+  --role-PO:          var(--c-role-PO);
+  --role-TL:          var(--c-role-TL);
+  --role-BE:          var(--c-role-BE);
+  --role-FE:          var(--c-role-FE);
+  --role-QA:          var(--c-role-QA);
+  --role-SM:          var(--c-role-SM);
+  --role-DEV:         var(--c-role-DEV);
+  --status-ok:        var(--c-status-ok);
+  --status-warn:      var(--c-status-warn);
+  --status-err:       var(--c-status-err);
+}
+
+html[data-theme="dark"] {
+  --bg-app:           #17212b;
+  --bg-list:          #17212b;
+  --bg-list-glass:    rgba(23,33,43,0.72);
+  --bg-chat:          #0e1621;
+  --bg-chat-glass:    rgba(14,22,33,0.62);
+  --bg-bubble-them:   rgba(24,37,51,0.92);
+  --bg-bubble-me:     #2b5278;
+  --bg-active:        #2b5278;
+  --accent:           #6ab3f3;
+  --accent-soft:      #2b5278;
+  /* Other tokens (--bg-hover, --line*, --fg-*, --role-*, --status-*) inherit
+     from the existing :root → light alias since the underlying --c-* tokens
+     are already overridden by the [data-theme="dark"] block above. */
+}
 
 
 /* ── Liquid Glass utilities (iOS-style, Sprint 42 [335]) ─────────────────────
@@ -767,3 +834,129 @@ html, body { overflow-x: hidden; }
 
 /* Consecutive group: visually merge stacked rows */
 .tc-row + .tc-row { margin-top: -0.5px; }
+
+
+/* ═══════════════════════════════════════════════════════════
+   [391a] Chat primitives: Avatar, Bubble, DaySeparator, SysMessage
+   Per docs/design/project/AI-Teams Chat.html.
+   These class selectors are referenced by the new React components.
+   ═══════════════════════════════════════════════════════════ */
+
+/* ─── Avatar ─── */
+.avatar {
+  width: 54px; height: 54px;
+  border-radius: 50%;
+  display: grid; place-items: center;
+  font-weight: 600; font-size: 20px;
+  color: white;
+  flex-shrink: 0;
+  position: relative;
+}
+.avatar-sm  { width: 36px; height: 36px; font-size: 14px; }
+.avatar-lg  { width: 96px; height: 96px; font-size: 36px; }
+
+.avatar-team { background: linear-gradient(135deg, #3390ec, #7460d9); }
+.avatar-PO   { background: linear-gradient(135deg, #a78bfa, #7c3aed); }
+.avatar-TL   { background: linear-gradient(135deg, #60a5fa, #2563eb); }
+.avatar-BE   { background: linear-gradient(135deg, #34d399, #059669); }
+.avatar-FE   { background: linear-gradient(135deg, #fbbf24, #d97706); }
+.avatar-QA   { background: linear-gradient(135deg, #f472b6, #db2777); }
+.avatar-SM   { background: linear-gradient(135deg, #fb7185, #e11d48); }
+.avatar-DEV  { background: linear-gradient(135deg, #a1a1aa, #52525b); }
+.avatar-ME   { background: linear-gradient(135deg, #6366f1, #4338ca); }
+
+.online-dot {
+  position: absolute;
+  bottom: 0; right: 0;
+  width: 14px; height: 14px;
+  background: var(--status-ok);
+  border-radius: 50%;
+  border: 2.5px solid var(--bg-list);
+}
+.online-dot.thinking { background: var(--accent); }
+
+/* ─── Bubble ─── */
+.msg-row {
+  display: flex; align-items: flex-end; gap: 8px;
+  max-width: 100%;
+}
+.msg-row.me { justify-content: flex-end; }
+.msg-row + .msg-row.same      { margin-top: 1px; }
+.msg-row + .msg-row:not(.same) { margin-top: 8px; }
+.msg-row .avatar-sm           { margin-bottom: 2px; }
+.msg-row.same .avatar-sm      { visibility: hidden; }
+
+.bubble {
+  background: var(--bg-bubble-them);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border-radius: 14px;
+  padding: 7px 12px 6px;
+  max-width: 70%;
+  position: relative;
+  box-shadow: var(--c-bubble-shadow);
+  line-height: 1.4;
+  font-size: 14px;
+  color: var(--fg-0);
+}
+.msg-row.me .bubble { background: var(--bg-bubble-me); }
+
+.bubble-author {
+  font-size: 13px; font-weight: 600;
+  margin-bottom: 2px;
+}
+.bubble-text {
+  white-space: pre-wrap;
+  text-wrap: pretty;
+}
+.bubble-meta {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 11px;
+  color: var(--fg-2);
+  float: right;
+  margin: 4px 0 0 8px;
+  user-select: none;
+}
+.bubble-meta .tick { color: var(--accent); }
+
+.bubble.tail-them { border-bottom-left-radius: 4px; }
+.bubble.tail-me   { border-bottom-right-radius: 4px; }
+
+.reactions {
+  display: flex; gap: 4px; margin-top: 6px;
+  flex-wrap: wrap;
+}
+.reaction {
+  background: rgba(51,144,236,0.10);
+  color: var(--accent);
+  border: 1px solid rgba(51,144,236,0.20);
+  padding: 1px 8px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+/* ─── Day separator + system message ─── */
+.day-sep {
+  align-self: center;
+  background: rgba(0,0,0,0.35);
+  backdrop-filter: blur(8px);
+  color: white;
+  font-size: 12px; font-weight: 500;
+  padding: 4px 10px;
+  border-radius: 12px;
+  margin: 12px 0 8px;
+}
+.sys-msg {
+  align-self: center;
+  background: rgba(0,0,0,0.35);
+  backdrop-filter: blur(8px);
+  color: white;
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 12px;
+  margin: 6px 0;
+}
+[data-theme="dark"] .day-sep,
+[data-theme="dark"] .sys-msg { background: rgba(0,0,0,0.5); }
