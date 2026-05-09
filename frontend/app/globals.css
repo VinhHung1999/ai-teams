@@ -331,6 +331,12 @@ html[data-theme="light"] {
   --status-ok:        var(--c-status-ok);
   --status-warn:      var(--c-status-warn);
   --status-err:       var(--c-status-err);
+
+  /* PO-ruled (2026-05-09): chat-only font tokens. Option C — named opt-in.
+     Chat components reference these; layout.tsx Be Vietnam Pro stays app-wide
+     for VN diacritics. Future global flip = 1-var change here. */
+  --font-chat-sans:   'Geist', ui-sans-serif, system-ui, sans-serif;
+  --font-chat-mono:   'JetBrains Mono', ui-monospace, monospace;
 }
 
 html[data-theme="dark"] {
@@ -960,3 +966,213 @@ html, body { overflow-x: hidden; }
 }
 [data-theme="dark"] .day-sep,
 [data-theme="dark"] .sys-msg { background: rgba(0,0,0,0.5); }
+
+
+/* ═══════════════════════════════════════════════════════════
+   [391b] Chat shell: ChatItem, ChatHeader, TopicBar, PinStrip
+   Layout grid + mobile slide. Per docs/design/project/AI-Teams Chat.html.
+   ═══════════════════════════════════════════════════════════ */
+
+/* ─── App grid (desktop) ─── */
+.app {
+  display: grid;
+  grid-template-columns: 320px 1fr;
+  height: 100vh;
+  height: 100dvh;
+  font-family: var(--font-chat-sans);
+}
+
+/* ─── Mobile slide (≤768px) ─── */
+@media (max-width: 768px) {
+  .app {
+    grid-template-columns: 1fr;
+    position: relative;
+    overflow: hidden;
+  }
+  .app .list, .app .chat {
+    grid-column: 1;
+    grid-row: 1;
+    width: 100vw;
+    transition: transform 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  .app .list { z-index: 1; }
+  .app .chat { z-index: 2; transform: translateX(100%); }
+  .app[data-mobile-view="chat"] .list { transform: translateX(-30%); }
+  .app[data-mobile-view="chat"] .chat { transform: translateX(0); }
+}
+
+/* ─── ChatItem (left list row) ─── */
+.chat-item {
+  display: grid;
+  grid-template-columns: 54px 1fr;
+  gap: 10px;
+  padding: 8px 12px;
+  cursor: pointer;
+  border: 0; background: transparent;
+  width: 100%;
+  text-align: left;
+  align-items: center;
+}
+.chat-item:hover { background: var(--bg-hover); }
+.chat-item.active { background: var(--bg-active); }
+.chat-item.active .chat-name { color: var(--accent); font-weight: 600; }
+.chat-item .chat-meta { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.chat-item .chat-row1 { display: flex; align-items: center; gap: 6px; }
+.chat-item .chat-row2 { display: flex; align-items: center; gap: 8px; }
+.chat-name {
+  font-weight: 600; font-size: 15px;
+  color: var(--fg-0);
+  flex: 1;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.chat-time { font-size: 12px; color: var(--fg-2); flex-shrink: 0; }
+.chat-item .preview {
+  flex: 1;
+  font-size: 13px;
+  color: var(--fg-2);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.chat-item .preview .from { color: var(--accent); font-weight: 500; }
+.badge-count {
+  background: var(--accent);
+  color: white;
+  font-size: 12px;
+  font-weight: 500;
+  min-width: 22px; height: 22px;
+  border-radius: 11px;
+  padding: 0 7px;
+  display: grid; place-items: center;
+  flex-shrink: 0;
+}
+.chat-item .pin-icon { color: var(--fg-3); flex-shrink: 0; }
+.chat-item .read-tick { color: var(--accent); flex-shrink: 0; }
+
+/* Mobile chat item */
+@media (max-width: 768px) {
+  .chat-item { padding: 8px 10px; }
+  .chat-item .chat-name { font-size: 15px; }
+}
+
+/* ─── ChatHeader ─── */
+.chat-header {
+  background: var(--bg-list-glass);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  border-bottom: 1px solid var(--line);
+  padding: 10px 16px;
+  display: flex; align-items: center; gap: 12px;
+  flex-shrink: 0;
+  z-index: 2;
+}
+.chat-header .who {
+  display: flex; flex-direction: column;
+  flex: 1; min-width: 0;
+  cursor: pointer;
+}
+.chat-header .who .name {
+  font-size: 16px; font-weight: 600;
+  color: var(--fg-0);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.chat-header .who .sub {
+  font-size: 13px; color: var(--fg-2);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.icon-btn {
+  width: 38px; height: 38px;
+  border: 0; background: transparent;
+  border-radius: 50%;
+  display: grid; place-items: center;
+  cursor: pointer;
+  color: var(--fg-1);
+  flex-shrink: 0;
+}
+.icon-btn:hover { background: var(--bg-hover); color: var(--fg-0); }
+.back-btn {
+  display: none;
+  width: 38px; height: 38px;
+  border: 0; background: transparent;
+  border-radius: 50%;
+  cursor: pointer;
+  color: var(--fg-1);
+  flex-shrink: 0;
+  place-items: center;
+}
+.back-btn:hover { background: var(--bg-hover); }
+@media (max-width: 768px) {
+  .back-btn { display: grid; }
+  .chat-header { padding: 8px 8px 8px 4px; gap: 8px; }
+  .chat-header .icon-btn { width: 36px; height: 36px; }
+}
+
+/* ─── TopicBar ─── */
+.topic-bar {
+  display: flex; gap: 4px;
+  padding: 8px 12px;
+  background: var(--bg-list-glass);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  border-bottom: 1px solid var(--line);
+  overflow-x: auto;
+  flex-shrink: 0;
+}
+.topic {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 12px 6px 6px;
+  border: 0; background: transparent;
+  border-radius: 18px;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.12s;
+}
+.topic:hover { background: var(--bg-hover); }
+.topic.active { background: var(--accent-soft); }
+.topic.active .topic-name { color: var(--accent); }
+.topic .topic-meta { text-align: left; }
+.topic-name {
+  font-size: 13px; font-weight: 600;
+  color: var(--fg-0);
+  line-height: 1.2; white-space: nowrap;
+}
+.topic-sub {
+  font-size: 11px; color: var(--fg-2);
+  line-height: 1.2; white-space: nowrap;
+}
+.topic-sub.online { color: var(--accent); }
+@media (max-width: 768px) {
+  .topic-bar { padding: 6px 8px; gap: 2px; }
+  .topic { padding: 4px 10px 4px 4px; }
+  .topic .topic-sub { display: none; }
+  .topic.active .topic-sub { display: none; }
+}
+
+/* ─── PinStrip ─── */
+.pin-strip {
+  background: var(--bg-list-glass);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  border-bottom: 1px solid var(--line);
+  padding: 6px 16px 6px 12px;
+  display: flex; align-items: center; gap: 10px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.pin-strip:hover { background: var(--bg-hover); }
+.pin-strip-bar {
+  width: 3px; height: 30px;
+  background: var(--accent);
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+.pin-strip-content { flex: 1; min-width: 0; }
+.pin-strip-title {
+  font-size: 12px; color: var(--accent);
+  font-weight: 500;
+}
+.pin-strip-text {
+  font-size: 13px; color: var(--fg-1);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+@media (max-width: 768px) {
+  .pin-strip { padding: 6px 12px 6px 8px; }
+}

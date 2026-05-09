@@ -11,6 +11,8 @@ export interface UseSwipeBackOptions {
   triggerRatio?: number;
   /** Disable when innerWidth ≥ 768. Default true. */
   disableOnDesktop?: boolean;
+  /** Mode: "transform" (default — return dragX for consumer to translateX) | "callback" (just fire onTrigger when threshold crossed; CSS handles transitions). */
+  mode?: "transform" | "callback";
 }
 
 export interface UseSwipeBackReturn {
@@ -25,6 +27,7 @@ export function useSwipeBack({
   edgeWidth = 20,
   triggerRatio = 0.5,
   disableOnDesktop = true,
+  mode = "transform",
 }: UseSwipeBackOptions): UseSwipeBackReturn {
   const ref = useRef<HTMLDivElement | null>(null);
   const [dragX, setDragX] = useState(0);
@@ -38,10 +41,12 @@ export function useSwipeBack({
   const triggerRatioRef = useRef(triggerRatio);
   const onTriggerRef = useRef(onTrigger);
   const shouldStartRef = useRef(shouldStart);
+  const modeRef = useRef(mode);
   useEffect(() => {
     triggerRatioRef.current = triggerRatio;
     onTriggerRef.current = onTrigger;
     shouldStartRef.current = shouldStart;
+    modeRef.current = mode;
   });
 
   useEffect(() => {
@@ -94,10 +99,15 @@ export function useSwipeBack({
       if (!draggingRef.current) return;
       const x = e.touches[0].clientX;
       const dx = Math.max(0, x - startXRef.current);
-      // Block native iOS edge swipe-back so we own the gesture.
-      e.preventDefault();
-      dragXRef.current = dx;
-      setDragX(dx);
+      if (modeRef.current === "callback") {
+        // Don't preventDefault — let native scroll proceed; don't drive React state.
+        dragXRef.current = dx;
+      } else {
+        // Block native iOS edge swipe-back so we own the gesture.
+        e.preventDefault();
+        dragXRef.current = dx;
+        setDragX(dx);
+      }
     };
 
     const onTouchEnd = () => {
@@ -106,6 +116,11 @@ export function useSwipeBack({
       setIsDragging(false);
       const vw = window.innerWidth;
       const triggered = dragXRef.current >= vw * triggerRatioRef.current;
+      if (modeRef.current === "callback") {
+        dragXRef.current = 0;
+        if (triggered) onTriggerRef.current();
+        return;
+      }
       animateTo(triggered ? vw : 0, 150, triggered ? () => onTriggerRef.current() : undefined);
     };
 
