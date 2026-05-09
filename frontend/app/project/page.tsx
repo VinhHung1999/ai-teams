@@ -3,219 +3,411 @@
 import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
+import { AgentPaneView } from "@/components/AgentPaneView";
 import { CreateProjectDialog } from "@/components/CreateProjectDialog";
+import { Bubble, type BubbleMessage } from "@/components/project/Bubble";
+import { ChatHeader } from "@/components/project/ChatHeader";
+import { ChatItem, type ChatItemData } from "@/components/project/ChatItem";
+import { Composer } from "@/components/project/Composer";
+import { PinStrip } from "@/components/project/PinStrip";
+import { TopicBar } from "@/components/project/TopicBar";
+
 import { api } from "@/lib/api";
+import {
+  filterMessages,
+  parsePane,
+  type MessageBubble,
+} from "@/lib/chatParser";
 import type { Project } from "@/lib/types";
+import { useSwipeBack } from "@/lib/useSwipeBack";
+import { useTmuxWs } from "@/lib/useTmuxWs";
 
-const AVATAR_PALETTE = [
-  "var(--c-role-PO)",
-  "var(--c-role-TL)",
-  "var(--c-role-BE)",
-  "var(--c-role-FE)",
-  "var(--c-role-QA)",
-  "var(--c-role-SM)",
-  "var(--c-role-DEV)",
-];
+// ─── helpers ─────────────────────────────────────────────────────────────────
 
-function avatarColorFor(name: string): string {
-  let hash = 0;
-  for (let i = 0; i < name.length; i++) hash = (hash * 31 + name.charCodeAt(i)) >>> 0;
-  return AVATAR_PALETTE[hash % AVATAR_PALETTE.length];
-}
-
-function relativeTime(iso: string): string {
+function relativeShort(iso: string): string {
   const then = new Date(iso).getTime();
   if (Number.isNaN(then)) return "";
-  const diffSec = Math.max(0, Math.round((Date.now() - then) / 1000));
-  if (diffSec < 60) return "now";
-  if (diffSec < 3600) return `${Math.floor(diffSec / 60)}m`;
-  if (diffSec < 86400) return `${Math.floor(diffSec / 3600)}h`;
-  if (diffSec < 86400 * 7) return `${Math.floor(diffSec / 86400)}d`;
+  const diff = Math.max(0, Date.now() - then);
+  if (diff < 60_000) return "now";
+  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m`;
+  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h`;
+  if (diff < 86_400_000 * 7) return `${Math.floor(diff / 86_400_000)}d`;
   return new Date(iso).toLocaleDateString();
 }
 
-function ProjectListContent() {
+function projectToChatItem(
+  p: Project,
+  activeSprintTitle: string | null,
+): ChatItemData {
+  const rolesText = p.roles && p.roles.length > 0 ? p.roles.join(" · ") : "No team";
+  return {
+    id: p.id,
+    name: p.name,
+    time: relativeShort(p.created_at),
+    last: activeSprintTitle ?? rolesText,
+    pinned: !!p.pinned,
+    isBot: false,
+  };
+}
+
+interface BubbleEntry {
+  msg: BubbleMessage;
+  mine: boolean;
+  key: string;
+}
+
+// chatParser → Bubble adapter. Maps BOSS sender → ME (self-bubble), and
+// collapses author repeats into the `same` flag so consecutive bubbles from
+// the same role hide their avatar/header.
+function adaptBubbles(messages: MessageBubble[]): BubbleEntry[] {
+  return messages.map((m, i) => {
+    const prev = i > 0 ? messages[i - 1] : null;
+    const same = prev !== null && prev.role === m.role;
+    const fromKind = m.role === "BOSS" ? "ME" : m.role;
+    return {
+      key: m.id,
+      mine: m.role === "BOSS",
+      msg: {
+        from: fromKind as BubbleMessage["from"],
+        text: m.text,
+        time: m.timestamp ?? "",
+        same,
+      },
+    };
+  });
+}
+
+// ─── inner component (uses useSearchParams → must be inside Suspense) ────────
+
+function ProjectShell() {
   const router = useRouter();
   const searchParams = useSearchParams();
+
   const [projects, setProjects] = useState<Project[] | null>(null);
+  const [activeId, setActiveId] = useState<number | null>(null);
+  const [topic, setTopic] = useState<string>("");
+  const [mobileView, setMobileView] = useState<"list" | "chat">("list");
+  const [paneOpen, setPaneOpen] = useState(false);
+  const [activeSprint, setActiveSprint] = useState<{ title: string; sub: string } | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
 
-  // Backwards compat: /project?id=X → /project/X
-  useEffect(() => {
-    const idParam = searchParams.get("id");
-    if (idParam) router.replace(`/project/${idParam}`);
-  }, [searchParams, router]);
+  // Derived state — recomputed on every render, no effect / no extra state.
+  const activeProject =
+    activeId !== null ? projects?.find((x) => x.id === activeId) ?? null : null;
 
+  // Fetch projects once
   useEffect(() => {
     api.listProjects().then(setProjects).catch(() => setProjects([]));
   }, []);
 
+  // URL deeplink: ?team=ID (kept legacy ?id= alias for old bookmarks).
+  // Initial mount only — guard prevents re-firing on internal URL pushes.
+  useEffect(() => {
+    const param = searchParams.get("team") ?? searchParams.get("id");
+    if (!param) return;
+    const id = Number(param);
+    if (!Number.isFinite(id)) return;
+    setActiveId(id);
+    setMobileView("chat");
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- read once at mount; subsequent URL syncs done via history.replaceState
+  }, []);
+
+  // Default topic when project loads / changes — only if no topic chosen yet.
+  useEffect(() => {
+    if (!activeProject) return;
+    const roles = activeProject.roles ?? [];
+    if (roles.length === 0) return;
+    setTopic((curr) => (roles.includes(curr) ? curr : roles[0]));
+  }, [activeProject]);
+
+  // Sync URL when active project changes (no router.push — avoids navigation).
+  useEffect(() => {
+    if (activeId === null || typeof window === "undefined") return;
+    window.history.replaceState(null, "", `/project?team=${activeId}`);
+  }, [activeId]);
+
+  // Active sprint for PinStrip — fetched only for the selected project
+  useEffect(() => {
+    if (activeId === null) {
+      setActiveSprint(null);
+      return;
+    }
+    let cancelled = false;
+    api
+      .listSprints(activeId)
+      .then((sprints) => {
+        if (cancelled) return;
+        const active = sprints.find((s) => s.status === "active");
+        if (active) {
+          setActiveSprint({
+            title: `Sprint ${active.number}`,
+            sub: active.goal ?? "",
+          });
+        } else {
+          setActiveSprint(null);
+        }
+      })
+      .catch(() => !cancelled && setActiveSprint(null));
+    return () => {
+      cancelled = true;
+    };
+  }, [activeId]);
+
+  // Live tmux output for the active topic
+  const sessionName = activeProject?.tmux_session_name ?? "";
+  const { outputs, wsStatus } = useTmuxWs(sessionName || undefined, topic);
+
+  // Swipe-back: dispatch state instead of router.back()
+  const { ref: swipeRef } = useSwipeBack({
+    mode: "callback",
+    onTrigger: () => setMobileView("list"),
+    shouldStart: () => mobileView === "chat" && !paneOpen,
+  });
+
+  // ── render ───────────────────────────────────────────────────────────────
+
   return (
-    <div
-      className="flex flex-col h-[100dvh] w-full"
-      style={{
-        background: "var(--c-bg-app)",
-        color: "var(--c-fg-0)",
-        fontFamily: "var(--c-font-stack)",
-      }}
-    >
-      <header
-        className="glass-header sticky top-0 z-20 flex items-center px-3 border-b"
+    <div className="app" data-mobile-view={mobileView}>
+      {/* Left list */}
+      <aside
+        className="list"
         style={{
-          borderColor: "var(--c-line)",
-          minHeight: "var(--c-tap-min)",
-          gap: "var(--c-space-2)",
+          display: "flex",
+          flexDirection: "column",
+          minHeight: 0,
+          background: "var(--bg-list)",
+          borderRight: "1px solid var(--line)",
         }}
       >
-        <button
-          type="button"
-          title="Menu (coming soon)"
-          aria-label="Menu (coming soon)"
-          disabled
-          className="inline-flex items-center justify-center rounded-full disabled:opacity-50"
-          style={{ width: "var(--c-tap-min)", height: "var(--c-tap-min)", color: "var(--c-fg-1)" }}
-        >
-          ☰
-        </button>
-        <h1
-          className="flex-1 text-center font-semibold"
-          style={{ fontSize: "17px", color: "var(--c-fg-0)" }}
-        >
-          AI Teams
-        </h1>
-        <button
-          type="button"
-          onClick={() => setCreateOpen(true)}
-          aria-label="New project"
-          className="inline-flex items-center justify-center rounded-full hover:bg-[var(--c-bg-hover)]"
+        <div
           style={{
-            width: "var(--c-tap-min)",
-            height: "var(--c-tap-min)",
-            color: "var(--c-accent)",
-            fontSize: "24px",
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            padding: "12px 16px",
+            borderBottom: "1px solid var(--line)",
+            minHeight: 56,
           }}
         >
-          +
-        </button>
-      </header>
-
-      <main
-        className="flex-1 min-h-0 overflow-y-auto"
-        style={{ background: "var(--c-bg-list)" }}
-      >
-        <div className="mx-auto" style={{ maxWidth: "480px" }}>
+          <h1 style={{ flex: 1, margin: 0, fontSize: 18, fontWeight: 600, color: "var(--fg-0)" }}>
+            AI Teams
+          </h1>
+          <button
+            type="button"
+            onClick={() => setCreateOpen(true)}
+            aria-label="New project"
+            style={{
+              width: 36,
+              height: 36,
+              borderRadius: 18,
+              border: 0,
+              background: "transparent",
+              color: "var(--accent)",
+              fontSize: 22,
+              cursor: "pointer",
+            }}
+          >
+            +
+          </button>
+        </div>
+        <div style={{ flex: 1, overflowY: "auto", minHeight: 0 }}>
           {projects === null && (
-            <div
-              className="flex items-center justify-center"
-              style={{ padding: "var(--c-space-4)", color: "var(--c-fg-2)" }}
-            >
-              Loading…
-            </div>
+            <div style={{ padding: 16, color: "var(--fg-2)" }}>Loading…</div>
           )}
-          {projects !== null && projects.length === 0 && (
+          {projects?.length === 0 && (
+            <div style={{ padding: 16, color: "var(--fg-2)" }}>No projects</div>
+          )}
+          {projects?.map((p) => (
+            <ChatItem
+              key={p.id}
+              c={projectToChatItem(p, p.id === activeId ? activeSprint?.title ?? null : null)}
+              active={p.id === activeId}
+              onClick={() => {
+                setActiveId(p.id);
+                setMobileView("chat");
+                setPaneOpen(false);
+              }}
+            />
+          ))}
+        </div>
+      </aside>
+
+      {/* Right chat */}
+      <main
+        className="chat"
+        ref={swipeRef}
+        style={{
+          position: "relative",
+          display: "flex",
+          flexDirection: "column",
+          minHeight: 0,
+          background: "var(--bg-chat)",
+        }}
+      >
+        {!activeProject ? (
+          <div style={{ flex: 1, display: "grid", placeItems: "center", color: "var(--fg-2)" }}>
+            Select a team to start
+          </div>
+        ) : (
+          <>
+            <ChatHeader
+              name={activeProject.name}
+              sub={topic ? `Topic: ${topic}` : "Select an agent"}
+              onBack={() => setMobileView("list")}
+              onMoreClick={() => setPaneOpen((v) => !v)}
+            />
+            {(activeProject.roles?.length ?? 0) > 0 && (
+              <TopicBar
+                roles={activeProject.roles ?? []}
+                active={topic}
+                onSelect={setTopic}
+              />
+            )}
+            {activeSprint && (
+              <PinStrip title={activeSprint.title} text={activeSprint.sub} />
+            )}
             <div
-              className="flex flex-col items-center justify-center text-center"
-              style={{ padding: "var(--c-space-5)", color: "var(--c-fg-2)" }}
+              style={{
+                flex: 1,
+                overflowY: "auto",
+                minHeight: 0,
+                padding: 12,
+                display: "flex",
+                flexDirection: "column",
+              }}
             >
-              <p style={{ marginBottom: "var(--c-space-3)" }}>No projects yet</p>
+              {(() => {
+                if (!sessionName || !topic) {
+                  return (
+                    <div style={{ margin: "auto", color: "var(--fg-2)" }}>
+                      No active session
+                    </div>
+                  );
+                }
+                const adapted = adaptBubbles(
+                  filterMessages(parsePane(outputs[topic] ?? "", topic)),
+                );
+                if (adapted.length === 0) {
+                  return (
+                    <div style={{ margin: "auto", color: "var(--fg-2)" }}>
+                      No messages yet
+                    </div>
+                  );
+                }
+                return adapted.map((b) => (
+                  <Bubble key={b.key} m={b.msg} mine={b.mine} />
+                ));
+              })()}
+            </div>
+            <Composer
+              sessionName={sessionName}
+              role={topic}
+              disabled={!sessionName || !topic}
+            />
+          </>
+        )}
+
+        {/* Collapsible AgentPaneView (layout-a — Boss-recommended dark wrapper) */}
+        {paneOpen && sessionName && topic && (
+          <div
+            style={{
+              position: "absolute",
+              top: 0,
+              right: 0,
+              bottom: 0,
+              width: "min(420px, 100vw)",
+              background: "#000",
+              borderLeft: "1px solid var(--line)",
+              boxShadow: "-4px 0 24px rgba(0,0,0,0.25)",
+              display: "flex",
+              flexDirection: "column",
+              zIndex: 10,
+            }}
+          >
+            <div
+              style={{
+                padding: "8px 12px",
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                background: "#0a0a0a",
+                color: "#fff",
+                borderBottom: "1px solid #1f1f1f",
+              }}
+            >
+              <span style={{ flex: 1, fontFamily: "var(--font-chat-mono)", fontSize: 12 }}>
+                Terminal · {topic}
+              </span>
               <button
                 type="button"
-                onClick={() => setCreateOpen(true)}
-                style={{ color: "var(--c-accent)", fontSize: "var(--c-font-size-base)" }}
+                onClick={() => setPaneOpen(false)}
+                aria-label="Close terminal"
+                style={{
+                  width: 32,
+                  height: 32,
+                  border: 0,
+                  background: "transparent",
+                  color: "#888",
+                  cursor: "pointer",
+                  borderRadius: 4,
+                  fontSize: 16,
+                }}
               >
-                Create your first project
+                ✕
               </button>
             </div>
-          )}
-          {projects !== null && projects.length > 0 && (
-            <ul role="list" className="divide-y" style={{ borderColor: "var(--c-line)" }}>
-              {projects.map((p) => (
-                <li key={p.id}>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      try { sessionStorage.setItem("ai-teams:slide-in", "1"); } catch { /* no-op */ }
-                      router.push(`/project/${p.id}`);
-                    }}
-                    className="w-full flex items-center text-left transition-colors hover:bg-[var(--c-bg-hover)] active:bg-[var(--c-bg-active)]"
-                    style={{
-                      minHeight: "var(--c-tap-min)",
-                      padding: "var(--c-space-2) var(--c-space-3)",
-                      gap: "var(--c-space-3)",
-                    }}
-                  >
-                    <div
-                      className="shrink-0 inline-flex items-center justify-center font-semibold text-white"
-                      style={{
-                        width: "var(--c-avatar-md)",
-                        height: "var(--c-avatar-md)",
-                        borderRadius: "var(--c-radius-avatar)",
-                        background: avatarColorFor(p.name),
-                        fontSize: "18px",
-                      }}
-                    >
-                      {p.name.charAt(0).toUpperCase()}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div
-                        className="font-medium truncate"
-                        style={{
-                          fontSize: "var(--c-font-size-base)",
-                          color: "var(--c-fg-0)",
-                          lineHeight: 1.3,
-                        }}
-                      >
-                        {p.name}
-                      </div>
-                      <div
-                        className="truncate"
-                        style={{
-                          fontSize: "var(--c-font-size-sm)",
-                          color: "var(--c-fg-1)",
-                          marginTop: "2px",
-                        }}
-                      >
-                        {p.roles && p.roles.length > 0
-                          ? p.roles.join(" · ")
-                          : "No team configured"}
-                      </div>
-                    </div>
-                    <div
-                      className="shrink-0"
-                      style={{ fontSize: "var(--c-font-size-xs)", color: "var(--c-fg-2)" }}
-                    >
-                      {relativeTime(p.created_at)}
-                    </div>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
+            <div style={{ flex: 1, minHeight: 0 }}>
+              <AgentPaneView
+                sessionName={sessionName}
+                role={topic}
+                isVisible={true}
+                output={outputs[topic] ?? ""}
+                wsStatus={wsStatus}
+              />
+            </div>
+          </div>
+        )}
       </main>
 
       <CreateProjectDialog
         open={createOpen}
         onClose={() => setCreateOpen(false)}
-        onCreated={(projectId) => router.push(`/project/${projectId}`)}
+        onCreated={(projectId) => {
+          setCreateOpen(false);
+          // Refresh project list so the new row appears, then select it
+          api.listProjects().then((next) => {
+            setProjects(next);
+            setActiveId(projectId);
+            setMobileView("chat");
+          }).catch(() => {
+            router.push(`/project?team=${projectId}`);
+          });
+        }}
       />
     </div>
   );
 }
+
+// ─── default export — Suspense wrapper required for useSearchParams (Next 15) ─
 
 export default function ProjectListPage() {
   return (
     <Suspense
       fallback={
         <div
-          className="flex items-center justify-center h-[100dvh]"
-          style={{ background: "var(--c-bg-app)", color: "var(--c-fg-2)" }}
+          style={{
+            display: "grid",
+            placeItems: "center",
+            height: "100dvh",
+            background: "var(--bg-app)",
+            color: "var(--fg-2)",
+          }}
         >
           Loading…
         </div>
       }
     >
-      <ProjectListContent />
+      <ProjectShell />
     </Suspense>
   );
 }
