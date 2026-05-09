@@ -71,17 +71,4 @@ export const api = {
       boards: Record<string, import("./types").Board>;
     }>(`/api/projects/${projectId}/dashboard`),
 
-  // Chat
-  chatHistory: (projectId: number, limit = 200, before?: string) => {
-    const params = new URLSearchParams({ limit: String(limit) });
-    if (before) params.set("before", before);
-    return fetchAPI<{ events: import("./chat-types").ChatEvent[]; total: number }>(
-      `/api/chat/${projectId}/history?${params}`
-    );
-  },
-  chatSend: (projectId: number, role: string, text: string) =>
-    fetchAPI<{ ok: boolean }>(`/api/chat/${projectId}/send`, {
-      method: "POST",
-      body: JSON.stringify({ role, text }),
-    }),
 };

@@ -20,7 +20,7 @@ self.addEventListener("push", (event) => {
     body: data.body || "",
     icon: data.icon || "/icon-192.png",
     badge: "/icon-192.png",
-    data: { projectId: data.projectId, url: "/chat" },
+    data: { projectId: data.projectId, url: data.projectId ? `/project/${data.projectId}` : "/" },
     tag: `ai-teams-${data.projectId}`, // replace per-project so notifications don't pile up
     renotify: true,
   };
@@ -28,16 +28,21 @@ self.addEventListener("push", (event) => {
   event.waitUntil(self.registration.showNotification(title, options));
 });
 
-// Notification click — focus or open the app
+// [375] Notification click — deeplink to the specific project page
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
-  const url = event.notification.data?.url || "/chat";
+  const projectId = event.notification.data?.projectId;
+  const targetUrl = projectId ? `/project/${projectId}` : "/";
+
   event.waitUntil(
     self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clients) => {
+      // Find an existing tab already on the target project URL and focus it
       for (const client of clients) {
-        if (client.url.includes("/chat") && "focus" in client) return client.focus();
+        if (client.url.includes(targetUrl) && "focus" in client) {
+          return client.focus();
+        }
       }
-      return self.clients.openWindow(url);
+      return self.clients.openWindow(targetUrl);
     })
   );
 });

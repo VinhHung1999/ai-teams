@@ -2,9 +2,8 @@ import { Router, Request, Response } from 'express';
 import multer from 'multer';
 import fs from 'fs';
 import path from 'path';
-import { exec, spawn } from 'child_process';
+import { exec } from 'child_process';
 import { promisify } from 'util';
-import { WebSocket } from 'ws';
 import storage from '../lib/JsonStorage';
 
 const execAsync = promisify(exec);
@@ -15,7 +14,7 @@ fs.mkdirSync(voiceTmpDir, { recursive: true });
 
 const upload = multer({
   dest: voiceTmpDir,
-  limits: { fileSize: 5 * 1024 * 1024 },
+  limits: { fileSize: 50 * 1024 * 1024 }, // [401] 50MB — ~5min at 96kbps webm
 });
 
 function loadSessionName(project: ReturnType<typeof storage.getProject>): string {
@@ -49,85 +48,92 @@ async function tmSend(sessionName: string, role: string, text: string): Promise<
   await execAsync(`tmux send-keys -t ${sessionName}:0.${paneIdx} C-m`);
 }
 
-// Transcribe audio file via Soniox WebSocket + ffmpeg PCM conversion.
-// Protocol (from sibling project + Soniox docs):
-//   1. Connect to wss://stt-rt.soniox.com/transcribe-websocket
-//   2. Send JSON config as first text frame
-//   3. Stream PCM 16kHz mono s16le binary frames via ffmpeg pipe
-//   4. Close WebSocket after ffmpeg finishes → Soniox flushes + closes
-//   5. Collect is_final tokens → joined transcript
-async function transcribeWithSoniox(audioFilePath: string, apiKey: string): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const ws = new WebSocket('wss://stt-rt.soniox.com/transcribe-websocket');
-    let finalText = '';
-    let done = false;
+// [377] Transcribe audio via Soniox async batch HTTP API (stt-async-v4).
+// Flow: try direct upload → if Soniox rejects (invalid_audio_file) → ffmpeg convert → retry.
+// iOS sends audio/mp4; desktop Chrome/Firefox sends audio/webm. Both paths handled.
+async function transcribeWithSoniox(audioFilePath: string, apiKey: string, filename: string = 'audio.webm'): Promise<string> {
+  const authHeader = { 'Authorization': `Bearer ${apiKey}` };
+  const fileSize = fs.statSync(audioFilePath).size;
+  console.error(`[voice] received ${filename} size=${(fileSize/1024).toFixed(1)}KB`);
 
-    const finish = (err?: Error) => {
-      if (done) return;
-      done = true;
-      clearTimeout(timer);
-      try { ws.terminate(); } catch {}
-      if (err) reject(err);
-      else resolve(finalText.trim());
-    };
+  const uploadAndTranscribe = async (filePath: string, fname: string): Promise<string> => {
+    const audioBlob = new Blob([fs.readFileSync(filePath)], { type: 'application/octet-stream' });
+    const uploadForm = new FormData();
+    uploadForm.append('file', audioBlob, fname);
 
-    const timer = setTimeout(() => finish(new Error('Soniox STT timeout (30s)')), 30_000);
-
-    ws.on('open', () => {
-      // Step 1: JSON config frame (must be first — Soniox protocol requirement)
-      ws.send(JSON.stringify({
-        api_key: apiKey,
-        model: 'stt-rt-v4',
-        sample_rate: 16000,
-        num_channels: 1,
-        audio_format: 'pcm_s16le',
-        language_hints: ['vi', 'en'],
-        language_hints_strict: false,
-      }));
-
-      // Step 2: stream audio → PCM 16kHz mono via ffmpeg
-      const ff = spawn('ffmpeg', [
-        '-i', audioFilePath,
-        '-ar', '16000', '-ac', '1', '-f', 's16le', 'pipe:1',
-      ], { stdio: ['ignore', 'pipe', 'ignore'] });
-
-      ff.stdout.on('data', (chunk: Buffer) => {
-        if (ws.readyState === WebSocket.OPEN) ws.send(chunk);
-      });
-
-      ff.stdout.on('end', () => {
-        // 2.5s flush window — gives Soniox time to process remaining PCM buffer
-        setTimeout(() => {
-          if (ws.readyState === WebSocket.OPEN) ws.close();
-        }, 2500);
-      });
-
-      ff.on('error', (e) => finish(new Error(`ffmpeg: ${e.message}`)));
+    const upRes = await fetch('https://api.soniox.com/v1/files', {
+      method: 'POST', headers: authHeader, body: uploadForm,
     });
+    const upBody = await upRes.text();
+    if (!upRes.ok) throw new Error(`upload_failed:${upBody}`);
+    const { id: fileId } = JSON.parse(upBody) as { id: string };
+    console.error(`[voice] uploaded file_id=${fileId}`);
 
-    ws.on('message', (data) => {
-      try {
-        const msg = JSON.parse(data.toString()) as {
-          tokens?: Array<{ text: string; is_final: boolean }>;
-          error_message?: string;
-        };
-        if (msg.error_message) { finish(new Error(`Soniox: ${msg.error_message}`)); return; }
-        if (msg.tokens && msg.tokens.length > 0) {
-          // Soniox sends the FULL accumulated token list in each message (not deltas).
-          // The last non-empty message has the most complete transcript — use all tokens.
-          finalText = msg.tokens.map((t) => t.text).join('');
-        }
-      } catch {}
+    const txRes = await fetch('https://api.soniox.com/v1/transcriptions', {
+      method: 'POST',
+      headers: { ...authHeader, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ file_id: fileId, model: 'stt-async-v4', language_hints: ['vi', 'en'] }),
     });
+    if (!txRes.ok) throw new Error(`submit: ${await txRes.text()}`);
+    const { id: txId } = await txRes.json() as { id: string };
 
-    ws.on('close', () => finish());
-    ws.on('error', (e) => finish(e));
-  });
+    const deadline = Date.now() + 120_000;
+    while (Date.now() < deadline) {
+      await new Promise<void>((r) => setTimeout(r, 1500));
+      const pollRes = await fetch(`https://api.soniox.com/v1/transcriptions/${txId}`, { headers: authHeader });
+      if (!pollRes.ok) throw new Error(`poll: ${pollRes.status}`);
+      const poll = await pollRes.json() as { status: string; error_message?: string };
+      if (poll.status === 'error') throw new Error(`soniox: ${poll.error_message ?? 'unknown'}`);
+      if (poll.status === 'completed') break;
+    }
+
+    const tRes = await fetch(`https://api.soniox.com/v1/transcriptions/${txId}/transcript`, { headers: authHeader });
+    if (!tRes.ok) throw new Error(`transcript: ${tRes.status}`);
+    const { text } = await tRes.json() as { text: string };
+    return text.trim();
+  };
+
+  // Step 1: Try direct upload. Any Soniox rejection (upload, invalid audio, transcribe error)
+  // falls through to ffmpeg — iOS audio/mp4 and some WebM streams are unreliable.
+  try {
+    return await uploadAndTranscribe(audioFilePath, filename);
+  } catch (e: any) {
+    console.error(`[voice] direct attempt failed (${e.message}) → ffmpeg fallback`);
+  }
+
+  // Step 2: Fallback — rename with extension so ffmpeg can detect format, then convert to OGG
+  // multer saves files without extension → ffmpeg can't auto-detect format
+  const ext = filename.includes('mp4') || filename.includes('aac') ? '.mp4'
+    : filename.includes('ogg') ? '.ogg'
+    : '.webm';
+  const namedPath = `${audioFilePath}${ext}`;
+  fs.renameSync(audioFilePath, namedPath);
+
+  const oggPath = `${audioFilePath}.ogg`;
+  try {
+    const { stdout, stderr } = await execAsync(
+      `ffmpeg -y -i "${namedPath}" -c:a libvorbis -q:a 4 "${oggPath}" 2>&1`,
+      { timeout: 30_000 },
+    );
+    console.error(`[voice] ffmpeg stdout: ${stdout}`);
+    if (stderr) console.error(`[voice] ffmpeg stderr: ${stderr}`);
+  } catch (e: any) {
+    try { fs.renameSync(namedPath, audioFilePath); } catch {} // restore original name for cleanup
+    throw new Error(`ffmpeg: ${e.message}`);
+  }
+
+  try {
+    return await uploadAndTranscribe(oggPath, 'audio.ogg');
+  } finally {
+    try { fs.unlinkSync(namedPath); } catch {}
+    try { fs.unlinkSync(oggPath); } catch {}
+  }
 }
 
-// POST /api/chat/:projectId/voice — multipart: role (string), audio (blob ≤5MB)
+// POST /api/projects/:projectId/voice — multipart: role (string), audio (blob ≤5MB)
+// [382] Renamed from /api/chat/* — namespace cleared with JSONL chat removal.
 router.post(
-  '/api/chat/:projectId/voice',
+  '/api/projects/:projectId/voice',
   upload.single('audio'),
   async (req: Request, res: Response) => {
     const projectId = parseInt(req.params.projectId as string);
@@ -154,16 +160,21 @@ router.post(
       if (!apiKey) {
         transcript = '[STT pending — set SONIOX_API_KEY in .env to enable voice transcription]';
       } else {
-        transcript = await transcribeWithSoniox(tmpPath, apiKey);
+        transcript = await transcribeWithSoniox(tmpPath, apiKey, file.originalname || 'voice.webm');
         if (!transcript) return res.status(422).json({ error: 'empty transcript from STT' });
       }
 
-      await tmSend(sessionName, role, `[via UI] BOSS: ${transcript}`);
+      // [382] No '[via UI] BOSS:' prefix — pane shows '❯ <transcript>', parser tags as BOSS.
+      await tmSend(sessionName, role, transcript);
       res.json({ ok: true, transcript });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     } finally {
+      // tmpPath may have been renamed inside transcribeWithSoniox — try both
       fs.unlink(tmpPath, () => {});
+      const mtype = file.mimetype || '';
+      const ext2 = mtype.includes('mp4') || mtype.includes('aac') ? '.mp4' : mtype.includes('ogg') ? '.ogg' : '.webm';
+      fs.unlink(tmpPath + ext2, () => {});
     }
   },
 );

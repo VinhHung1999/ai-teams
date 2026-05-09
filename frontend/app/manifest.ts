@@ -5,7 +5,7 @@ export default function manifest(): MetadataRoute.Manifest {
     name: "AI Teams",
     short_name: "AI Teams",
     description: "Kanban board for tmux AI agent teams",
-    start_url: "/chat",
+    start_url: "/project",
     display: "standalone",
     background_color: "#ffffff",
     theme_color: "#3390ec",
