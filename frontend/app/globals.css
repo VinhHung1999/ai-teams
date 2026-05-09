@@ -208,6 +208,80 @@ html[data-theme="light"] {
   --c-wallpaper-pattern-opacity: 0.6;
 }
 
+/* ═══════════════════════════════════════════════════════════
+   [390] Telegram fidelity tokens — gap-fill on top of existing --c-* palette.
+   Spacing/radius/typography scale + dark mode mirror block.
+   ═══════════════════════════════════════════════════════════ */
+:root,
+html[data-theme="light"] {
+  /* Spacing scale (Telegram tight) */
+  --c-space-1: 4px;
+  --c-space-2: 8px;
+  --c-space-3: 12px;
+  --c-space-4: 16px;
+  --c-space-5: 24px;
+
+  /* Radius scale (Telegram surfaces) */
+  --c-radius-bubble:    16px;
+  --c-radius-input:     22px;   /* full-rounded input pill */
+  --c-radius-card:      12px;
+  --c-radius-avatar:    9999px; /* circle */
+  --c-radius-button:    20px;
+
+  /* Typography scale */
+  --c-font-stack:       -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", system-ui, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  --c-font-size-base:   16px;   /* prevents iOS zoom on input focus */
+  --c-font-size-sm:     14px;
+  --c-font-size-xs:     12px;
+  --c-line-height:      1.4;
+
+  /* Avatar sizes */
+  --c-avatar-md:        48px;   /* list rows */
+  --c-avatar-sm:        32px;   /* compact */
+
+  /* Touch target (Telegram standard, not 44px iOS HIG) */
+  --c-tap-min:          56px;
+}
+
+/* Dark mode mirror — defined but NOT auto-applied. Toggle UI deferred to S50.
+   Activate via: <html data-theme="dark"> */
+html[data-theme="dark"] {
+  --c-bg-app:          #0F0F0F;
+  --c-bg-list:         #1C1C1E;
+  --c-bg-list-glass:   rgba(28,28,30,0.78);
+  --c-bg-chat:         #0F0F0F;
+  --c-bg-hover:        rgba(255,255,255,0.06);
+  --c-bg-active:       #2A2A2C;
+  --c-bg-bubble-them:  rgba(40,40,42,0.96);
+  --c-bg-bubble-me:    #3A6E3F;
+
+  --c-line:            rgba(255,255,255,0.08);
+  --c-line-soft:       rgba(255,255,255,0.04);
+
+  --c-fg-0:            #f4f4f5;
+  --c-fg-1:            #a1a1aa;
+  --c-fg-2:            #71717a;
+  --c-fg-3:            #52525b;
+
+  --c-accent:          #3390ec;
+  --c-accent-soft:     rgba(51,144,236,0.18);
+
+  --c-bubble-shadow:   0 1px 2px rgba(0,0,0,0.4);
+
+  --c-status-ok:   #19c08a;
+  --c-status-warn: #f59e0b;
+  --c-status-err:  #e8504c;
+
+  /* Wallpaper — dark variant: subtle deep gradient */
+  --c-wallpaper-gradient:
+    radial-gradient(ellipse at 20% 30%, #1a1a2e 0%, transparent 55%),
+    radial-gradient(ellipse at 80% 70%, #16213e 0%, transparent 60%),
+    linear-gradient(160deg, #0f0f0f 0%, #1a1a2e 100%);
+  --c-wallpaper-pattern-opacity: 0.18;
+}
+
+html[data-theme="dark"] { color-scheme: dark; }
+
 
 /* ── Liquid Glass utilities (iOS-style, Sprint 42 [335]) ─────────────────────
    Chrome level (blur 40px): sidebar, header, panel

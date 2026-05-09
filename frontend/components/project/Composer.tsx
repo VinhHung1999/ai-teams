@@ -51,34 +51,32 @@ export const Composer: FC<ComposerProps> = ({ sessionName, role, disabled }) => 
 
   return (
     <div
-      className="flex items-end gap-2 px-2 py-2 border-t border-border/40 bg-card/40 backdrop-blur-2xl backdrop-saturate-150"
-      style={{ paddingBottom: "max(0.5rem, env(safe-area-inset-bottom))" }}
+      className="flex items-end gap-2 px-2 py-2 border-t"
+      style={{
+        borderColor: "var(--c-line)",
+        background: "var(--c-bg-list-glass)",
+        backdropFilter: "blur(20px) saturate(160%)",
+        WebkitBackdropFilter: "blur(20px) saturate(160%)",
+        paddingBottom: "max(8px, env(safe-area-inset-bottom))",
+      }}
     >
-      <button
-        type="button"
-        title="Slash commands (coming soon)"
-        aria-label="Slash commands (coming soon)"
-        disabled={isDisabled}
-        className="inline-flex h-10 w-11 items-center justify-center rounded-full bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30 disabled:opacity-60"
-      >
-        ≡
-      </button>
-
-      <button
-        type="button"
-        title="Attach file (coming soon)"
-        aria-label="Attach file (coming soon)"
-        disabled={isDisabled}
-        className="inline-flex h-10 w-11 items-center justify-center rounded-full border border-border/40 bg-card/40 text-muted-foreground backdrop-blur-md hover:bg-card/60 disabled:opacity-60"
-      >
-        📎
-      </button>
-
       <div
-        className={`flex flex-1 items-end gap-2 rounded-2xl border border-border/40 bg-card/60 px-3 py-2 backdrop-blur-md ${
+        className={`glass-input-pill flex flex-1 items-end gap-2 px-3 py-2 ${
           isDisabled ? "opacity-60" : ""
         }`}
+        style={{ borderRadius: "var(--c-radius-input)" }}
       >
+        <button
+          type="button"
+          title="Attach (coming soon)"
+          aria-label="Attach (coming soon)"
+          disabled
+          className="inline-flex h-8 w-8 shrink-0 items-center justify-center self-end rounded-full text-muted-foreground hover:bg-foreground/5 disabled:opacity-60"
+          style={{ transform: "rotate(-45deg)" }}
+        >
+          📎
+        </button>
+
         <textarea
           ref={textareaRef}
           rows={1}
@@ -94,9 +92,16 @@ export const Composer: FC<ComposerProps> = ({ sessionName, role, disabled }) => 
           style={{ fontSize: 16, lineHeight: 1.4, minHeight: 24, maxHeight: 96 }}
           className="flex-1 resize-none bg-transparent outline-none placeholder:text-muted-foreground/60"
         />
-        <span className="self-end text-xs text-muted-foreground/60" aria-hidden="true">
-          ⏱
-        </span>
+
+        <button
+          type="button"
+          title="Emoji (coming soon)"
+          aria-label="Emoji (coming soon)"
+          disabled
+          className="inline-flex h-8 w-8 shrink-0 items-center justify-center self-end rounded-full text-muted-foreground hover:bg-foreground/5 disabled:opacity-60"
+        >
+          😊
+        </button>
       </div>
 
       <button
@@ -104,11 +109,12 @@ export const Composer: FC<ComposerProps> = ({ sessionName, role, disabled }) => 
         onClick={submit}
         disabled={isDisabled || !hasText}
         aria-label={hasText ? "Send message" : "Voice input"}
-        className={
+        className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition-all duration-150 disabled:opacity-60 ${
           hasText
-            ? "inline-flex h-10 w-10 items-center justify-center rounded-full bg-emerald-500 text-white hover:bg-emerald-600 disabled:opacity-60"
-            : "inline-flex h-10 w-10 items-center justify-center rounded-full text-muted-foreground hover:text-foreground disabled:opacity-60"
-        }
+            ? "text-white shadow-md"
+            : "bg-transparent text-muted-foreground hover:text-foreground"
+        }`}
+        style={hasText ? { background: "var(--c-accent)" } : undefined}
       >
         {hasText ? "➤" : "🎤"}
       </button>

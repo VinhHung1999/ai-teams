@@ -122,7 +122,10 @@ export default function ProjectChatPage(props: { params: Promise<{ id: string }>
   return (
     <div className="flex h-[100dvh] w-full overflow-hidden bg-background text-foreground">
       <div className="flex flex-1 flex-col h-full min-w-0">
-        <header className="sticky top-0 z-20 bg-card/40 backdrop-blur-2xl backdrop-saturate-150 border-b border-border/40 flex items-center gap-2 px-2 py-2 min-h-[56px]">
+        <header
+          className="glass-header sticky top-0 z-20 flex items-center gap-2 px-2 py-2 min-h-[56px] border-b"
+          style={{ borderColor: "var(--c-line)" }}
+        >
           <button
             type="button"
             title="Coming soon"
@@ -149,7 +152,7 @@ export default function ProjectChatPage(props: { params: Promise<{ id: string }>
           </button>
         </header>
 
-        <div className="flex-1 min-h-0 overflow-hidden">
+        <div className="chat-wallpaper flex-1 min-h-0 overflow-hidden">
           {paneEmptyMessage ? (
             <div className="flex h-full w-full items-center justify-center">
               <p className="text-sm text-muted-foreground">{paneEmptyMessage}</p>
