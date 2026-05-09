@@ -389,6 +389,8 @@ docs/board/
 | Anti-pattern | Why it breaks the team | Correct behavior |
 |---|---|---|
 | DEV asks Boss directly (chat / prompt / voice) | Bypasses PO; creates conflicting directives; loses audit trail | DEV → PO ALWAYS. PO escalates to Boss if needed. See "Stakeholder Communication" |
+| `git stash push/pop` during active merge (mid-conflict resolution) | Stash + merge state are incompatible; pop restores worktree but NOT index → first commit may have correct merge structure (both parents) but INCOMPLETE TREE. Lesson: [392] Sprint 51, c80c044 fixup commit. | If you need to compare against another branch mid-merge: either (a) `git merge --abort`, do the comparison, re-merge fresh; OR (b) finish conflict resolution + commit the merge first, then stash for follow-up. Never stash during active conflict resolution. |
+| Force-push to `main` (or any shared branch) without explicit Boss approval | Destructive op; rewrites history others depend on; per Git Safety Protocol: NEVER without explicit request | If merge / commit needs correction: prefer additive fixup commit on top (non-destructive). Force-push only if Boss explicitly approves. |
 | DEV writes code on a card still in `## Todo` | PO can't tell who's working on what; risk of double-pickup | `board start <ID>` first, ALWAYS |
 | DEV runs `board start` and dives straight into decomposition | Skips the karpathy pre-flight that catches design-time mistakes; wastes context on wrong decomposition | Pre-flight `/dev:karpathy-guidelines` IMMEDIATELY after `board start`, before any other action |
 | DEV `board done` without running karpathy + simplify post-integration | Overcomplication / dead code ships to PO | `/dev:karpathy-guidelines` + `/simplify` BEFORE `board done` |
