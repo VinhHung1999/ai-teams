@@ -133,7 +133,10 @@ function ProjectListContent() {
                 <li key={p.id}>
                   <button
                     type="button"
-                    onClick={() => router.push(`/project/${p.id}`)}
+                    onClick={() => {
+                      try { sessionStorage.setItem("ai-teams:slide-in", "1"); } catch { /* no-op */ }
+                      router.push(`/project/${p.id}`);
+                    }}
                     className="w-full flex items-center text-left transition-colors hover:bg-[var(--c-bg-hover)] active:bg-[var(--c-bg-active)]"
                     style={{
                       minHeight: "var(--c-tap-min)",

@@ -1,6 +1,7 @@
 "use client";
 
 import { use, useCallback, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 
 import { AgentPaneView } from "@/components/AgentPaneView";
 import { BoardDrawer } from "@/components/project/BoardDrawer";
@@ -9,6 +10,7 @@ import { Composer } from "@/components/project/Composer";
 import { HeaderRolePills } from "@/components/project/HeaderRolePills";
 import { api } from "@/lib/api";
 import type { Board, Project } from "@/lib/types";
+import { useSwipeBack } from "@/lib/useSwipeBack";
 import { useTmuxWs } from "@/lib/useTmuxWs";
 
 function derivePaneMessage(
@@ -28,12 +30,50 @@ export default function ProjectChatPage(props: { params: Promise<{ id: string }>
   const params = use(props.params);
   const id = Number(params.id);
   const validId = Number.isFinite(id);
+  const router = useRouter();
 
   const [project, setProject] = useState<Project | null>(null);
   const [activeRole, setActiveRole] = useState<string>("");
   const [board, setBoard] = useState<Board | null>(null);
   const [activity, setActivity] = useState<Record<string, boolean>>({});
   const [drawerOpen, setDrawerOpen] = useState(false);
+
+  // Swipe-back gesture: only when mobile + drawer closed.
+  // Conflict mitigations (see card [388]):
+  //  - terminal AgentPaneView starts at x≥0 but interactive zone past padding ≥20px
+  //  - composer textarea pill margins push interactive area past x=20
+  //  - drawerOpen short-circuits via shouldStart so backdrop tap remains the close path
+  const { ref: swipeRef, dragX, isDragging } = useSwipeBack({
+    onTrigger: () => router.back(),
+    shouldStart: () => !drawerOpen,
+  });
+
+  // Push slide-in: /project list sets sessionStorage flag before router.push.
+  // Direct landing on /project/[id] reads no flag → no animation.
+  const [slideIn, setSlideIn] = useState<"pending" | "active" | "done">(() => {
+    if (typeof window === "undefined") return "done";
+    try {
+      if (sessionStorage.getItem("ai-teams:slide-in") === "1") {
+        sessionStorage.removeItem("ai-teams:slide-in");
+        return "pending";
+      }
+    } catch { /* sessionStorage unavailable — silently no-op */ }
+    return "done";
+  });
+
+  // Pending → active: next frame so initial translateX(100vw) commits before transition.
+  useEffect(() => {
+    if (slideIn !== "pending") return;
+    const raf = requestAnimationFrame(() => setSlideIn("active"));
+    return () => cancelAnimationFrame(raf);
+  }, [slideIn]);
+
+  // Active → done after transition window so subsequent drag is direct (no transition lag).
+  useEffect(() => {
+    if (slideIn !== "active") return;
+    const t = setTimeout(() => setSlideIn("done"), 280);
+    return () => clearTimeout(t);
+  }, [slideIn]);
 
   // Project (one-shot per id)
   useEffect(() => {
@@ -119,8 +159,23 @@ export default function ProjectChatPage(props: { params: Promise<{ id: string }>
   const roles = project?.roles ?? [];
   const paneEmptyMessage = derivePaneMessage(project, roles, sessionName, activeRole);
 
+  const rootTransform =
+    isDragging || dragX > 0
+      ? `translateX(${dragX}px)`
+      : slideIn === "pending"
+        ? "translateX(100vw)"
+        : "translateX(0)";
+  // No transition while dragging (direct finger tracking) or once settled (avoid lag on next gesture).
+  const rootTransition = !isDragging && slideIn === "active"
+    ? "transform 250ms cubic-bezier(0.32, 0.72, 0, 1)"
+    : "none";
+
   return (
-    <div className="flex h-[100dvh] w-full overflow-hidden bg-background text-foreground">
+    <div
+      ref={swipeRef}
+      className="flex h-[100dvh] w-full overflow-hidden bg-background text-foreground"
+      style={{ transform: rootTransform, transition: rootTransition, willChange: "transform" }}
+    >
       <div className="flex flex-1 flex-col h-full min-w-0">
         <header
           className="glass-header sticky top-0 z-20 flex items-center gap-2 px-2 py-2 min-h-[56px] border-b"
