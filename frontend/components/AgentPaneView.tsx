@@ -10,23 +10,10 @@ interface AgentPaneViewProps {
   wsStatus?: "connecting" | "connected" | "disconnected";
 }
 
-const SPECIAL_KEYS: Record<string, string> = {
-  Enter: "Enter", Backspace: "BSpace", Tab: "Tab", Escape: "Escape",
-  ArrowUp: "Up", ArrowDown: "Down", ArrowLeft: "Left", ArrowRight: "Right",
-  Delete: "DC", Home: "Home", End: "End", PageUp: "PPage", PageDown: "NPage",
-};
-
 export function AgentPaneView({ sessionName, role, isVisible, output, wsStatus }: AgentPaneViewProps) {
   const outputRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLTextAreaElement>(null);
   const prevOutputLen = useRef(0);
   const [autoScroll, setAutoScroll] = useState(true);
-  const [inputValue, setInputValue] = useState("");
-  const [isPending, setIsPending] = useState(false);
-  const [isListening, setIsListening] = useState(false);
-  const [speechTranscript, setSpeechTranscript] = useState("");
-  const [speechInterim, setSpeechInterim] = useState("");
-  const recognitionRef = useRef<any>(null);
 
   // Auto-scroll on output change (only when visible)
   useEffect(() => {
@@ -36,98 +23,21 @@ export function AgentPaneView({ sessionName, role, isVisible, output, wsStatus }
     prevOutputLen.current = output.length;
   }, [output, autoScroll, isVisible]);
 
-  // Refocus input after send completes
-  useEffect(() => {
-    if (!isPending) inputRef.current?.focus();
-  }, [isPending]);
-
   const handleScroll = () => {
     if (!outputRef.current) return;
     const { scrollTop, scrollHeight, clientHeight } = outputRef.current;
     setAutoScroll(scrollHeight - scrollTop - clientHeight < 50);
   };
 
-  // ── Send text / key to tmux pane ──
-  const sendText = async (text: string) => {
-    try {
-      await fetch(`/api/tmux/session/${encodeURIComponent(sessionName)}/send`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ role, text }),
-      });
-    } catch {}
-  };
-
-  const sendSpecialKey = async (key: string) => {
-    try {
-      await fetch(`/api/tmux/session/${encodeURIComponent(sessionName)}/send-key`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ role, key }),
-      });
-    } catch {}
-  };
-
-  const handleSendMessage = async () => {
-    if (!inputValue.trim() || isPending) return;
-    setIsPending(true);
-    await sendText(inputValue);
-    setInputValue("");
-    setTimeout(() => setIsPending(false), 500);
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "Enter") { e.preventDefault(); handleSendMessage(); return; }
-    if (e.ctrlKey && e.key === "c") { e.preventDefault(); sendSpecialKey("C-c"); return; }
-    if (e.key === "ArrowUp" || e.key === "ArrowDown") {
-      e.preventDefault(); sendSpecialKey(SPECIAL_KEYS[e.key]); return;
-    }
-  };
-
-  // ── Speech ──
-  const startSpeech = () => {
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SpeechRecognition) { alert("Speech recognition not supported"); return; }
-    const recognition = new SpeechRecognition();
-    recognition.lang = "vi-VN";
-    recognition.continuous = true;
-    recognition.interimResults = true;
-    let accumulated = "";
-    recognition.onresult = (event: any) => {
-      let interim = "";
-      let finalChunk = "";
-      for (let i = event.resultIndex; i < event.results.length; i++) {
-        if (event.results[i].isFinal) finalChunk += event.results[i][0].transcript;
-        else interim = event.results[i][0].transcript;
-      }
-      if (finalChunk) { accumulated += (accumulated ? " " : "") + finalChunk; setSpeechTranscript(accumulated); }
-      setSpeechInterim(interim);
-    };
-    recognition.onerror = () => setIsListening(false);
-    recognition.onend = () => setIsListening(false);
-    recognition.start();
-    recognitionRef.current = recognition;
-    setSpeechTranscript(""); setSpeechInterim(""); setIsListening(true);
-  };
-
-  const stopSpeechAndSend = () => {
-    recognitionRef.current?.stop();
-    setIsListening(false);
-    const text = speechTranscript.trim();
-    if (text) sendText(text);
-    setSpeechTranscript(""); setSpeechInterim("");
-  };
-
-  const cancelSpeech = () => {
-    recognitionRef.current?.stop();
-    setIsListening(false);
-    setSpeechTranscript(""); setSpeechInterim("");
-  };
-
   const outputHtml = ansiToHtml(cleanOutput(output));
 
   return (
-    <div className="flex flex-col h-full overflow-hidden" style={{ overscrollBehavior: "none" }}>
+    <div
+      className="flex flex-col h-full overflow-hidden"
+      style={{ overscrollBehavior: "none" }}
+      data-session={sessionName}
+      data-role={role}
+    >
       {/* WS status — top bar */}
       {wsStatus && wsStatus !== "connected" && (
         <div className={`flex items-center gap-1 px-3 py-1 text-[10px] font-mono shrink-0 border-b ${
@@ -143,7 +53,6 @@ export function AgentPaneView({ sessionName, role, isVisible, output, wsStatus }
         onScroll={handleScroll}
         className="flex-1 overflow-y-auto overflow-x-hidden p-3 bg-[#000000] cursor-text"
         style={{ overscrollBehavior: "contain", WebkitOverflowScrolling: "touch" }}
-        onClick={() => inputRef.current?.focus()}
       >
         <pre
           className="font-mono text-[13px] whitespace-pre-wrap break-words text-[#e0e0e0] leading-relaxed"
@@ -153,7 +62,7 @@ export function AgentPaneView({ sessionName, role, isVisible, output, wsStatus }
 
       {/* Scroll-to-bottom button */}
       {!autoScroll && (
-        <div className="absolute bottom-14 right-4 z-10">
+        <div className="absolute bottom-4 right-4 z-10">
           <button
             onClick={() => {
               setAutoScroll(true);
@@ -165,76 +74,6 @@ export function AgentPaneView({ sessionName, role, isVisible, output, wsStatus }
           </button>
         </div>
       )}
-
-      {/* Speech transcript overlay */}
-      {isListening && (
-        <div className="border-t border-red-500/30 bg-[#0a0a0a] px-3 py-2 shrink-0">
-          <div className="flex items-start gap-2">
-            <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse mt-1.5 shrink-0" />
-            <div className="flex-1 min-w-0">
-              <p className="text-xs text-foreground/80 font-mono">
-                {speechTranscript}
-                {speechInterim && <span className="text-muted-foreground/40">{speechTranscript ? " " : ""}{speechInterim}</span>}
-                {!speechTranscript && !speechInterim && <span className="text-muted-foreground/30">Listening...</span>}
-              </p>
-            </div>
-            <button onClick={cancelSpeech} className="text-[10px] text-muted-foreground/40 hover:text-foreground/60 shrink-0" title="Cancel">✕</button>
-          </div>
-        </div>
-      )}
-
-      {/* Input area */}
-      <div className="border-t border-border/40 bg-card px-3 py-2 shrink-0" style={{ paddingBottom: "max(0.5rem, env(safe-area-inset-bottom))" }}>
-        <div className="flex gap-2 items-end">
-          <textarea
-            ref={inputRef}
-            value={inputValue}
-            onChange={(e) => {
-              setInputValue(e.target.value);
-              e.target.style.height = "auto";
-              e.target.style.height = Math.min(e.target.scrollHeight, 120) + "px";
-            }}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                handleSendMessage();
-                (e.target as HTMLTextAreaElement).style.height = "36px";
-                return;
-              }
-              handleKeyDown(e as unknown as React.KeyboardEvent<HTMLInputElement>);
-            }}
-            placeholder={isPending ? "Sending..." : `Message ${role}...`}
-            disabled={isPending}
-            className="flex-1 font-mono px-3 py-2 rounded-md bg-muted/30 border border-border/40 text-foreground placeholder:text-muted-foreground/30 focus:outline-none focus:border-primary/40 disabled:opacity-50 resize-none overflow-hidden"
-            style={{ fontSize: "16px", height: "36px", maxHeight: "120px" }}
-            autoComplete="off"
-            rows={1}
-          />
-          {/* Mic */}
-          <button
-            onClick={isListening ? stopSpeechAndSend : startSpeech}
-            className={`h-9 w-9 rounded-sm flex items-center justify-center shrink-0 transition-all ${
-              isListening
-                ? "bg-red-500/20 text-red-400 border border-red-500/40 animate-pulse"
-                : "text-muted-foreground/50 hover:text-foreground/70 hover:bg-muted/20 border border-border/30"
-            }`}
-            title={isListening ? "Stop & fill input" : "Start speech"}
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg>
-          </button>
-          {/* Send */}
-          <button
-            onClick={() => {
-              handleSendMessage();
-              if (inputRef.current) inputRef.current.style.height = "36px";
-            }}
-            disabled={!inputValue.trim() || isPending}
-            className="h-9 px-3 rounded-md bg-primary text-primary-foreground text-xs font-mono hover:bg-primary/90 disabled:opacity-30 shrink-0"
-          >
-            Send
-          </button>
-        </div>
-      </div>
     </div>
   );
 }
@@ -273,7 +112,7 @@ function color256(n: number): string {
 
 function ansiToHtml(text: string): string {
   let html = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-  html = html.replace(/\x1b\].*?(?:\x1b\\|\x07|\u009c)/g, "");
+  html = html.replace(/\x1b\].*?(?:\x1b\\|\x07|)/g, "");
   html = html.replace(/\x1b\[[0-9;]*[A-LN-Za-hjklnp-z]/g, "");
 
   let openSpans = 0;
