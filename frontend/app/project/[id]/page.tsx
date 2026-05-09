@@ -5,6 +5,7 @@ import { use, useCallback, useEffect, useState } from "react";
 import { AgentPaneView } from "@/components/AgentPaneView";
 import { BoardDrawer } from "@/components/project/BoardDrawer";
 import { CompactKanban } from "@/components/project/CompactKanban";
+import { Composer } from "@/components/project/Composer";
 import { HeaderRolePills } from "@/components/project/HeaderRolePills";
 import { api } from "@/lib/api";
 import type { Board, Project } from "@/lib/types";
@@ -164,13 +165,11 @@ export default function ProjectChatPage(props: { params: Promise<{ id: string }>
           )}
         </div>
 
-        {/* Composer placeholder ([386]) */}
-        <div
-          className="sticky bottom-0 min-h-[56px] border-t border-border/40 bg-card/40 backdrop-blur-2xl flex items-center px-3 text-sm text-muted-foreground"
-          style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
-        >
-          Composer ([386])
-        </div>
+        <Composer
+          sessionName={sessionName}
+          role={activeRole}
+          disabled={!sessionName || !activeRole}
+        />
       </div>
 
       <BoardDrawer isOpen={drawerOpen} onClose={() => setDrawerOpen(false)}>
