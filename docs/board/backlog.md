@@ -11,7 +11,11 @@ kanban-plugin: board
 
 ## 🔴 P0: Critical
 
-- [ ] **[361]** Chat UI redesign — Telegram-style theo Anthropic design bundle (Sprint 41 candidate)
+- [ ] **[381]** Slash dropdown scroll fix — *deferred S48 → S49*
+      **Priority:** P0 · **Points:** 1 · **Backlog-ID:** 416
+      **Description:** Type `/` → dropdown 41 skills không scroll. Fix `max-height: 240px; overflow-y: auto`. Defer rationale 2026-05-08: Sprint 48 Telegram pivot rebuild composer hoàn toàn → slash dropdown sẽ redo cùng lúc với attach/mic/voice trong S49.
+
+- [~] **[361]** Chat UI redesign — Telegram-style — *Sprint 48 partial pull (subset MVP) → cards [384][385][386]*
       **Priority:** P0 · **Points:** ~13 (split at sprint planning)
       **Description:**
       Boss handoff bundle 2026-05-03 từ Claude Design (`https://api.anthropic.com/v1/design/h/ok_GEMjXAuUvILfUxqkHsQ`). Đã extract về `docs/design/` của project.
@@ -76,6 +80,31 @@ kanban-plugin: board
       Acceptance: any malformed sprint MD must NOT hang the dashboard endpoint.
 
 ## 🟠 P1: High
+
+- [ ] **[377]** Switch Soniox `stt-rt-v4` → `stt-async-v2` (batch HTTP) — *carried from Sprint 47, never started*
+      **Priority:** P1 (was P0 in S47) · **Points:** 3 · **Backlog-ID:** 412
+      **Description:**
+      Sprint 42 [341] + Sprint 46 [371] đã thử real-time WS (`stt-rt-v4`) nhưng phrase dài bị cắt cuối → switch async batch HTTP (`stt-async-v2`).
+      **Soniox async API flow:**
+      1. `POST .../files` multipart audio → `{file_id}`
+      2. `POST .../transcriptions` body `{file_id, model: "stt-async-v2"}` → `{id}`
+      3. `GET .../transcriptions/{id}` poll → status: `queued|processing|completed|error`
+      4. Khi `completed`: `GET .../transcript` → `{text}`
+      5. Cleanup: `DELETE /files/{file_id}` + `DELETE /transcriptions/{id}`
+      **Implementation:**
+      - Refactor `transcribeWithSoniox()` từ WebSocket → HTTP batch fetch + FormData
+      - Auth: `Authorization: Bearer ${apiKey}`, poll 1s, max 60s timeout
+      - Audio: send original webm/opus (Soniox accept), không cần ffmpeg PCM
+      - Language hints: vi, en
+      **Acceptance:**
+      - Phrase 30s VN → transcript đầy đủ, không cắt cuối
+      - 5s ngắn vẫn work, latency 2-3s acceptable
+      - Mixed VN+EN OK
+      - Error path → 502 backend, frontend toast clear
+      - Cleanup tmp files sau khi xong
+      - Voice button UX: 'Uploading…' → 'Transcribing…' state
+      **Tradeoffs accepted:** Latency cao hơn ~2-5s (upload + poll), không real-time nhưng accuracy cao hơn cho recorded clip.
+      **Defer rationale 2026-05-08:** Sprint 47 closed without starting; chat refactor [382] took full DEV bandwidth. Boss did not flag voice as urgent at close → drop P0 → P1 until Boss re-pulls.
 
 - [x] **[347]** UI revamp — chat-first layout (Telegram-style) — IN SPRINT 39
       **Priority:** P1 · **Points:** 19 (split across 6 items)
